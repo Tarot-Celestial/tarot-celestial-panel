@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 //   GET  status | attention | chats | messages&jid=...&limit=...
 //   POST start | logout | read&jid=... | send   (body: { jid | phone, text })
 
-const JID_RE = /^[0-9A-Za-z.:_-]{3,80}@(s\.whatsapp\.net|lid|g\.us)$/;
+const JID_RE = /^[0-9A-Za-z.:_-]{1,80}@(s\.whatsapp\.net|lid|g\.us)$/;
 
 async function authorize(req: Request) {
   try {
