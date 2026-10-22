@@ -39,6 +39,8 @@ function fixture(options = {}) {
     const query = {
       select(value) { fields = value; return query; },
       eq(key, value) { predicates.push(row => row[key] === value); ops.push('eq:' + key); return query; },
+      gte(key, value) { predicates.push(row => row[key] >= value); ops.push('gte:' + key); return query; },
+      lte(key, value) { predicates.push(row => row[key] <= value); ops.push('lte:' + key); return query; },
       is(key, value) { predicates.push(row => (row[key] ?? null) === value); ops.push('is:' + key); return query; },
       in(key, values) { predicates.push(row => values.includes(row[key])); ops.push('in:' + key); return query; },
       or(value) { predicates.push(row => split(value).some(part => matches(row, part))); ops.push('or:' + value); return query; },
@@ -50,7 +52,7 @@ function fixture(options = {}) {
         reads.push({ table, fields, ops, start, end });
         if (options.joinError && table === 'captacion_leads' && fields.includes('cliente:')) return Promise.resolve({ data: null, error: { message: 'fixture relationship unavailable' } }).then(resolve, reject);
         if (options.metaError && table === 'meta_lead_events') return Promise.resolve({ data: null, error: { message: 'private failure detail' } }).then(resolve, reject);
-        let rows = table === 'workers' ? [worker] : table === 'captacion_leads' ? options.rows || [] : table === 'crm_clientes' ? options.clients || [] : table === 'meta_lead_events' ? options.event ? [options.event] : [] : [];
+        let rows = table === 'workers' ? [worker] : table === 'captacion_leads' ? options.rows || [] : table === 'crm_clientes' ? options.clients || [] : table === 'meta_lead_events' ? options.events || (options.event ? [options.event] : []) : [];
         rows = rows.filter(row => predicates.every(predicate => predicate(row))).sort((a, b) => {
           for (const [key, asc] of orders) { const cmp = String(a[key] ?? '').localeCompare(String(b[key] ?? '')); if (cmp) return asc ? cmp : -cmp; } return 0;
         }).slice(start, Math.min(end + 1, start + limit));
@@ -130,4 +132,33 @@ test('invalid page and scope inputs never execute a lead query', async () => {
   for (const query of ['page=-1', 'page=1.2', 'page=Infinity', 'scope=unknown', 'page=100001']) {
     const f = fixture(); assert.equal((await f.get(query)).status, 400); assert.equal(f.reads.some(read => read.table === 'captacion_leads'), false);
   }
+});
+
+test('recent original Meta submissions are attached only to authorized leads without changing their workflow', async () => {
+  const at = hours => new Date(Date.now() - hours * 3600000).toISOString();
+  const fresh = at(1), previous = at(2);
+  const rows = [row(1), row(2, { estado: 'pend_cap' }), row(3, { estado: 'no_interesado', closed_at: at(72) }), row(4, { created_at: at(0) }), row(5, { assigned_worker_id: id(99) }), row(6, { cliente: { origen: 'Orion Facebook' } }), row(7), row(8)];
+  const event = (n, time, extra = {}) => ({ captacion_lead_id: row(n).id, meta_created_at: time, status: 'processed', payload: 'private-data', ...extra });
+  const f = fixture({ rows, events: [event(1, previous), event(1, fresh), event(2, fresh), event(3, fresh), event(4, at(48)), event(5, fresh), event(6, fresh), event(7, at(-1)), event(8, fresh, { status: 'failed' })] });
+  const body = await (await f.get()).json();
+  assert.equal(body.items.length, 6);
+  for (const n of [1, 2, 3]) assert.equal(body.items.find(item => item.id === row(n).id).latest_meta_lead_at, fresh);
+  for (const n of [4, 7, 8]) assert.equal(body.items.find(item => item.id === row(n).id).latest_meta_lead_at, null);
+  assert.equal(body.items.find(item => item.id === row(2).id).workflow_state, 'pend_cap');
+  assert.equal(body.items.find(item => item.id === row(3).id).workflow_state, 'cerrado');
+  assert.doesNotMatch(JSON.stringify(body), /private-data/);
+  const reads = f.reads.filter(read => read.table === 'meta_lead_events');
+  assert.ok(reads.length > 0 && reads.every(read => read.fields === 'captacion_lead_id,meta_created_at' && read.ops.includes('in:captacion_lead_id') && read.ops.includes('eq:status')));
+});
+
+test('recent submission lookup paginates repeated events and an unavailable ledger does not block leads', async () => {
+  const fresh = new Date(Date.now() - 3600000).toISOString();
+  const events = Array.from({ length: 501 }, (_, n) => ({ captacion_lead_id: row(n < 500 ? 1 : 2).id, leadgen_id: String(1000 - n), status: 'processed', meta_created_at: fresh }));
+  const f = fixture({ rows: [row(1), row(2)], events });
+  const body = await (await f.get()).json();
+  assert.ok(body.items.every(item => item.latest_meta_lead_at === fresh));
+  assert.equal(f.reads.filter(read => read.table === 'meta_lead_events').length, 2);
+  const unavailable = await (await fixture({ rows: [row(1)], metaError: true }).get()).json();
+  assert.equal(unavailable.ok, true); assert.equal(unavailable.items.length, 1);
+  assert.equal(unavailable.items[0].latest_meta_lead_at, null);
 });
