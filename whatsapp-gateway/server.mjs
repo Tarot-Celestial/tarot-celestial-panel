@@ -583,6 +583,13 @@ const server = http.createServer(async (req, res) => {
     switch (route) {
       case "GET status":
         return send(res, 200, session.status());
+      case "GET attention":
+        session.requireConnected();
+        return send(res, 200, {
+          ok: true, session: session.id, account_id: session.me?.id || null,
+          rev: session.status().rev, server_time: new Date().toISOString(),
+          ...session.store.attentionSummary(),
+        });
       case "POST start":
         await session.start();
         return send(res, 200, session.status());

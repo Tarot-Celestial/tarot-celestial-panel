@@ -4,16 +4,18 @@ const fs = require('node:fs'), path = require('node:path'), vm = require('node:v
 const React = require('react'), renderer = require('react-test-renderer');
 const { act } = renderer;
 function compile(file) { return ts.transpileModule(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText; }
-const guide = {}, attention = {};
+const guide = {}, attention = {}, whatsapp = {};
 vm.runInNewContext(compile('src/lib/central-assistant.ts'), { exports: guide, Intl, Date });
 vm.runInNewContext(compile('src/lib/captacion-attention.ts'), { exports: attention, Date });
+vm.runInNewContext(compile('src/lib/whatsapp-attention.ts'), { exports: whatsapp, Date });
 const content = node => typeof node === 'string' || typeof node === 'number' ? String(node) : Array.isArray(node) ? node.map(content).join('') : node ? content(node.children) : '';
 
-test('urgent capture monitoring works before assistant load, wakes a minimized pet, preserves counts and stacks reservations', async () => {
-  const exports = {}, snapshots = [], navigations = [], stored = new Map(), intervals = new Map(), timeout = new Map();
-  let monitorOptions, serial = 0, tree;
+test('operational capture and WhatsApp alerts work before assistant load, wake the pet, keep counts and stack reservations', async () => {
+  const exports = {}, snapshots = [], whatsappSnapshots = [], navigations = [], stored = new Map(), intervals = new Map(), timeout = new Map();
+  let monitorOptions, whatsappOptions, serial = 0, tree;
   const items = [{ id: 'lead-test', cliente_id: 'client-test', nombre: 'Daisy', latest_meta_lead_at: new Date().toISOString() }];
   let pending = { items: [], notice: null, error: '', brand: 'celestial', refresh() {}, dismiss() { pending = { ...pending, notice: null }; } };
+  let whatsappPending = { count: 0, unreadChats: 0, error: '', accountId: null, session: null, notice: null, dismiss() { whatsappPending = { ...whatsappPending, notice: null }; } };
   const motion = { ref: { current: null }, highlight: null, dragging: false, moving: false, dragProps: {}, positionLabel: '', point() {}, dock() {} };
   const reservations = { reminder: { key: 'reserve', id: 'r', clientId: 'other', clientName: 'Reserva existente', tarotistName: 'Luna', minutesRemaining: 1, scheduledAt: new Date().toISOString() }, error: '', refresh() {}, dismiss() {} };
   const window = { addEventListener() {}, removeEventListener() {}, dispatchEvent() {} };
@@ -33,10 +35,12 @@ test('urgent capture monitoring works before assistant load, wakes a minimized p
       if (name === 'lucide-react') return new Proxy({}, { get: (_, key) => String(key) });
       if (name === '@/lib/central-assistant') return guide;
       if (name === '@/lib/captacion-attention') return attention;
+      if (name === '@/lib/whatsapp-attention') return whatsapp;
       if (name === '@/lib/central-atlas') return { purchaseCelebrationMessage: () => '' };
       if (name === '@/lib/recovery-mission') return { recoveryMissionPhase: () => null };
       if (name === '@/lib/supabase-browser') return { supabaseBrowser: () => ({ auth: { getSession: async () => ({ data: { session: { access_token: 'fixture' } } }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }) } }) };
       if (name === './useCaptacionAttention') return { useCaptacionAttention: options => { monitorOptions = options; return pending; } };
+      if (name === './useWhatsAppAttention') return { useWhatsAppAttention: options => { whatsappOptions = options; return whatsappPending; } };
       if (name === './useReservationReminders') return { useReservationReminders: () => reservations };
       if (name === './useCompanionMotion') return { useCompanionMotion: () => motion };
       if (name === './useCompanionInitiative') return { useCompanionInitiative: () => ({ gesture: '', entertain() {}, hush() {} }) };
@@ -49,11 +53,12 @@ test('urgent capture monitoring works before assistant load, wakes a minimized p
       throw new Error(name);
     },
   });
-  const props = { tab: 'crm', workerId: 'worker', captacionEnabled: true, onCaptacionAttentionChange: value => snapshots.push(value), onNavigate: value => navigations.push(value) };
+  const props = { tab: 'crm', workerId: 'worker', captacionEnabled: true, whatsappEnabled: true, onCaptacionAttentionChange: value => snapshots.push(value), onWhatsAppAttentionChange: value => whatsappSnapshots.push(value), onNavigate: value => navigations.push(value) };
   const update = async () => act(async () => { tree.update(React.createElement(exports.default, props)); });
   await act(async () => { tree = renderer.create(React.createElement(exports.default, props)); });
   try {
     assert.equal(monitorOptions.enabled, true, 'profile load failure must not disable operational alerts');
+    assert.equal(whatsappOptions.enabled, true, 'WhatsApp must also work independently of companion profile and presence');
     assert.equal(monitorOptions.blocked, undefined, 'an existing reservation must not delay a new capture alert');
     const minimize = tree.root.findAllByType('button').find(node => node.props.title === 'Minimizar mascota');
     await act(async () => minimize.props.onClick());
@@ -75,6 +80,21 @@ test('urgent capture monitoring works before assistant load, wakes a minimized p
     await act(async () => attend.props.onClick());
     assert.deepEqual(navigations, ['captacion']); assert.equal(stored.get(attention.CAPTACION_FOCUS_LEAD), 'lead-test');
     assert.equal(snapshots.at(-1).count, 1, 'opening the contact does not claim it was managed');
+    const newWhatsApp = { key: 'wa-arrival', count: 3, initial: false, items: [{ id: 'contact-jid', name: 'Guadalupe', unread: 3, last_incoming_id: 'message-new', last_incoming_at: new Date().toISOString() }] };
+    whatsappPending = { ...whatsappPending, count: 3, unreadChats: 1, accountId: 'phone', session: 'worker-session', notice: newWhatsApp };
+    pending = { ...pending, notice: { key: 'capture-again', announcedAt: Date.now(), items } };
+    await act(async () => whatsappOptions.onReminder()); await update();
+    assert.equal(tree.root.findAllByType('aside').length, 3, 'WhatsApp, capture and reservation notices stay accessible together');
+    assert.match(content(tree.toJSON()), /Nuevo WhatsApp/); assert.match(content(tree.toJSON()), /Guadalupe/);
+    assert.equal(whatsappSnapshots.at(-1).count, 3);
+    const closeWhatsApp = tree.root.findAllByType('button').find(node => node.props['aria-label'] === 'Cerrar aviso de WhatsApp');
+    await act(async () => closeWhatsApp.props.onClick()); await update();
+    assert.equal(whatsappSnapshots.at(-1).count, 3, 'dismissing a WhatsApp notice keeps unread badge intact');
+    whatsappPending = { ...whatsappPending, notice: newWhatsApp }; await update();
+    const openWhatsApp = tree.root.findAllByType('button').find(node => content(node).startsWith('Abrir WhatsApp'));
+    await act(async () => openWhatsApp.props.onClick()); await update();
+    assert.deepEqual(navigations, ['captacion', 'whatsapp'], 'the CTA opens the inbox without targeting or reading a conversation');
+    assert.equal(whatsappSnapshots.at(-1).count, 3);
   } finally { await act(async () => tree.unmount()); }
-  assert.equal(snapshots.at(-1).count, 0); assert.equal(intervals.size, 0);
+  assert.equal(snapshots.at(-1).count, 0); assert.equal(whatsappSnapshots.at(-1).count, 0); assert.equal(intervals.size, 0);
 });

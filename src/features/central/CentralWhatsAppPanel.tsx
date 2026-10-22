@@ -154,6 +154,7 @@ export default function CentralWhatsAppPanel() {
   const sb = useMemo(() => supabaseBrowser(), []);
   const [status, setStatus] = useState<StatusPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [readError, setReadError] = useState<{ chatId: string; message: string } | null>(null);
   const [busy, setBusy] = useState<"start" | "logout" | "send" | null>(null);
   const [chats, setChats] = useState<Chat[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -168,6 +169,10 @@ export default function CentralWhatsAppPanel() {
   const mountedRef = useRef(false);
   const lastRevRef = useRef<string | null>(null);
   const selectedRef = useRef<string | null>(null);
+  const chatsRef = useRef<Chat[]>([]);
+  const chatsRequestRef = useRef(0);
+  const messagesRequestRef = useRef(0);
+  const readingRef = useRef(new Set<string>());
   const autoStartRef = useRef(false);
   const pollingRef = useRef(false);
   const statusMutationRef = useRef(false);
@@ -183,7 +188,7 @@ export default function CentralWhatsAppPanel() {
       const token = data.session?.access_token;
       if (!token) throw new Error("NO_AUTH");
       const controller = new AbortController();
-      const timeout = init.method === "POST" ? null : window.setTimeout(() => controller.abort(), 28_000);
+      const timeout = init.method === "POST" && !path.startsWith("read&") ? null : window.setTimeout(() => controller.abort(), 28_000);
       try {
         const response = await fetch(`/api/central/whatsapp?action=${path}`, {
           method: init.method || "GET",
@@ -207,33 +212,59 @@ export default function CentralWhatsAppPanel() {
   );
 
   const loadChats = useCallback(async () => {
+    const version = statusVersionRef.current;
+    const request = ++chatsRequestRef.current;
     const json = await api("chats");
-    if (mountedRef.current) setChats(Array.isArray(json.chats) ? json.chats : []);
+    if (mountedRef.current && version === statusVersionRef.current && request === chatsRequestRef.current) {
+      const next = Array.isArray(json.chats) ? json.chats : [];
+      chatsRef.current = next;
+      setChats(next);
+      setReadError(previous => previous && next.some((chat: Chat) => chat.id === previous.chatId && chat.unread === 0) ? null : previous);
+    }
   }, [api]);
-
-  const loadMessages = useCallback(
-    async (chatId: string, showLoading = false) => {
-      if (showLoading) setMessagesLoading(true);
-      try {
-        const json = await api(`messages&jid=${encodeURIComponent(chatId)}&limit=150`);
-        if (mountedRef.current && selectedRef.current === chatId) setMessages(Array.isArray(json.messages) ? json.messages : []);
-      } finally {
-        if (mountedRef.current && showLoading) setMessagesLoading(false);
-      }
-    },
-    [api]
-  );
 
   const markRead = useCallback(
     async (chatId: string) => {
-      setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, unread: 0 } : c)));
+      if (!mountedRef.current || selectedRef.current !== chatId || document.visibilityState !== "visible"
+        || readingRef.current.has(chatId) || !chatsRef.current.find(chat => chat.id === chatId)?.unread) return;
+      const version = statusVersionRef.current;
+      readingRef.current.add(chatId);
+      let confirmed = false;
       try {
         await api(`read&jid=${encodeURIComponent(chatId)}`, { method: "POST" });
-      } catch {
-        // No es grave: el contador se corregirá en el siguiente refresco.
+        if (!mountedRef.current || version !== statusVersionRef.current) return;
+        confirmed = true;
+        // Notify the global watcher only after the gateway confirms the read.
+        // Obtain current counts instead of clearing a newer arrival optimistically.
+        window.dispatchEvent(new Event("tc-whatsapp-changed"));
+        await loadChats();
+        if (mountedRef.current && version === statusVersionRef.current) setReadError(previous => previous?.chatId === chatId ? null : previous);
+      } catch (e: any) {
+        if (mountedRef.current && version === statusVersionRef.current) setReadError({ chatId, message: confirmed
+          ? `La lectura se confirmó, pero no se pudo actualizar el contador. ${friendlyError(e?.message)}`
+          : `No se pudo confirmar la lectura. El chat sigue pendiente. ${friendlyError(e?.message)}` });
+      } finally { readingRef.current.delete(chatId); }
+    },
+    [api, loadChats]
+  );
+
+  const loadMessages = useCallback(
+    async (chatId: string, showLoading = false) => {
+      const version = statusVersionRef.current;
+      const request = ++messagesRequestRef.current;
+      if (showLoading) setMessagesLoading(true);
+      try {
+        const json = await api(`messages&jid=${encodeURIComponent(chatId)}&limit=150`);
+        if (mountedRef.current && selectedRef.current === chatId && version === statusVersionRef.current && request === messagesRequestRef.current) {
+          const next = Array.isArray(json.messages) ? json.messages : [];
+          setMessages(next);
+          if (next.length) await markRead(chatId);
+        }
+      } finally {
+        if (mountedRef.current && selectedRef.current === chatId && request === messagesRequestRef.current) setMessagesLoading(false);
       }
     },
-    [api]
+    [api, markRead]
   );
 
   const start = useCallback(async () => {
@@ -253,7 +284,7 @@ export default function CentralWhatsAppPanel() {
     }
   }, [api]);
 
-  const pollStatus = useCallback(async () => {
+  const pollStatus = useCallback(async (refreshSelected = false) => {
     if (pollingRef.current || statusMutationRef.current) return;
     pollingRef.current = true;
     const version = statusVersionRef.current;
@@ -271,7 +302,7 @@ export default function CentralWhatsAppPanel() {
         void start();
       }
 
-      if (json.state === "connected" && json.rev && json.rev !== lastRevRef.current) {
+      if (json.state === "connected" && json.rev && (json.rev !== lastRevRef.current || (refreshSelected && selectedRef.current))) {
         await loadChats();
         const current = selectedRef.current;
         if (current) await loadMessages(current);
@@ -297,7 +328,7 @@ export default function CentralWhatsAppPanel() {
       if (document.visibilityState === "visible") void pollStatus();
     }, STATUS_POLL_MS);
     const onVisible = () => {
-      if (document.visibilityState === "visible") void pollStatus();
+      if (document.visibilityState === "visible") void pollStatus(true);
     };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
@@ -311,7 +342,8 @@ export default function CentralWhatsAppPanel() {
     };
   }, [pollStatus]);
 
-  // Al abrir un chat: cargar mensajes y marcarlo como leído.
+  // Only selecting a chat loads it. A successful visible message read may then
+  // acknowledge unread messages; opening the WhatsApp section alone never does.
   useEffect(() => {
     if (!selectedId) {
       setMessages([]);
@@ -320,17 +352,8 @@ export default function CentralWhatsAppPanel() {
     stickToBottomRef.current = true;
     setMessages([]);
     void loadMessages(selectedId, true).catch((e) => setError(friendlyError(e?.message)));
-    const chat = chats.find((c) => c.id === selectedId);
-    if (chat?.unread) void markRead(selectedId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
-
-  // Si llega un mensaje nuevo al chat abierto, se marca como leído.
-  useEffect(() => {
-    if (!selectedId || document.visibilityState !== "visible") return;
-    const chat = chats.find((c) => c.id === selectedId);
-    if (chat?.unread) void markRead(selectedId);
-  }, [chats, markRead, selectedId]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -351,10 +374,13 @@ export default function CentralWhatsAppPanel() {
       const json = await api("logout", { method: "POST", body: { restart: true } });
       if (!mountedRef.current) return;
       setStatus(json);
+      chatsRef.current = [];
       setChats([]);
       setSelectedId(null);
       setMessages([]);
+      setReadError(null);
       lastRevRef.current = null;
+      window.dispatchEvent(new Event("tc-whatsapp-changed"));
     } catch (e: any) {
       if (mountedRef.current) setError(friendlyError(e?.message));
     } finally {
@@ -378,6 +404,7 @@ export default function CentralWhatsAppPanel() {
     setDraft("");
     try {
       await api("send", { method: "POST", body: { jid: chatId, text } });
+      window.dispatchEvent(new Event("tc-whatsapp-changed"));
       await Promise.all([loadMessages(chatId), loadChats()]);
     } catch (e: any) {
       if (!mountedRef.current) return;
@@ -405,6 +432,7 @@ export default function CentralWhatsAppPanel() {
     setError(null);
     try {
       const json = await api("send", { method: "POST", body: { phone, text } });
+      window.dispatchEvent(new Event("tc-whatsapp-changed"));
       await loadChats();
       if (!mountedRef.current) return;
       setNewChatOpen(false);
@@ -434,6 +462,7 @@ export default function CentralWhatsAppPanel() {
   const totalUnread = chats.reduce((sum, c) => sum + (c.unread || 0), 0);
   const state = status?.ok ? status.state : undefined;
   const notConfigured = status?.error === "GATEWAY_NOT_CONFIGURED";
+  const selectedReadError = readError?.chatId === selectedId ? readError : null;
 
   const badge = notConfigured
     ? { cls: styles.off, label: "Sin configurar" }
@@ -478,10 +507,11 @@ export default function CentralWhatsAppPanel() {
         </div>
       </header>
 
-      {error && (
+      {(selectedReadError || error) && (
         <div className={styles.error} role="alert">
-          <TriangleAlert size={16} /> <span>{error}</span>
-          <button type="button" onClick={() => setError(null)} aria-label="Cerrar aviso">
+          <TriangleAlert size={16} /> <span>{selectedReadError?.message || error}</span>
+          {selectedReadError && <button type="button" onClick={() => void loadMessages(selectedReadError.chatId, true).catch(e => setError(friendlyError(e?.message)))} disabled={messagesLoading}>Reintentar lectura</button>}
+          <button type="button" onClick={() => { setError(null); setReadError(null); }} aria-label="Cerrar aviso">
             <X size={14} />
           </button>
         </div>

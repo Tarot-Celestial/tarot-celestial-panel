@@ -13,8 +13,8 @@ function fixture(hiddenKeys=[]){
     throw Error(name);
   }});
   let tree;
-  const render=(count,activeTab='central',stale=false)=>act(()=>{
-    const props={activeTab,onTabChange:tab=>navigation.push(tab),items:[{key:'central',label:'Resumen',icon:'svg'},{key:'captacion',label:'Captación',icon:'svg',badge:count,badgeStale:stale,kicker:count?'Nuevos · atender ahora':undefined},{key:'notificaciones',label:'Notificaciones',icon:'svg',badge:2}]};
+  const render=(count,activeTab='central',stale=false,whatsapp=0)=>act(()=>{
+    const props={activeTab,onTabChange:tab=>navigation.push(tab),items:[{key:'central',label:'Resumen',icon:'svg'},{key:'captacion',label:'Captación',icon:'svg',badge:count,badgeStale:stale,kicker:count?'Nuevos · atender ahora':undefined},{key:'whatsapp',label:'WhatsApp',icon:'svg',badge:whatsapp,badgeStale:stale},{key:'notificaciones',label:'Notificaciones',icon:'svg',badge:2}]};
     if(tree)tree.update(React.createElement(exports.default,props));else tree=renderer.create(React.createElement(exports.default,props));
   });
   return {render,get tree(){return tree;},navigation,get preferencesWrites(){return preferencesWrites;},button:key=>tree.root.findAllByType('button').find(x=>x.props['data-companion-nav']===key),close:()=>act(()=>tree.unmount())};
@@ -25,6 +25,15 @@ test('pending acquisition stays red with the exact count in another tab and in i
     act(()=>button.props.onClick());assert.deepEqual(f.navigation,['captacion']);
     f.render(123,'captacion');button=f.button('captacion');assert.match(button.props.className,/navButtonActive/);assert.match(button.props.className,/captacionUrgent/);assert.equal(button.findAllByType('span').some(x=>x.children.includes('123')),true);
     f.render(0);assert.doesNotMatch(f.button('captacion').props.className,/captacionUrgent/);assert.equal(f.button('captacion').props['data-captacion-pending'],undefined);assert.match(f.button('notificaciones').props.className,/alertButton/);
+  }finally{f.close();}
+});
+test('WhatsApp shows the exact unread message count independently of Captacion, keeps hidden urgent access and clears after reading',()=>{
+  const f=fixture(['whatsapp']);try{
+    f.render(5);assert.equal(f.button('whatsapp'),undefined);
+    f.render(5,'central',false,124);let button=f.button('whatsapp');assert.match(button.props.className,/captacionUrgent/);assert.equal(button.props['data-whatsapp-unread'],124);assert.match(button.props['aria-label'],/124 mensajes sin leer/);assert.equal(button.findAllByType('span').some(x=>x.children.includes('124')),true);assert.equal(f.button('captacion').props['data-captacion-pending'],5);
+    act(()=>button.props.onClick());assert.deepEqual(f.navigation,['whatsapp']);
+    f.render(5,'whatsapp',true,124);button=f.button('whatsapp');assert.match(button.props.className,/navButtonActive/);assert.match(button.props['aria-label'],/pendiente de actualizar/);assert.match(button.props.title,/Último recuento confirmado/);
+    f.render(5,'whatsapp',false,0);assert.equal(f.button('whatsapp'),undefined);assert.equal(f.preferencesWrites,0);assert.equal(f.button('captacion').props['data-captacion-pending'],5);
   }finally{f.close();}
 });
 test('an urgent entry remains reachable even if hidden, then restores the saved preference without modifying it',()=>{

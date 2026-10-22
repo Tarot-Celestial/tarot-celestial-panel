@@ -269,6 +269,11 @@ function CentralPage() {
     setCaptacionAttention(previous => previous.count === next.count && previous.error === next.error && previous.brand === next.brand
       ? previous : { count: next.count, error: next.error, brand: next.brand });
   }, []);
+  const [whatsappAttention, setWhatsAppAttention] = useState({ count: 0, error: "" });
+  const handleWhatsAppAttention = useCallback((next: { count: number; error: string }) => {
+    setWhatsAppAttention(previous => previous.count === next.count && previous.error === next.error
+      ? previous : { count: next.count, error: next.error });
+  }, []);
   const notificationFeed = useCentralNotificationsFeed();
   const myInvoiceFeed = useMyInvoice(ok && (tab === "mi-factura" || tab === "central"));
   const searchParams = useSearchParams();
@@ -1280,15 +1285,17 @@ function CentralPage() {
   const centralNavItems = useMemo(
     () => CENTRAL_NAV.map((item) => item.key === "notificaciones" ? { ...item, badge: notificationCount }
       : item.key === "captacion" ? { ...item, badge: captacionAttention.count, badgeStale: !!captacionAttention.error,
-        kicker: captacionAttention.error ? "Recuento sin actualizar" : captacionAttention.count > 0 ? "Nuevos · atender ahora" : undefined } : item),
-    [notificationCount, captacionAttention]
+        kicker: captacionAttention.error ? "Recuento sin actualizar" : captacionAttention.count > 0 ? "Nuevos · atender ahora" : undefined }
+      : item.key === "whatsapp" ? { ...item, badge: whatsappAttention.count, badgeStale: !!whatsappAttention.error,
+        kicker: whatsappAttention.error ? "Recuento sin actualizar" : whatsappAttention.count > 0 ? "Mensajes sin leer" : item.kicker } : item),
+    [notificationCount, captacionAttention, whatsappAttention]
   );
 
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
   return (
     <CentralThemeProvider workerId={themeWorkerId} rank={xpProgress?.tier?.key}>
-      {ok && <CentralCompanion tab={tab} workerId={themeWorkerId} captacionEnabled={ok} onCaptacionAttentionChange={handleCaptacionAttention} onPetChange={setSummaryPet} openRequest={companionOpenRequest} clientId={tab === 'mis-clientas' ? searchParams?.get('cliente') : null} onOpenReservation={(id) => openReservaFromPopup({id})} onNavigate={(nextTab, clientId) => {
+      {ok && <CentralCompanion tab={tab} workerId={themeWorkerId} captacionEnabled={ok} whatsappEnabled={ok} onCaptacionAttentionChange={handleCaptacionAttention} onWhatsAppAttentionChange={handleWhatsAppAttention} onPetChange={setSummaryPet} openRequest={companionOpenRequest} clientId={tab === 'mis-clientas' ? searchParams?.get('cliente') : null} onOpenReservation={(id) => openReservaFromPopup({id})} onNavigate={(nextTab, clientId) => {
         if (!TABS.includes(nextTab as TabKey) || HIDDEN_TELEPHONIST_TABS.has(nextTab as TabKey)) return;
         setTab(nextTab as TabKey);
         const params = new URLSearchParams(searchParams?.toString() || "");
