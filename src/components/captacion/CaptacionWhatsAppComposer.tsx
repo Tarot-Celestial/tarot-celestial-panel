@@ -14,9 +14,10 @@ export type CaptacionWhatsAppComposerProps = {
   contacts: readonly CaptacionMessageContact[];
   selectedLeadId: string | null;
   onSelectLead: (leadId: string | null) => void;
+  onOpenWhatsApp?: () => void;
 };
 
-export default function CaptacionWhatsAppComposer({ contacts, selectedLeadId, onSelectLead }: CaptacionWhatsAppComposerProps) {
+export default function CaptacionWhatsAppComposer({ contacts, selectedLeadId, onSelectLead, onOpenWhatsApp }: CaptacionWhatsAppComposerProps) {
   const contact = contacts.find(item => item.id === selectedLeadId) || null;
   return <section className={styles.shell} aria-label="Preparar WhatsApp de captación" id="captacion-whatsapp">
     <header className={styles.header}>
@@ -32,7 +33,7 @@ export default function CaptacionWhatsAppComposer({ contacts, selectedLeadId, on
             {contacts.map(item => <option key={item.id} value={item.id}>{captacionContactName(item) || "Contacto sin nombre"}{item.cliente?.telefono ? ` · ${item.cliente.telefono}` : ""}</option>)}
           </select>
         </label>
-        <OfficialSend contact={contact}/>
+        <PanelSend contact={contact} onOpenWhatsApp={onOpenWhatsApp}/>
         <details className={styles.manual}>
           <summary>Preparación manual · copiar, editar y abrir WhatsApp</summary>
           <p>Los cambios de texto y número de esta sección se usan solo al copiar o abrir WhatsApp manualmente.</p>
@@ -44,17 +45,18 @@ export default function CaptacionWhatsAppComposer({ contacts, selectedLeadId, on
   </section>;
 }
 
-type OfficialStatus = {
+type WhatsAppStatus = {
+  provider: "qr";
   configured: boolean;
   ready: boolean;
   reason?: string | null;
   preview_message?: string | null;
-  template: { status: string; name?: string; body?: string; media_url?: string } | null;
+  session: { state: "idle" | "connecting" | "qr" | "connected"; me: { id: string; name?: string | null; phone?: string | null } | null } | null;
   delivery: { id: string; status: string; message_id?: string | null } | null;
 };
-type OfficialReceipt = { status: string; error?: string };
+type WhatsAppReceipt = { status: string; error?: string };
 
-function updateOfficialReceipt(previous: Record<string, OfficialReceipt>, leadId: string, next: OfficialReceipt) {
+function updateReceipt(previous: Record<string, WhatsAppReceipt>, leadId: string, next: WhatsAppReceipt) {
   const current = previous[leadId];
   const confirmation: Record<string, number> = { accepted: 1, queued: 1, sent: 2, delivered: 3, read: 4 };
   const currentLevel = confirmation[current?.status] || 0;
@@ -64,31 +66,34 @@ function updateOfficialReceipt(previous: Record<string, OfficialReceipt>, leadId
   return { ...previous, [leadId]: next };
 }
 
-function officialDeliveryMessage(status: string) {
+function deliveryMessage(status: string) {
   if (status === "read") return "WhatsApp confirmó que el mensaje fue leído.";
   if (status === "delivered") return "WhatsApp confirmó la entrega del mensaje y la imagen.";
   if (status === "sent") return "WhatsApp indica que salió el mensaje. Aún falta confirmar la entrega.";
-  if (["accepted", "queued"].includes(status)) return "WhatsApp aceptó la solicitud. La entrega está pendiente de confirmación.";
+  if (["accepted", "queued"].includes(status)) return "Se aceptó la solicitud de envío. La entrega está pendiente de confirmación.";
   if (status === "sending") return "La solicitud está en proceso. Comprueba su estado antes de intentar otra acción.";
   if (["failed", "undelivered"].includes(status)) return "El envío falló. Requiere revisión antes de volver a enviarlo.";
   return "Todavía no se pudo confirmar el resultado. Comprueba el estado; no se reenviará automáticamente.";
 }
 
-function officialConfigurationMessage(reason?: string | null) {
+function configurationMessage(reason?: string | null) {
   if (reason === "ALREADY_SENT") return "Este contacto ya tiene un envío registrado.";
   if (reason === "PENDING_CONFIRMATION") return "Hay un envío pendiente de confirmación para este contacto.";
   if (reason === "DELIVERY_FAILED") return "El envío anterior necesita revisión antes de volver a intentarlo.";
   if (reason === "LEAD_CLOSED") return "El contacto está cerrado. Revisa su gestión antes de preparar un nuevo envío.";
-  if (reason && /TEMPLATE/i.test(reason)) return "La plantilla de bienvenida está pendiente de aprobación o configuración en WhatsApp.";
+  if (reason === "NOT_CONNECTED") return "Vincula tu WhatsApp con el código QR para enviar la bienvenida desde el panel.";
+  if (["GATEWAY_UNREACHABLE", "GATEWAY_TIMEOUT"].includes(reason || "")) return "No se pudo contactar con WhatsApp. Comprueba que el PC que mantiene la conexión está encendido y con internet.";
+  if (reason === "QR_CAPTACION_UNAVAILABLE") return "La conexión de WhatsApp necesita actualizarse para enviar el mensaje con la imagen. Revisa WhatsApp antes de continuar.";
+  if (reason === "PRODUCTION_ONLY") return "Este envío está disponible desde el panel publicado.";
   if (reason && /PHONE|RECIPIENT/i.test(reason)) return "Revisa el teléfono con prefijo de país en la ficha del CRM.";
   if (reason && /CONSENT|OPT_IN/i.test(reason)) return "Falta confirmar la autorización del contacto para recibir esta bienvenida por WhatsApp.";
-  return "La conexión oficial está pendiente de configuración. Mientras tanto puedes preparar el mensaje manualmente.";
+  return "La conexión de WhatsApp está pendiente de configuración. Mientras tanto puedes preparar el mensaje manualmente.";
 }
 
-function OfficialSend({ contact }: { contact: CaptacionMessageContact | null }) {
+function PanelSend({ contact, onOpenWhatsApp }: { contact: CaptacionMessageContact | null; onOpenWhatsApp?: () => void }) {
   const [revision, setRevision] = useState(0);
-  const [view, setView] = useState<{ scopeKey: string | null; loading: boolean; data: OfficialStatus | null; error: string }>({ scopeKey: null, loading: false, data: null, error: "" });
-  const [receipts, setReceipts] = useState<Record<string, OfficialReceipt>>({});
+  const [view, setView] = useState<{ scopeKey: string | null; loading: boolean; data: WhatsAppStatus | null; error: string }>({ scopeKey: null, loading: false, data: null, error: "" });
+  const [receipts, setReceipts] = useState<Record<string, WhatsAppReceipt>>({});
   const requests = useRef(new Map<string, string>());
   const inFlight = useRef(new Set<string>());
   const leadId = contact?.id || null;
@@ -113,15 +118,15 @@ function OfficialSend({ contact }: { contact: CaptacionMessageContact | null }) 
         const body = await response.json();
         if (!response.ok || body.ok !== true) throw new Error(response.status === 401 ? "SESSION_REQUIRED" : "STATUS_UNAVAILABLE");
         if (!active) return;
-        setView({ scopeKey, loading: false, data: body as OfficialStatus, error: "" });
-        if (body.delivery?.status && scopeKey) setReceipts(previous => updateOfficialReceipt(previous, scopeKey, { status: body.delivery.status }));
+        setView({ scopeKey, loading: false, data: body as WhatsAppStatus, error: "" });
+        if (body.delivery?.status && scopeKey) setReceipts(previous => updateReceipt(previous, scopeKey, { status: body.delivery.status }));
         else setReceipts(previous => {
           if (!scopeKey || !["session", "blocked"].includes(previous[scopeKey]?.status)) return previous;
           const next = { ...previous }; delete next[scopeKey]; return next;
         });
       } catch (error) {
         if (!active) return;
-        setView({ scopeKey, loading: false, data: null, error: error instanceof Error && error.message === "SESSION_REQUIRED" ? "Tu sesión ha caducado. Vuelve a entrar para consultar el envío oficial." : "No se pudo comprobar la conexión oficial. Pulsa «Comprobar estado» para consultarla de nuevo." });
+        setView({ scopeKey, loading: false, data: null, error: error instanceof Error && error.message === "SESSION_REQUIRED" ? "Tu sesión ha caducado. Vuelve a entrar para consultar el envío." : "No se pudo comprobar la conexión de WhatsApp. Pulsa «Comprobar estado» para consultarla de nuevo." });
       }
     })();
     return () => { active = false; controller.abort(); };
@@ -131,8 +136,11 @@ function OfficialSend({ contact }: { contact: CaptacionMessageContact | null }) 
   const status = current?.data;
   const receipt = scopeKey ? receipts[scopeKey] : null;
   const loading = Boolean(leadId && (!current || current.loading));
-  const ready = Boolean(contact && !loading && status?.ready && status.template && !receipt);
-  const preview = status?.preview_message || (contact && status?.template?.body ? status.template.body.replace(/\{\{1\}\}/g, () => captacionContactName(contact)) : "");
+  const connected = status?.provider === "qr" && status.configured && status.session?.state === "connected";
+  const ready = Boolean(contact && !loading && status?.ready && connected && !receipt);
+  const preview = status?.preview_message || "";
+  const sender = status?.session?.me?.phone;
+  const connectionLabel = connected ? "Revisar WhatsApp" : "Vincular WhatsApp";
 
   async function send() {
     if (!leadId || !scopeKey || !ready || inFlight.current.has(scopeKey)) return;
@@ -154,27 +162,30 @@ function OfficialSend({ contact }: { contact: CaptacionMessageContact | null }) 
       const body = await response.json();
       if (!response.ok || body.ok !== true) {
         const rejectedBeforeSending = [400, 401, 403, 404, 409].includes(response.status);
-        setReceipts(previous => updateOfficialReceipt(previous, targetKey, rejectedBeforeSending ? {
+        setReceipts(previous => updateReceipt(previous, targetKey, rejectedBeforeSending ? {
           status: "blocked", error: response.status === 401 ? "La sesión caducó antes de iniciar el envío. Vuelve a entrar y comprueba su estado." : "El envío no se inició. Revisa el contacto y la conexión, y pulsa «Comprobar estado».",
         } : { status: "unknown", error: "No se confirmó el envío. Comprueba su estado antes de continuar." }));
         return;
       }
-      setReceipts(previous => updateOfficialReceipt(previous, targetKey, { status: String(body.status || "unknown") }));
+      setReceipts(previous => updateReceipt(previous, targetKey, { status: String(body.status || "unknown") }));
     } catch {
-      setReceipts(previous => updateOfficialReceipt(previous, targetKey, { status: dispatched ? "unknown" : "session", error: dispatched ? "La conexión se interrumpió. El envío podría seguir en curso: comprueba su estado." : "No se inició el envío. Vuelve a entrar y comprueba el estado antes de continuar." }));
+      setReceipts(previous => updateReceipt(previous, targetKey, { status: dispatched ? "unknown" : "session", error: dispatched ? "La conexión se interrumpió. El envío podría seguir en curso: comprueba su estado." : "No se inició el envío. Vuelve a entrar y comprueba el estado antes de continuar." }));
     } finally { inFlight.current.delete(targetKey); }
   }
 
-  return <div className={styles.official} aria-label="Envío oficial por WhatsApp">
-    <div className={styles.officialTitle}><CheckCircle2 size={17} aria-hidden="true"/><strong>Mensaje + imagen por WhatsApp</strong><span>Envío oficial</span></div>
+  return <div className={styles.panelSend} aria-label="Enviar por WhatsApp vinculado">
+    <div className={styles.sendTitle}><CheckCircle2 size={17} aria-hidden="true"/><strong>Mensaje + imagen por WhatsApp</strong><span>Conexión QR</span></div>
+    <p className={styles.session}>{connected ? <>WhatsApp vinculado{sender ? <> · <strong>+{sender.replace(/^\+/, "")}</strong></> : ""}{status.session?.me?.name ? ` · ${status.session.me.name}` : ""}</> : status?.session?.state === "connecting" ? "WhatsApp está conectando…" : status?.session?.state === "qr" ? "El código QR está listo en la pestaña WhatsApp." : "Conecta tu número desde la pestaña WhatsApp."}</p>
     <p>{contact ? <>Para <strong>{captacionContactName(contact) || "el contacto seleccionado"}</strong> · {contact.cliente?.telefono || "Sin teléfono en el CRM"}</> : "Selecciona un contacto para comprobar su envío."}</p>
     {preview && <details className={styles.templatePreview}><summary>Ver la bienvenida que se enviará</summary><p>{preview}</p><small>Incluye la imagen de beneficios de Tarot Celestial.</small></details>}
-    <p className={styles.officialState} role="status">{loading ? "Comprobando conexión y envío anterior…" : receipt ? receipt.error || officialDeliveryMessage(receipt.status) : current?.error || (status ? status.ready ? "Todo preparado. Envía la bienvenida con su nombre y la imagen en un solo paso." : officialConfigurationMessage(status.reason) : "La plantilla oficial usa el nombre y el teléfono guardados en su ficha.")}</p>
+    <p className={styles.sendState} role="status">{loading ? "Comprobando conexión y envío anterior…" : receipt ? receipt.error || deliveryMessage(receipt.status) : current?.error || (status ? ready ? "Todo preparado. Envía la bienvenida con su nombre y la imagen en un solo paso." : configurationMessage(!connected && !status.reason ? "NOT_CONNECTED" : status.reason) : "La bienvenida usa el nombre y el teléfono guardados en su ficha.")}</p>
     <div className={styles.actions}>
       <button type="button" className={styles.whatsapp} disabled={!ready} onClick={() => void send()}><Send size={16} aria-hidden="true"/>{receipt?.status === "sending" ? "Envío en proceso…" : "Enviar WhatsApp"}</button>
       <button type="button" className={styles.checkStatus} disabled={!contact || loading} onClick={() => setRevision(value => value + 1)}><RefreshCw size={14} aria-hidden="true"/>Comprobar estado</button>
+      {onOpenWhatsApp ? <button type="button" className={styles.checkStatus} onClick={onOpenWhatsApp}><MessageCircle size={14} aria-hidden="true"/>{connectionLabel}</button> : null}
     </div>
-    <small>Se enviará la plantilla aprobada y la imagen al número del CRM. La preparación manual de abajo es independiente.</small>
+    {!onOpenWhatsApp ? <small>La vinculación se realiza desde WhatsApp en el panel de Centrales.</small> : null}
+    <small>Mantén encendido y con internet el PC que sostiene la conexión. Se enviará la bienvenida y la imagen al número del CRM; la preparación manual de abajo es independiente.</small>
   </div>;
 }
 

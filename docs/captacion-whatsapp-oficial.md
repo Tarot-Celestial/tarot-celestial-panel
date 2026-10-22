@@ -1,5 +1,7 @@
 # WhatsApp oficial para Captación
 
+> Referencia histórica. La ruta pública de Captación usa ahora WhatsApp vinculado por QR: consultar `captacion-whatsapp-qr.md`. Mantener `CAPTACION_WHATSAPP_ENABLED=false`; este documento no habilita la alternativa Twilio. Se conservan los recibos y el callback para el historial previo.
+
 El bloque de Captación permite enviar una bienvenida aprobada con el nombre del contacto y la imagen de beneficios. La API obtiene el destinatario del CRM y comprueba la sesión, la marca y la asignación del contacto. El navegador no puede proporcionar otro teléfono, texto o imagen para el envío oficial.
 
 ## Configuración de producción

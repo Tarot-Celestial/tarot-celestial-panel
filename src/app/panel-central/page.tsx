@@ -1625,6 +1625,7 @@ function CentralPage() {
           {tab === "sorteo" && <CentralRafflePanel />}
           {tab === "captacion" && (
             <CaptacionPanel
+              onOpenWhatsApp={() => handleSidebarTabChange("whatsapp")}
               onOpenClient={(clienteId) => {
                 setTab("crm" as any);
                 window.setTimeout(() => {

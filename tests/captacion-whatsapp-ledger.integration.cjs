@@ -8,6 +8,7 @@ let db;
 const query = async (sql, params = []) => (await db.query(sql, params)).rows;
 const claim = async (delivery = 100, request = 200, worker = 1, lead = 10, key = 'meta:111') => (await query('select tc_captacion_whatsapp_claim($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) value', [id(delivery), id(request), id(lead), id(worker), id(worker + 1000), key, 'HX' + 'b'.repeat(32), 'whatsapp:+17875551234', 'whatsapp:+17875550205', id(delivery + 500), id(lead === 12 ? 21 : 20), JSON.stringify(snapshot)]))[0].value;
 const record = async (status, sid = 'SM' + 'c'.repeat(32), source = 'provider_callback', delivery = 100, token = 600) => (await query('select tc_captacion_whatsapp_record($1,$2,$3,$4,$5,$6) value', [id(delivery), id(token), sid, status, null, source]))[0].value;
+const qrClaim = async (delivery = 100, request = 200, worker = 1, key = 'meta:111', session = 'tarot-celestial') => (await query('select tc_captacion_whatsapp_qr_claim($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) value', [id(delivery),id(request),id(10),id(worker),id(worker+1000),key,'whatsapp:+17875551234','whatsapp:+17875550205',id(delivery+500),id(20),JSON.stringify(snapshot),session]))[0].value;
 before(async () => {
   db = new PGlite();
   await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
@@ -21,6 +22,8 @@ before(async () => {
     insert into meta_lead_events values ('111','${id(10)}','processed',now()-interval '1 hour');`);
   const migration = fs.readFileSync(path.join(__dirname, '../supabase/migrations/20261022195347_captacion_whatsapp_delivery_ledger.sql'), 'utf8');
   await db.exec(migration); await db.exec(migration);
+  const qrMigration = fs.readFileSync(path.join(__dirname, '../supabase/migrations/20261022201312_captacion_whatsapp_qr_provider.sql'), 'utf8');
+  await db.exec(qrMigration); await db.exec(qrMigration);
 });
 beforeEach(async () => { await db.exec(`truncate captacion_whatsapp_delivery_events,captacion_whatsapp_deliveries;update captacion_leads set closed_at=null,cliente_id='${id(20)}' where id='${id(10)}';update crm_clientes set telefono_normalizado=null,telefono='+17875550205',pais='PR',nombre='María',apellido='Fixture';delete from meta_lead_events where leadgen_id <> '111';`); });
 after(async () => db.close());
@@ -68,5 +71,53 @@ test('claim rejects changed CRM snapshot fields or a merged customer before crea
   }
   await db.query('update captacion_leads set cliente_id=$1 where id=$2',[id(21),id(10)]);
   await assert.rejects(claim(),/CLIENT_CHANGED/);
+  assert.equal((await query('select count(*) total from captacion_whatsapp_deliveries'))[0].total,0);
+});
+
+test('QR claim is service-only, persists provider/session, and deduplicates simultaneous centrals', async () => {
+  assert.equal((await query("select has_function_privilege('authenticated','tc_captacion_whatsapp_qr_claim(uuid,uuid,uuid,uuid,uuid,text,text,text,uuid,uuid,jsonb,text)','EXECUTE') allowed"))[0].allowed,false);
+  const results = await Promise.all([qrClaim(),qrClaim(101,201,2)]);
+  assert.equal(results.filter(result => result.claimed).length,1);
+  const row = (await query('select * from captacion_whatsapp_deliveries'))[0];
+  assert.equal(row.provider,'qr'); assert.equal(row.gateway_session_id,'tarot-celestial');
+  assert.equal(row.content_sid,'qr:captacion-beneficios-v1');
+  assert.equal((await claim(102,202)).claimed,false);
+});
+
+test('QR and Twilio receipt sources cannot cross providers; QR IDs are opaque and monotonic', async () => {
+  await qrClaim();
+  await assert.rejects(record('delivered','SM'+'c'.repeat(32),'provider_callback'),/INVALID_SOURCE/);
+  await record('accepted','3EB0FIXTURE','qr_response');
+  await record('delivered','3EB0FIXTURE','qr_poll');
+  await record('accepted','3EB0FIXTURE','qr_response');
+  assert.equal((await query('select status from captacion_whatsapp_deliveries'))[0].status,'delivered');
+  await assert.rejects(record('read','bad/id','qr_poll'),/INVALID_MESSAGE/);
+  await assert.rejects(record('read','OTHER','qr_poll'),/MESSAGE_CONFLICT/);
+  await record('read','3EB0FIXTURE','qr_poll');
+  await record('failed','3EB0FIXTURE','qr_response');
+  assert.equal((await query('select status from captacion_whatsapp_deliveries'))[0].status,'read');
+  await db.exec(`insert into meta_lead_events values ('112','${id(10)}','processed',now());`);
+  await claim(102,202,1,10,'meta:112');
+  await assert.rejects(record('delivered','3EB0OTHER','qr_poll',102,602),/INVALID_SOURCE/);
+});
+
+test('QR failed and unknown claims survive new request IDs; a new submission gets a new operation', async () => {
+  await qrClaim(); await record('unknown',null,'qr_response');
+  assert.equal((await qrClaim(101,201,2)).claimed,false);
+  await record('failed',null,'qr_response'); assert.equal((await qrClaim(102,202)).claimed,false);
+  await db.exec(`insert into meta_lead_events values ('112','${id(10)}','processed',now());`);
+  assert.equal((await qrClaim(103,203,2,'meta:112')).claimed,true);
+  assert.equal((await qrClaim(104,200,2,'meta:112')).delivery.id,id(100));
+});
+
+test('QR claim enforces CRM snapshot, stable customer identity and valid saved session', async () => {
+  await assert.rejects(qrClaim(100,200,1,'meta:111','../other'),/INVALID_MESSAGE/);
+  for (const field of ['telefono_normalizado','telefono','pais','nombre','apellido']) {
+    await db.query(`update crm_clientes set ${field}=$1 where id=$2`, ['changed',id(20)]);
+    await assert.rejects(qrClaim(),/CLIENT_CHANGED/);
+    await db.query(`update crm_clientes set ${field}=$1 where id=$2`, [snapshot[field],id(20)]);
+  }
+  await db.query('update captacion_leads set cliente_id=$1 where id=$2',[id(21),id(10)]);
+  await assert.rejects(qrClaim(),/CLIENT_CHANGED/);
   assert.equal((await query('select count(*) total from captacion_whatsapp_deliveries'))[0].total,0);
 });

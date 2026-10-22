@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { workerFromRequest } from "@/lib/server/auth-worker";
+import { CaptacionWhatsAppError, captacionWhatsAppAdmin, captacionWhatsAppWorker } from "@/lib/server/captacion-whatsapp";
 import { whatsappGatewayFetch, whatsappSessionId } from "@/lib/server/whatsapp-gateway";
 
 export const runtime = "nodejs";
@@ -12,12 +12,14 @@ export const dynamic = "force-dynamic";
 const JID_RE = /^[0-9A-Za-z.:_-]{3,80}@(s\.whatsapp\.net|lid|g\.us)$/;
 
 async function authorize(req: Request) {
-  const me = await workerFromRequest(req);
-  if (!me) return { error: NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 }) };
-  if (!["central", "admin"].includes(String(me.role || ""))) {
-    return { error: NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 }) };
+  try {
+    // Validate the signature/session with Supabase; never authorize decoded JWT claims.
+    const me = await captacionWhatsAppWorker(req, captacionWhatsAppAdmin());
+    return { me };
+  } catch (error) {
+    const status = error instanceof CaptacionWhatsAppError ? error.status : 503;
+    return { error: NextResponse.json({ ok: false, error: status === 401 ? "NO_AUTH" : status === 403 ? "FORBIDDEN" : "UNAVAILABLE" }, { status }) };
   }
-  return { me };
 }
 
 function reply(result: { status: number; json: any }) {
@@ -46,7 +48,7 @@ export async function GET(req: Request) {
     }
     return fail("NOT_FOUND", 404);
   } catch (error: any) {
-    return fail(error?.message || "INTERNAL_ERROR", 500);
+    return fail("INTERNAL_ERROR", 500);
   }
 }
 
@@ -89,6 +91,6 @@ export async function POST(req: Request) {
 
     return fail("NOT_FOUND", 404);
   } catch (error: any) {
-    return fail(error?.message || "INTERNAL_ERROR", 500);
+    return fail("INTERNAL_ERROR", 500);
   }
 }

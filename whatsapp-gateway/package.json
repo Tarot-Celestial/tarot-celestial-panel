@@ -7,7 +7,7 @@
   "main": "server.mjs",
   "scripts": {
     "start": "node server.mjs",
-    "check": "node --check server.mjs && node --check store.mjs"
+    "check": "node --check server.mjs && node --check store.mjs && node --check captacion-journal.mjs && node --check captacion-sender.mjs"
   },
   "engines": {
     "node": ">=20.0.0"

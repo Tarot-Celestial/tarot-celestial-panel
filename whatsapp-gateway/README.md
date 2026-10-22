@@ -6,6 +6,13 @@ Apartado **WhatsApp** del panel de centrales: se escanea un QR, se ven los chats
 
 ## Cómo funciona
 
+La instalación local actual mantiene el gateway en `127.0.0.1:8787`. El proceso
+`bridge-worker.mjs` consulta al backend mediante HTTPS saliente y ejecuta los
+comandos autorizados en localhost. No requiere un puerto público ni un túnel.
+El PC debe permanecer encendido y conectado; si se apaga, el panel debe indicar
+que el dispositivo está desconectado. Vincular o desvincular una cuenta siempre
+es una acción explícita en el apartado WhatsApp.
+
 ```
 Navegador (panel central)
    │  /api/central/whatsapp/*   (comprueba que eres central/admin)
@@ -23,7 +30,7 @@ Vercel es *serverless*: no puede tener una conexión abierta 24 h. Por eso la se
 Necesitas Node 20 o superior. Elige una opción:
 
 **Railway / Render / Fly.io (con Docker)**
-1. Crea un servicio nuevo apuntando a la carpeta `whatsapp-gateway` del repositorio (usa el `Dockerfile` incluido).
+1. Usa la raíz del repositorio como contexto de construcción y `whatsapp-gateway/Dockerfile` como Dockerfile. Así se incluye la imagen aprobada de captación, además del servicio.
 2. Añade un **volumen persistente** montado en `/data`. Sin volumen, cada reinicio obliga a escanear el QR otra vez.
 3. Variables de entorno:
    - `WA_GATEWAY_SECRET` → un secreto largo (`openssl rand -hex 32`).
@@ -31,8 +38,7 @@ Necesitas Node 20 o superior. Elige una opción:
 
 **VPS propio**
 ```bash
-cd whatsapp-gateway
-docker build -t tc-whatsapp .
+docker build -f whatsapp-gateway/Dockerfile -t tc-whatsapp .
 docker run -d --name tc-whatsapp --restart unless-stopped \
   -p 8787:8787 -v tc-whatsapp-data:/data \
   -e WA_GATEWAY_SECRET=TU_SECRETO tc-whatsapp
@@ -44,6 +50,29 @@ Sin Docker: `npm install && WA_GATEWAY_SECRET=... node server.mjs`.
 Comprueba que responde: `https://tu-gateway/health` → `{"ok":true,...}`.
 
 Importante: ejecuta **una sola instancia** del gateway. Dos instancias con la misma sesión se desconectan entre sí.
+
+## Envíos de captación y confirmación
+
+`POST /sessions/:id/captacion` admite únicamente `operationId` (UUID), `phone`
+(E.164), `name` y `expectedSender` (número de la cuenta vinculada). El servidor
+adjunta la imagen fija aprobada y el mensaje de captación personalizado; no acepta
+URLs, imágenes ni textos arbitrarios. El backend debe resolver el contacto y
+autorizarlo antes de crear el comando. `GET /sessions/:id/captacion/:operationId`
+comprueba el recibo sin repetir el envío.
+
+La reserva se escribe con creación exclusiva y `fsync` en
+`WA_DATA_DIR/captacion-outbox` antes de llamar a WhatsApp. Conserva esta carpeta
+cuando cierres sesión, reinstales o cambies la cuenta: forma parte del historial
+que impide duplicados. Un fallo o una respuesta ambigua quedan como `unknown` y
+no se reintentan automáticamente. `accepted` solo confirma la aceptación del
+servidor; `delivered` y `read` dependen de los recibos de WhatsApp. El historial
+del gateway nunca marca una gestión como realizada por sí solo.
+
+Pruebas sin mensajes reales, desde la raíz:
+
+```bash
+node --test --test-isolation=none tests/whatsapp-captacion-gateway.test.cjs
+```
 
 ## 2. Conectar el panel (Vercel)
 
