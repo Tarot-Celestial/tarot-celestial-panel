@@ -155,6 +155,41 @@ async function fetchFallback(worker: AnyRow, scope: string, page: number) {
   }));
 }
 
+async function recentMetaSubmissions(rows: AnyRow[]) {
+  const latest = new Map<string, string>();
+  const ids = rows.map(row => String(row.id));
+  if (!ids.length) return latest;
+  const now = Date.now();
+  const since = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+  // Only read timestamps for this already-authorized page. The event ledger
+  // retains repeat submissions without overwriting the customer's workflow.
+  // Original Meta dates avoid highlighting historical backfills as new.
+  const batchSize = 500;
+  try {
+    for (let page = 0; ; page++) {
+      const { data, error } = await supabase.from("meta_lead_events")
+        .select("captacion_lead_id,meta_created_at")
+        .in("captacion_lead_id", ids)
+        .eq("status", "processed")
+        .gte("meta_created_at", since)
+        .lte("meta_created_at", new Date(now).toISOString())
+        .order("meta_created_at", { ascending: false })
+        .order("leadgen_id", { ascending: false })
+        .range(page * batchSize, (page + 1) * batchSize - 1);
+      if (error) throw error;
+      for (const event of data || []) {
+        const id = String(event.captacion_lead_id);
+        if (!latest.has(id)) latest.set(id, event.meta_created_at);
+      }
+      if (!data || data.length < batchSize) break;
+    }
+  } catch {
+    // Optional highlighting must not prevent access to the existing lead list.
+    latest.clear();
+  }
+  return latest;
+}
+
 
 function cleanNum(value: unknown) {
   const n = Number(value);
@@ -292,6 +327,7 @@ export async function GET(req: NextRequest) {
     if (worker.role === "central") {
       raw = raw.filter((item: AnyRow) => !item?.assigned_worker_id || String(item.assigned_worker_id) === String(worker.id));
     }
+    const latestMeta = await recentMetaSubmissions(raw);
 
     const workerIds = Array.from(new Set(raw.map((item) => String(item?.assigned_worker_id || "")).filter(Boolean)));
     const workerNames = new Map<string, string>();
@@ -303,6 +339,7 @@ export async function GET(req: NextRequest) {
     let items: LeadItem[] = raw.map((item) => ({
       ...item,
       assigned_worker_name: workerNames.get(String(item?.assigned_worker_id || "")) || null,
+      latest_meta_lead_at: latestMeta.get(String(item.id)) || null,
       workflow_state: computeWorkflowState(item),
       is_closed: isClosed(item),
     }));

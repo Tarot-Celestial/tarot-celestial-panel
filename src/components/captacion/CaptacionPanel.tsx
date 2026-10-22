@@ -30,6 +30,7 @@ type Lead = {
   assigned_worker_name?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+  latest_meta_lead_at?: string | null;
   cliente?: { id?: string | null; nombre?: string | null; apellido?: string | null; telefono?: string | null; email?: string | null; origen?: string | null } | null;
 };
 
@@ -485,9 +486,13 @@ function Select({ icon: Icon, value, onChange, label, options }: { icon?: typeof
 function LeadCard({ lead, fresh, busy, onAction, onOpen }: { lead: Lead; fresh: boolean; busy: boolean; onAction: (lead: Lead, action: ActionKey, next?: string) => void; onOpen: (lead: Lead) => void }) {
   const phase = phaseOf(lead);
   const due = urgency(lead);
+  const metaLeadAt = timestamp(lead.latest_meta_lead_at);
+  const age = Date.now() - metaLeadAt;
+  const handledAt = Math.max(timestamp(lead.last_contact_at), timestamp(lead.contacted_at), timestamp(lead.closed_at));
+  const recent = metaLeadAt > 0 && age >= 0 && age < 24 * 60 * 60 * 1000 && handledAt < metaLeadAt;
   const [schedule, setSchedule] = useState(() => dateTimeInput(lead.next_contact_at));
-  return <div className={`${styles.card} ${fresh ? styles.fresh : ""}`}>
-    {fresh ? <span className={styles.newFlag}>✨ NUEVO LEAD</span> : null}
+  return <div className={`${styles.card} ${recent ? styles.recent : ""} ${fresh ? styles.fresh : ""}`}>
+    {recent ? <div className={styles.newArrival} title={`Nuevo formulario recibido el ${formatDate(lead.latest_meta_lead_at)}. Destacado durante 24 horas o hasta su próxima gestión.`}><span className={styles.newFlag}><Sparkles aria-hidden="true" />NEW</span><span>Formulario reciente</span></div> : null}
     <div className={styles.cardTop}><div><h4>{fullName(lead)}</h4><a href={phone(lead) ? `tel:${phone(lead)}` : undefined}><Phone />{phone(lead) || "Sin teléfono"}</a>{lead.cliente?.email ? <span><Mail />{lead.cliente.email}</span> : null}</div><span className={`${styles.due} ${styles[due.key]}`}>{due.label}</span></div>
     <div className={styles.meta}><span className={styles.phase}>{phase === "nuevo" ? "Cliente nuevo" : phase === "pend_free" ? "Pendiente FREE" : phase === "pend_cap" ? "Pendiente captación" : phase === "cliente" ? "Cliente" : "Cerrado"}</span><span>{lead.origen || lead.cliente?.origen || "Origen sin registrar"}</span>{lead.campaign_name ? <span>{lead.campaign_name}</span> : null}</div>
     <dl><div><dt>Próxima gestión</dt><dd>{formatDate(lead.next_contact_at)}</dd></div><div><dt>Última gestión</dt><dd>{lead.last_contact_at ? relative(lead.last_contact_at).replace("Vencida", "Hace") : "Sin gestión"}</dd></div><div><dt>Intentos</dt><dd>{Math.max(1, Number(lead.intento_actual || 1))}/{Math.max(3, Number(lead.max_intentos || 3))}</dd></div>{lead.assigned_worker_name ? <div><dt>Central</dt><dd>{lead.assigned_worker_name}</dd></div> : null}</dl>

@@ -50,6 +50,48 @@ function fixture(options = {}) {
   };
 }
 
+function leadCardFixture() {
+  const now = Date.parse('2026-10-22T20:00:00Z');
+  class FixedDate extends Date { static now() { return now; } }
+  const exports = {}, jsx = (type, props) => ({ type, props });
+  vm.runInNewContext(compiled + '\nexports.card = LeadCard;', { exports, Date: FixedDate, Set, Map, require(name) {
+    if (name === 'react') return { useState(initial) { return [typeof initial === 'function' ? initial() : initial, () => {}]; } };
+    if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: 'Fragment' };
+    if (name === 'lucide-react') return new Proxy({}, { get: (_, key) => 'Icon:' + String(key) });
+    if (name === '@/lib/supabase-browser') return { supabaseBrowser: () => ({}) };
+    if (name === '@/components/global/BrandSwitcher') return { getActiveBrand: () => 'celestial' };
+    if (name.endsWith('.css')) return { default: new Proxy({}, { get: (_, key) => String(key) }) };
+    throw new Error(name);
+  } });
+  return (extra = {}, fresh = false) => exports.card({ lead: row('card', 'nuevo', extra), fresh, busy: false, onAction() {}, onOpen() {} });
+}
+
+test('NEW follows the original Meta submission time, not an import, update or transient Realtime insert', () => {
+  const card = leadCardFixture();
+  const recent = { latest_meta_lead_at: '2026-10-22T19:59:00Z' };
+  assert.match(text(card(recent)), /NEW/);
+  assert.match(text(card({ latest_meta_lead_at: '2026-10-21T20:00:01Z' })), /NEW/);
+  for (const latest_meta_lead_at of [null, 'invalid', '2026-10-14T12:00:00Z', '2026-10-21T20:00:00Z', '2026-10-22T20:00:01Z']) {
+    assert.doesNotMatch(text(card({ latest_meta_lead_at, created_at: recent.latest_meta_lead_at, updated_at: recent.latest_meta_lead_at }, true)), /NEW/, String(latest_meta_lead_at));
+  }
+});
+
+test('an existing contact keeps NEW for a fresh submission until it is handled, without changing its workflow', () => {
+  const card = leadCardFixture();
+  const latest_meta_lead_at = '2026-10-22T19:30:00Z';
+  const existing = { latest_meta_lead_at, estado: 'pend_cap', workflow_state: 'pend_cap', created_at: '2026-01-01T00:00:00Z', last_contact_at: '2026-10-20T10:00:00Z' };
+  assert.match(text(card(existing)), /NEW/);
+  assert.match(text(card(existing)), /Pendiente captación/);
+  const formerlyClosed = card({ ...existing, estado: 'no_interesado', workflow_state: 'no_interesado', closed_at: '2026-10-20T10:00:00Z' });
+  assert.match(text(formerlyClosed), /NEW/);
+  assert.match(text(formerlyClosed), /Cerrado/);
+  for (const field of ['last_contact_at', 'contacted_at', 'closed_at']) {
+    assert.match(text(card({ ...existing, [field]: '2026-10-22T19:29:59Z' })), /NEW/, field + ' before');
+    assert.doesNotMatch(text(card({ ...existing, [field]: latest_meta_lead_at })), /NEW/, field + ' equal');
+    assert.doesNotMatch(text(card({ ...existing, [field]: '2026-10-22T19:30:01Z' })), /NEW/, field + ' after');
+  }
+});
+
 test('initial load follows pagination and reaches all 398 contacts', async () => {
   const f = fixture(); try {
     await f.flush(); assert.equal(f.requests.length, 1);
