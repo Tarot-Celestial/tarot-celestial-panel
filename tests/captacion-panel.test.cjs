@@ -106,6 +106,114 @@ test('an existing contact keeps NEW for a fresh submission until it is handled, 
   }
 });
 
+const cardsInColumn = (f, key) => {
+  const column = nodes(f.tree()).find(node => node.type === 'article' && String(node.props.className).split(' ').includes(key));
+  return nodes(column).filter(node => node.type?.name === 'LeadCard').map(node => node.props.lead);
+};
+
+test('pending NEW submissions lead every operational column newest-first regardless of the selected sort', async () => {
+  const now = Date.now(), at = minutes => new Date(now + minutes * 60000).toISOString();
+  const states = ['nuevo', 'pend_free', 'pend_cap'];
+  const items = states.flatMap(state => [
+    row(`${state}-regular-old`, state, { created_at: at(-90000), next_contact_at: at(-90000), intento_actual: 3, origen: 'Zulu' }),
+    row(`${state}-regular-recent`, state, { created_at: at(-1440), next_contact_at: at(-2880), intento_actual: 1, origen: 'Alpha' }),
+    row(`${state}-new-earlier`, state, { created_at: at(-300000), next_contact_at: at(5000), latest_meta_lead_at: at(-60), last_contact_at: at(-5000) }),
+    row(`${state}-new-latest`, state, { created_at: at(-500000), next_contact_at: at(5000), latest_meta_lead_at: at(-1), last_contact_at: at(-5000) }),
+  ]);
+  const f = fixture(); try {
+    await f.flush(); await f.respond(0, body(items));
+    for (const sort of ['priority','recent','oldest','next','attempts','origin']) {
+      await f.change('Prioridad automática', sort);
+      for (const state of states) {
+        const regular = ['recent','origin'].includes(sort) ? ['regular-recent','regular-old'] : ['regular-old','regular-recent'];
+        assert.deepEqual(cardsInColumn(f,state).map(item => item.id), [`${state}-new-latest`,`${state}-new-earlier`,...regular.map(suffix => `${state}-${suffix}`)], `${state}: ${sort}`);
+        assert.ok(cardsInColumn(f,state).every(item => item.workflow_state === state));
+      }
+    }
+    assert.match(f.text(), /6 solicitudes NEW sin gestionar en esta vista/);
+    assert.equal(f.requests.length, 1, 'sorting is local and does not create requests');
+  } finally { f.close(); }
+});
+
+test('NEW priority respects filters, does not promote handled or expired submissions, and includes closed reentries in their own column', async () => {
+  const now = Date.now(), at = minutes => new Date(now + minutes * 60000).toISOString();
+  const f = fixture(); try {
+    await f.flush(); await f.respond(0, body([])); await f.click('Todos');
+    const rows = [
+      row('regular', 'nuevo', { created_at: at(-2), campaign_name: 'Keep' }),
+      row('expired', 'nuevo', { created_at: at(-10000), latest_meta_lead_at: at(-1441), campaign_name: 'Keep' }),
+      row('future', 'nuevo', { created_at: at(-10001), latest_meta_lead_at: at(10), campaign_name: 'Keep' }),
+      row('handled', 'nuevo', { created_at: at(-10002), latest_meta_lead_at: at(-60), contacted_at: at(-30), campaign_name: 'Keep' }),
+      row('matching-new', 'nuevo', { created_at: at(-10003), latest_meta_lead_at: at(-60), campaign_name: 'Keep' }),
+      row('hidden-new', 'nuevo', { created_at: at(-10004), latest_meta_lead_at: at(-1), campaign_name: 'Other' }),
+      row('closed-regular', 'no_interesado', { created_at: at(-2), closed_at: at(-1000), campaign_name: 'Keep' }),
+      row('closed-new', 'no_interesado', { created_at: at(-10005), closed_at: at(-1000), latest_meta_lead_at: at(-2), campaign_name: 'Keep' }),
+      row('client-regular', 'cliente', { created_at: at(-2), campaign_name: 'Keep' }),
+      row('client-new', 'cliente', { created_at: at(-10005), last_contact_at: at(-1000), latest_meta_lead_at: at(-2), campaign_name: 'Keep' }),
+    ];
+    await f.respond(1, body(rows)); await f.change('Prioridad automática','recent'); await f.change('Todas las campañas','Keep');
+    assert.deepEqual(cardsInColumn(f,'nuevo').map(item => item.id), ['matching-new','regular','expired','future','handled']);
+    assert.deepEqual(cardsInColumn(f,'cerrado').map(item => item.id), ['closed-new','closed-regular']);
+    assert.deepEqual(cardsInColumn(f,'cliente').map(item => item.id), ['client-new','client-regular']);
+    assert.match(f.text(), /3 solicitudes NEW sin gestionar en esta vista/);
+    assert.equal(f.cards().some(item => item.id === 'hidden-new'),false);
+    assert.equal(f.cards().find(item => item.id === 'closed-new').estado,'no_interesado');
+  } finally { f.close(); }
+});
+
+test('NEW priority is applied before card limits and preserves pagination and WhatsApp recipient selection on refresh', async () => {
+  const now = Date.now(), at = minutes => new Date(now + minutes * 60000).toISOString();
+  const older = Array.from({length:250},(_,index) => row(`older-${index}`, 'nuevo', { created_at: at(-5000-index), next_contact_at: at(-5000) }));
+  const firstNew = row('first-new','nuevo',{ created_at: at(-100000), latest_meta_lead_at: at(-10) });
+  const f = fixture(); try {
+    await f.flush(); await f.respond(0,body(older,1)); await f.respond(1,body([firstNew]));
+    assert.equal(f.count(),251); assert.equal(f.cards().length,18); assert.equal(f.cards()[0].id,'first-new');
+    await f.click('Ver 18 más '); assert.equal(f.cards().length,36);
+    await f.prepare('older-0'); const scrolls = f.scrolls.length;
+    await f.click('Actualizar');
+    const latest = row('latest-new','nuevo',{ created_at: at(-200000), latest_meta_lead_at: at(-1) });
+    await f.respond(2,body([...older,firstNew,latest]));
+    assert.deepEqual(f.cards().slice(0,2).map(item => item.id),['latest-new','first-new']);
+    assert.equal(f.cards().length,36); assert.equal(f.composer().selectedLeadId,'older-0'); assert.equal(f.scrolls.length,scrolls);
+    assert.equal(f.composer().contacts.length,252);
+  } finally { f.close(); }
+});
+
+test('management removes NEW priority immediately and a rejected action restores its original position', async () => {
+  const now = Date.now(), at = minutes => new Date(now + minutes * 60000).toISOString();
+  const fresh = row('new-meta','pend_free',{ created_at: at(-10000), latest_meta_lead_at: at(-1) });
+  const f = fixture(); try {
+    await f.flush(); await f.respond(0,body([row('regular','pend_free',{created_at:at(-2)}),fresh]));
+    await f.change('Prioridad automática','recent'); assert.deepEqual(f.cards().map(item=>item.id),['new-meta','regular']);
+    await f.manage('new-meta','no_contesta'); assert.deepEqual(f.cards().map(item=>item.id),['regular','new-meta']);
+    assert.doesNotMatch(f.text(),/solicitud NEW sin gestionar/);
+    await f.respond(1,{ok:false,error:'Fixture rejected'},403);
+    assert.deepEqual(f.cards().map(item=>item.id),['new-meta','regular']);
+    assert.match(f.text(),/1 solicitud NEW sin gestionar en esta vista/);
+  } finally { f.close(); }
+});
+
+test('a server-confirmed reentry appears first in Cliente nuevo without changing historical closure or WhatsApp identity', async () => {
+  const now = Date.now(), at = minutes => new Date(now + minutes * 60000).toISOString();
+  const closure = at(-100000);
+  const reentry = row('new-request','no_interesado',{ created_at: at(-200000), closed_at: closure, latest_meta_lead_at: at(-1), new_submission_pending: true, reentry_pending: true });
+  const f = fixture(); try {
+    await f.flush(); await f.respond(0,body([row('regular','nuevo'),reentry,row('new-free','pend_free',{ latest_meta_lead_at: at(-2), new_submission_pending: true })]));
+    assert.deepEqual(cardsInColumn(f,'nuevo').map(item => item.id),['new-request','regular']);
+    assert.deepEqual(cardsInColumn(f,'pend_free').map(item => item.id),['new-free']);
+    assert.equal(f.count('Nuevos'),2); assert.match(f.text(),/2 solicitudes NEW sin gestionar en esta vista/);
+    await f.prepare('new-request');
+    const contact = f.composer().contacts.find(item => item.id === 'new-request');
+    assert.equal(contact.estado,'no_interesado'); assert.equal(contact.workflow_state,'no_interesado'); assert.equal(contact.closed_at,closure);
+    assert.equal(f.composer().selectedLeadId,'new-request'); assert.equal(f.requests.length,1);
+  } finally { f.close(); }
+  const card = leadCardFixture();
+  const base = { estado:'no_interesado', workflow_state:'no_interesado', closed_at:'2026-10-20T10:00:00Z', reentry_pending:true };
+  assert.match(text(card({...base,latest_meta_lead_at:'2026-10-22T19:59:00Z'})),/Cliente nuevo/);
+  assert.match(text(card({...base,latest_meta_lead_at:'2026-10-21T19:59:00Z'})),/Cerrado/);
+  assert.doesNotMatch(text(card({...base,latest_meta_lead_at:'2026-10-22T19:59:00Z',contacted_at:'2026-10-22T20:00:00Z'})),/NEW/);
+});
+
 test('initial load follows pagination and reaches all 398 contacts', async () => {
   const f = fixture(); try {
     await f.flush(); assert.equal(f.requests.length, 1);

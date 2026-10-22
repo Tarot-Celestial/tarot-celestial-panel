@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getActiveBrand } from '@/components/global/BrandSwitcher';
 import { supabaseBrowser } from '@/lib/supabase-browser';
-import { CAPTACION_ATTENTION_REFRESH, captacionAnnouncementDue, parseCaptacionAttention, type CaptacionAttentionItem, type CaptacionAttentionNotice } from '@/lib/captacion-attention';
+import { CAPTACION_ATTENTION_REFRESH, captacionAnnouncementDue, captacionEntryKey, captacionKnownEntries, parseCaptacionAttention, type CaptacionAttentionItem, type CaptacionAttentionNotice } from '@/lib/captacion-attention';
 
-type State = { identity: string; notice: CaptacionAttentionNotice | null; error: string };
+type State = { identity: string; items: CaptacionAttentionItem[]; notice: CaptacionAttentionNotice | null; error: string };
 type Options = { enabled: boolean; workerId?: string | null; blocked?: boolean; onReminder?: () => void };
-const empty: State = { identity: '', notice: null, error: '' };
+const EMPTY_ITEMS: CaptacionAttentionItem[] = [];
+const empty: State = { identity: '', items: EMPTY_ITEMS, notice: null, error: '' };
 
 export function useCaptacionAttention({ enabled, workerId, blocked = false, onReminder }: Options) {
   const [brand, setBrand] = useState<'celestial' | 'orion'>('celestial');
@@ -36,8 +37,8 @@ export function useCaptacionAttention({ enabled, workerId, blocked = false, onRe
     let finishFallback: (() => void) | undefined;
     const valid = (version: number) => !disposed && generation === version && current.current.enabled
       && current.current.workerId === workerId && current.current.brand === brand;
-    const key = () => `tc-captacion-attention-v1:${userId}:${identity}`;
-    const hide = (error = '') => { if (!disposed) setState(previous => previous.identity === identity && !previous.notice && previous.error === error ? previous : { identity, notice: null, error }); };
+    const key = () => `tc-captacion-attention-v2:${userId}:${identity}`;
+    const hide = (error = '') => { if (!disposed) setState(previous => previous.identity === identity && !previous.notice && previous.error === error && previous.items === rows ? previous : { identity, items: rows, notice: null, error }); };
     const invalidate = () => {
       generation++; controller?.abort(); controller = null; loading = false; snapshotValid = false;
       window.clearTimeout(coalesced); coalesced = undefined;
@@ -46,25 +47,29 @@ export function useCaptacionAttention({ enabled, workerId, blocked = false, onRe
       snapshotValid = false;
       hide(error instanceof Error && error.name !== 'AbortError' ? error.message : 'No puedo comprobar Captación ahora. Reintentaré al recuperar la conexión.');
     };
-    const readDelivery = (): { at?: number; owner?: string } => {
+    const readDelivery = (): { at?: number; owner?: string; entries?: string[] } => {
       try { const value = JSON.parse(window.localStorage.getItem(key()) || '{}'); return value && typeof value === 'object' ? value : {}; } catch { return {}; }
     };
 
     const check = async () => {
       if (disposed || document.hidden || !snapshotValid || !userId || claiming || current.current.blocked || Date.now() - fetchedAt > 20_000) return;
       const version = generation, now = Date.now() + clockOffset;
-      rows = parseCaptacionAttention(rows, now);
+      const unexpired = parseCaptacionAttention(rows, now);
+      if (unexpired.length !== rows.length) rows = unexpired;
       if (!rows.length) { hide(); return; }
-      if (!captacionAnnouncementDue(readDelivery().at, now)) return;
+      const due = (delivered: ReturnType<typeof readDelivery>, active: CaptacionAttentionItem[], at: number) => {
+        const announced = new Set(captacionKnownEntries(delivered.entries, at));
+        return active.some(item => !announced.has(captacionEntryKey(item))) || captacionAnnouncementDue(delivered.at, at);
+      };
+      if (!due(readDelivery(), rows, now)) return;
       claiming = true;
       const claim = async (serialized: boolean) => {
         if (!valid(version) || document.hidden || current.current.blocked || !snapshotValid) return;
         const delivered = readDelivery();
-        if (!captacionAnnouncementDue(delivered.at, now)) return;
-        const record = { at: now, owner: tabId };
-        // A shared, non-sensitive delivery time prevents refreshes and other
-        // windows from announcing the same queue again during this minute.
-        try { window.localStorage.setItem(key(), JSON.stringify(record)); }
+        if (!due(delivered, rows, now)) return;
+        // Claim only the owner first. Mark an entry announced AFTER the notice
+        // can be shown, so an interrupted fallback claim cannot lose an arrival.
+        try { window.localStorage.setItem(key(), JSON.stringify({ ...delivered, owner: tabId })); }
         catch { fail(new Error('Activa el almacenamiento del navegador para recibir avisos de Captación sin duplicados.')); return; }
         if (!serialized) {
           // Older browsers lack Web Locks. Let competing tabs settle their
@@ -77,7 +82,11 @@ export function useCaptacionAttention({ enabled, workerId, blocked = false, onRe
         if (!valid(version) || document.hidden || current.current.blocked || !snapshotValid || readDelivery().owner !== tabId) return;
         const active = parseCaptacionAttention(rows, Date.now() + clockOffset);
         if (!active.length) return;
-        setState({ identity, error: '', notice: { key: `${identity}:${now}`, announcedAt: now, items: active } });
+        const announcedAt = Date.now() + clockOffset;
+        const entries = [...new Set([...captacionKnownEntries(delivered.entries, announcedAt), ...active.map(captacionEntryKey)])];
+        try { window.localStorage.setItem(key(), JSON.stringify({ at: announcedAt, owner: tabId, entries })); }
+        catch { fail(new Error('Activa el almacenamiento del navegador para recibir avisos de Captación sin duplicados.')); return; }
+        setState({ identity, items: active, error: '', notice: { key: `${identity}:${announcedAt}:${entries.length}`, announcedAt, items: active } });
         current.current.onReminder?.();
       };
       try {
@@ -116,7 +125,7 @@ export function useCaptacionAttention({ enabled, workerId, blocked = false, onRe
           }
           fetchedAt = Date.now(); clockOffset = Date.parse(payload.server_time) - fetchedAt;
           rows = parseCaptacionAttention(payload.items, fetchedAt + clockOffset); snapshotValid = true;
-          setState(previous => ({ identity, error: '', notice: previous.identity === identity && previous.notice && rows.length
+          setState(previous => ({ identity, items: rows, error: '', notice: previous.identity === identity && previous.notice && rows.length
             ? { ...previous.notice, items: rows } : null }));
           void check();
         } finally { window.clearTimeout(timeout); }
@@ -124,7 +133,7 @@ export function useCaptacionAttention({ enabled, workerId, blocked = false, onRe
       finally { if (valid(version)) { loading = false; controller = null; } }
     };
     const visible = () => { if (!document.hidden) void load(); };
-    const changed = () => { invalidate(); hide(); coalesced = window.setTimeout(() => { coalesced = undefined; void load(); }, 900); };
+    const changed = () => { invalidate(); coalesced = window.setTimeout(() => { coalesced = undefined; void load(); }, 900); };
     const offline = () => { invalidate(); fail(new Error('Sin conexión. Los avisos de Captación volverán al reconectar.')); };
     const storage = (event: StorageEvent) => {
       if (userId && event.key === key() && readDelivery().owner !== tabId) hide();
@@ -157,5 +166,5 @@ export function useCaptacionAttention({ enabled, workerId, blocked = false, onRe
   }, [enabled, workerId, brand]);
 
   const own = enabled && !!workerId && state.identity === `${workerId}:${brand}`;
-  return { notice: own && !blocked ? state.notice : null, error: own ? state.error : '', refresh, dismiss, brand };
+  return { items: own ? state.items : EMPTY_ITEMS, notice: own && !blocked ? state.notice : null, error: own ? state.error : '', refresh, dismiss, brand };
 }
