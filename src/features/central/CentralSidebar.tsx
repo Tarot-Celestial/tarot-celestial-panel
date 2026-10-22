@@ -66,7 +66,7 @@ export default function CentralSidebar<T extends string = string>({ items, activ
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [chatUnread, setChatUnread] = useState(0);
   const { hiddenKeys, toggleHidden, resetHidden } = useHiddenNavigation("tc:navigation:hidden:central:v1");
-  const visibleItems = items.filter((item) => !hiddenKeys.includes(String(item.key)) || (String(item.key) === "captacion" && (item.badge || 0) > 0));
+  const visibleItems = items.filter((item) => !hiddenKeys.includes(String(item.key)) || (["captacion", "whatsapp"].includes(String(item.key)) && (item.badge || 0) > 0));
   const sections = NAV_SECTIONS.map(section => ({
     ...section,
     items: section.keys.flatMap(key => visibleItems.filter(item => String(item.key) === key)),
@@ -112,7 +112,10 @@ export default function CentralSidebar<T extends string = string>({ items, activ
             const expanded = hasChildren && (openGroups[key] ?? childActive);
             const notificationAlert = key === "notificaciones" && typeof item.badge === "number" && item.badge > 0;
             const captacionUrgent = key === "captacion" && typeof item.badge === "number" && item.badge > 0;
-            const tone = navTone(key, notificationAlert || captacionUrgent);
+            const whatsappUrgent = key === "whatsapp" && typeof item.badge === "number" && item.badge > 0;
+            const operationalUrgent = captacionUrgent || whatsappUrgent;
+            const pendingLabel = whatsappUrgent ? `${item.badge} mensajes sin leer` : `${item.badge} contactos nuevos pendientes`;
+            const tone = navTone(key, notificationAlert || operationalUrgent);
             const toneStyle = { "--nav-rgb": tone.rgb } as CSSProperties;
             const label = NAV_LABELS[key] || item.label;
             const submenuId = `${sidebarId}-submenu-${key}`;
@@ -122,12 +125,13 @@ export default function CentralSidebar<T extends string = string>({ items, activ
                 <button
                   data-companion-nav={item.key}
                   data-captacion-pending={captacionUrgent ? item.badge : undefined}
+                  data-whatsapp-unread={whatsappUrgent ? item.badge : undefined}
                   className={[
                     styles.navButton,
                     active ? styles.navButtonActive : "",
                     tone.className === "invoice" ? styles.invoiceButton : "",
                     tone.className === "alert" ? styles.alertButton : "",
-                    captacionUrgent ? styles.captacionUrgent : "",
+                    operationalUrgent ? styles.captacionUrgent : "",
                   ].filter(Boolean).join(" ")}
                   style={toneStyle}
                   onClick={() => {
@@ -136,8 +140,8 @@ export default function CentralSidebar<T extends string = string>({ items, activ
                   }}
                   type="button"
                   aria-current={activeTab === item.key ? "page" : undefined}
-                  aria-label={captacionUrgent ? `Captación: ${item.badge} contactos nuevos pendientes${item.badgeStale ? ", pendiente de actualizar" : ""}` : undefined}
-                  title={captacionUrgent ? (item.badgeStale ? "Último recuento confirmado. Recuperando la conexión." : "Hay contactos nuevos pendientes. Atiéndelos ahora.") : undefined}
+                  aria-label={operationalUrgent ? `${label}: ${pendingLabel}${item.badgeStale ? ", pendiente de actualizar" : ""}` : undefined}
+                  title={operationalUrgent ? (item.badgeStale ? "Último recuento confirmado. Recuperando la conexión." : whatsappUrgent ? "Hay mensajes de WhatsApp sin leer. Revisa la bandeja." : "Hay contactos nuevos pendientes. Atiéndelos ahora.") : undefined}
                 >
                   <div className={styles.navContent}>
                     <div className={styles.iconHud} aria-hidden="true">
@@ -150,10 +154,10 @@ export default function CentralSidebar<T extends string = string>({ items, activ
                   </div>
                   {typeof item.badge === "number" && item.badge > 0 ? (
                     <span
-                      aria-label={captacionUrgent ? `${item.badge} contactos nuevos pendientes` : `${item.badge} notificaciones pendientes`}
-                      className={`${styles.badge} ${captacionUrgent ? styles.captacionBadge : ""}`}
+                      aria-label={operationalUrgent ? pendingLabel : `${item.badge} notificaciones pendientes`}
+                      className={`${styles.badge} ${operationalUrgent ? styles.captacionBadge : ""}`}
                     >
-                      {captacionUrgent ? item.badge : item.badge > 99 ? "99+" : item.badge}
+                      {operationalUrgent ? item.badge : item.badge > 99 ? "99+" : item.badge}
                     </span>
                   ) : (
                     <span className={styles.dot} aria-hidden="true" />

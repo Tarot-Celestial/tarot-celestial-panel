@@ -7,7 +7,7 @@ export function whatsappBridgeAdmin() {
 export function allowedBridgePath(path: string, method: string) {
   const prefix = '^/sessions/[A-Za-z0-9_-]{1,64}/';
   return method === 'GET'
-    ? new RegExp(prefix+'(?:status|chats|chats/(?:[A-Za-z0-9_.:@-]|%40|%3A)+/messages\\?limit=[0-9]{1,3}|captacion/[0-9a-f-]{36})$','i').test(path)
+    ? new RegExp(prefix+'(?:status|attention|chats|chats/(?:[A-Za-z0-9_.:@-]|%40|%3A)+/messages\\?limit=[0-9]{1,3}|captacion/[0-9a-f-]{36})$','i').test(path)
     : method === 'POST' && new RegExp(prefix+'(?:start|logout|send|captacion|chats/(?:[A-Za-z0-9_.:@-]|%40|%3A)+/read)$','i').test(path);
 }
 export async function whatsappBridgeFetch(path: string, init: {method?:'GET'|'POST';body?:unknown}) {

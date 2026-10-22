@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { CaptacionWhatsAppError, captacionWhatsAppAdmin, captacionWhatsAppWorker } from "@/lib/server/captacion-whatsapp";
 import { whatsappGatewayFetch, whatsappSessionId } from "@/lib/server/whatsapp-gateway";
+import { parseWhatsAppAttention } from "@/lib/server/whatsapp-attention";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // Rutas (todas con ?action=...):
-//   GET  status | chats | messages&jid=...&limit=...
+//   GET  status | attention | chats | messages&jid=...&limit=...
 //   POST start | logout | read&jid=... | send   (body: { jid | phone, text })
 
 const JID_RE = /^[0-9A-Za-z.:_-]{3,80}@(s\.whatsapp\.net|lid|g\.us)$/;
@@ -23,7 +24,7 @@ async function authorize(req: Request) {
 }
 
 function reply(result: { status: number; json: any }) {
-  return NextResponse.json(result.json, { status: result.status, headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(result.json, { status: result.status, headers: { "Cache-Control": "private, no-store", "Vary": "Authorization" } });
 }
 
 function fail(error: string, status = 400) {
@@ -38,6 +39,17 @@ export async function GET(req: Request) {
     const params = new URL(req.url).searchParams;
     const action = params.get("action");
 
+    if (action === "attention") {
+      try {
+        const result = await whatsappGatewayFetch(`${base}/attention`);
+        if (result.status !== 200 || result.json?.ok !== true) {
+          return reply({ status: result.status === 409 ? 409 : 503, json: { ok: false,
+            error: result.json?.error === "NOT_CONNECTED" ? "NOT_CONNECTED" : "WHATSAPP_ATTENTION_UNAVAILABLE" } });
+        }
+        const summary = parseWhatsAppAttention(result.json, whatsappSessionId(auth.me));
+        return reply({ status: 200, json: { ...summary, worker_id: String(auth.me.id), user_id: auth.me.user_id } });
+      } catch { return reply({ status: 503, json: { ok: false, error: "WHATSAPP_ATTENTION_UNAVAILABLE" } }); }
+    }
     if (action === "status") return reply(await whatsappGatewayFetch(`${base}/status`));
     if (action === "chats") return reply(await whatsappGatewayFetch(`${base}/chats`));
     if (action === "messages") {

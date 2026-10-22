@@ -27,7 +27,7 @@ export function allowedCommand(command){
   if(!command||typeof command.id!=='string'||!UUID_RE.test(command.id)||typeof command.path!=='string')return false;
   const prefix='^/sessions/[A-Za-z0-9_-]{1,64}/';
   return command.method==='GET'
-    ?new RegExp(prefix+'(?:status|chats|chats/(?:[A-Za-z0-9_.:@-]|%40|%3A)+/messages\\?limit=[0-9]{1,3}|captacion/'+UUID_PATTERN+')$','i').test(command.path)
+    ?new RegExp(prefix+'(?:status|attention|chats|chats/(?:[A-Za-z0-9_.:@-]|%40|%3A)+/messages\\?limit=[0-9]{1,3}|captacion/'+UUID_PATTERN+')$','i').test(command.path)
     :command.method==='POST'&&new RegExp(prefix+'(?:start|logout|send|captacion|chats/(?:[A-Za-z0-9_.:@-]|%40|%3A)+/read)$','i').test(command.path);
 }
 export async function executeCommand(command,{localOrigin,secret,fetcher=fetch}){

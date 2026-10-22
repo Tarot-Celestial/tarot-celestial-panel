@@ -11,21 +11,23 @@ const connected = { ok: true, state: 'connected', rev: '1', me: { id: 'owner', n
 const response = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
 
 function fixture(options = {}) {
-  const exports = {}, requests = [], timers = new Map(), deadlines = new Map(), windowEvents = new Map(), documentEvents = new Map();
+  const exports = {}, requests = [], timers = new Map(), deadlines = new Map(), windowEvents = new Map(), documentEvents = new Map(), emitted = [];
   let timer = 0;
   const window = {
     setInterval(fn) { timers.set(++timer, fn); return timer; }, clearInterval(id) { timers.delete(id); },
     setTimeout(fn) { deadlines.set(++timer, fn); return timer; }, clearTimeout(id) { deadlines.delete(id); },
     addEventListener(name, fn) { windowEvents.set(name, fn); }, removeEventListener(name) { windowEvents.delete(name); },
+    dispatchEvent(event) { emitted.push(event); windowEvents.get(event.type)?.(event); return true; },
     confirm: () => options.confirm === true,
   };
   const document = { visibilityState: 'visible', addEventListener(name, fn) { documentEvents.set(name, fn); }, removeEventListener(name) { documentEvents.delete(name); } };
   const auth = { getSession: options.getSession || (async () => ({ data: { session: { access_token: 'test-only' } } })) };
   vm.runInNewContext(code, {
-    exports, window, document, AbortController, Date, encodeURIComponent,
+    exports, window, document, AbortController, Date, Event, encodeURIComponent,
     fetch(url, init) {
-      const action = new URL(url, 'https://fixture.invalid').searchParams.get('action'); requests.push({ action, init });
-      return options.api ? options.api(action, init) : Promise.resolve(response(action === 'status' ? connected : { ok: true, chats: [] }));
+      const params = new URL(url, 'https://fixture.invalid').searchParams;
+      const action = params.get('action'); requests.push({ action, init, url });
+      return options.api ? options.api(action, init, params) : Promise.resolve(response(action === 'status' ? connected : { ok: true, chats: [] }));
     },
     require(name) {
       if (name === 'react') return React;
@@ -38,13 +40,15 @@ function fixture(options = {}) {
   });
   let tree; act(() => { tree = renderer.create(React.createElement(exports.default)); });
   return {
-    tree, requests, timers, deadlines, windowEvents, documentEvents,
+    tree, requests, timers, deadlines, windowEvents, documentEvents, emitted, document,
     text: () => content(tree.toJSON()),
     async settle() { await act(async () => { await new Promise(resolve => setImmediate(resolve)); }); },
     async poll() { await act(async () => { for (const fn of timers.values()) fn(); await new Promise(resolve => setImmediate(resolve)); }); },
     async event(name) { await act(async () => { windowEvents.get(name)?.(); await new Promise(resolve => setImmediate(resolve)); }); },
     async timeout() { await act(async () => { for (const fn of [...deadlines.values()]) fn(); await new Promise(resolve => setImmediate(resolve)); }); },
     async click(label) { const button = tree.root.findAllByType('button').find(node => content(node).trim() === label); assert.ok(button, label); await act(async () => button.props.onClick()); },
+    async openChat(name) { const button = tree.root.findAllByType('button').find(node => String(node.props.className).includes('chatItem') && node.findAllByType('strong').some(child => content(child) === name)); assert.ok(button, name); await act(async () => button.props.onClick()); },
+    unread(name) { const button = tree.root.findAllByType('button').find(node => String(node.props.className).includes('chatItem') && node.findAllByType('strong').some(child => content(child) === name)); return Number(content(button?.findAllByType('b')[0])) || 0; },
     close() { act(() => tree.unmount()); },
   };
 }
@@ -128,4 +132,126 @@ test('a stalled status read times out and permits a later successful refresh', a
     assert.equal(f.requests.filter(item => item.action === 'status').length, 2);
     assert.equal(f.deadlines.size, 0);
   } finally { f.close(); }
+});
+
+const firstJid = '17875550101@s.whatsapp.net', secondJid = '17875550202@s.whatsapp.net';
+const chat = (id = firstJid, unread = 2, name = 'Cliente fixture') => ({ id, unread, name, phone: id.split('@')[0], isGroup: false, lastTs: 1700000000, lastText: 'Consulta fixture', lastFromMe: false });
+const history = (chatJid = firstJid) => ({ ok: true, messages: [{ id: 'fixture-message', chatJid, fromMe: false, ts: 1700000000, text: 'Mensaje fixture', kind: 'text', senderName: null, status: null }] });
+
+test('opening WhatsApp or focusing its tab never selects a chat or marks unread messages as read', async () => {
+  const f = fixture({ api: async action => response(action === 'status' ? connected : { ok: true, chats: [chat()] }) });
+  try {
+    await f.settle(); await f.event('focus'); await f.poll();
+    assert.equal(f.unread('Cliente fixture'),2); assert.match(f.text(),/Elige un chat/);
+    assert.equal(f.requests.some(request => ['read','messages','send'].includes(request.action)),false);
+    assert.equal(f.emitted.length,0);
+  } finally { f.close(); }
+});
+
+test('the selected chat is acknowledged only after its history loads successfully, with one refresh event after confirmation', async () => {
+  let resolveMessages, resolveRead, unread = 2;
+  const f = fixture({ api: async action => {
+    if (action === 'status') return response(connected);
+    if (action === 'chats') return response({ ok:true,chats:[chat(firstJid,unread)] });
+    if (action === 'messages') return new Promise(resolve => { resolveMessages = resolve; });
+    if (action === 'read') return new Promise(resolve => { resolveRead = resolve; });
+    throw new Error(`Unexpected action ${action}`);
+  } });
+  try {
+    await f.settle(); await f.openChat('Cliente fixture');
+    assert.equal(f.requests.some(request => request.action === 'read'),false);
+    assert.equal(f.unread('Cliente fixture'),2);
+    await act(async () => resolveMessages(response(history())));
+    assert.equal(f.requests.filter(request => request.action === 'read').length,1);
+    assert.equal(f.unread('Cliente fixture'),2); assert.equal(f.emitted.length,0);
+    unread = 0; await act(async () => resolveRead(response({ok:true,chatId:firstJid})));
+    assert.equal(f.unread('Cliente fixture'),0);
+    assert.deepEqual(f.emitted.map(event => event.type),['tc-whatsapp-changed']);
+    assert.equal(f.requests.some(request => request.action === 'send'),false);
+  } finally { f.close(); }
+});
+
+test('a failed read preserves unread counts, exposes an error through status polls, and supports a deliberate retry', async () => {
+  let canRead = false, unread = 3;
+  const f = fixture({ api: async action => {
+    if (action === 'status') return response(connected);
+    if (action === 'chats') return response({ok:true,chats:[chat(firstJid,unread)]});
+    if (action === 'messages') return response(history());
+    if (action === 'read') { if (canRead) unread = 0; return response(canRead ? {ok:true,chatId:firstJid} : {ok:false,error:'GATEWAY_TIMEOUT'},canRead ? 200 : 503); }
+    throw new Error(`Unexpected action ${action}`);
+  } });
+  try {
+    await f.settle(); await f.openChat('Cliente fixture');
+    assert.equal(f.unread('Cliente fixture'),3); assert.match(f.text(),/No se pudo confirmar la lectura.*chat sigue pendiente/);
+    assert.equal(f.emitted.length,0);
+    await f.poll(); assert.match(f.text(),/No se pudo confirmar la lectura/); assert.equal(f.unread('Cliente fixture'),3);
+    canRead = true; await f.click('Reintentar lectura');
+    assert.equal(f.unread('Cliente fixture'),0); assert.doesNotMatch(f.text(),/No se pudo confirmar la lectura/);
+    assert.equal(f.emitted.filter(event => event.type === 'tc-whatsapp-changed').length,1);
+  } finally { f.close(); }
+});
+
+test('a failed or empty history never acknowledges messages that were not displayed', async () => {
+  for (const messages of [response({ok:false,error:'GATEWAY_TIMEOUT'},503),response({ok:true,messages:[]})]) {
+    const f = fixture({ api: async action => action === 'messages' ? messages : response(action === 'status' ? connected : {ok:true,chats:[chat()]}) });
+    try {
+      await f.settle(); await f.openChat('Cliente fixture');
+      assert.equal(f.unread('Cliente fixture'),2); assert.equal(f.requests.some(request => request.action === 'read'),false); assert.equal(f.emitted.length,0);
+    } finally { f.close(); }
+  }
+});
+
+test('late history from a different selected chat or a hidden tab cannot acknowledge unread messages', async () => {
+  let resolveFirst, unreadSecond = 1;
+  const f = fixture({ api: async (action,_init,params) => {
+    if (action === 'status') return response(connected);
+    if (action === 'chats') return response({ok:true,chats:[chat(),chat(secondJid,unreadSecond,'Segunda fixture')]});
+    if (action === 'messages') return params.get('jid') === firstJid ? new Promise(resolve=>{resolveFirst=resolve;}) : response(history(secondJid));
+    if (action === 'read') { unreadSecond=0; return response({ok:true,chatId:secondJid}); }
+    throw new Error(`Unexpected action ${action}`);
+  } });
+  try {
+    await f.settle(); await f.openChat('Cliente fixture'); f.document.visibilityState='hidden'; await f.openChat('Segunda fixture');
+    await act(async () => resolveFirst(response(history())));
+    assert.equal(f.requests.some(request=>request.action==='read'),false);
+    assert.equal(f.unread('Cliente fixture'),2); assert.equal(f.unread('Segunda fixture'),1);
+    f.document.visibilityState='visible'; await f.event('focus');
+    const reads=f.requests.filter(request=>request.action==='read'); assert.equal(reads.length,1); assert.match(reads[0].url,/jid=17875550202/);
+    assert.equal(f.unread('Cliente fixture'),2); assert.equal(f.unread('Segunda fixture'),0);
+  } finally { f.close(); }
+});
+
+test('arrivals during read confirmation keep the authoritative remaining unread count', async () => {
+  let resolveRead, unread=2;
+  const f=fixture({api:async action=>{
+    if(action==='status')return response(connected);
+    if(action==='chats')return response({ok:true,chats:[chat(firstJid,unread)]});
+    if(action==='messages')return response(history());
+    if(action==='read')return new Promise(resolve=>{resolveRead=resolve;});
+    throw new Error(`Unexpected action ${action}`);
+  }});
+  try{
+    await f.settle();await f.openChat('Cliente fixture');assert.equal(f.unread('Cliente fixture'),2);
+    unread=1;await act(async()=>resolveRead(response({ok:true,chatId:firstJid})));
+    assert.equal(f.unread('Cliente fixture'),1);assert.equal(f.emitted.length,1);
+    assert.equal(f.requests.filter(request=>request.action==='read').length,1,'a new count does not acknowledge another message before its history is loaded');
+  }finally{f.close();}
+});
+
+test('an unresolved read is not duplicated by a revision refresh and a timeout keeps its unread count', async () => {
+  let revision='1';
+  const f=fixture({api:async(action,init)=>{
+    if(action==='status')return response({...connected,rev:revision});
+    if(action==='chats')return response({ok:true,chats:[chat()]});
+    if(action==='messages')return response(history());
+    if(action==='read')return new Promise((_resolve,reject)=>init.signal.addEventListener('abort',()=>reject(new Error('Aborted'))));
+    throw new Error(`Unexpected action ${action}`);
+  }});
+  try{
+    await f.settle();await f.openChat('Cliente fixture');revision='2';await f.poll();
+    assert.equal(f.requests.filter(request=>request.action==='read').length,1);
+    await f.timeout();assert.equal(f.unread('Cliente fixture'),2);
+    assert.match(f.text(),/No se pudo confirmar la lectura/);assert.equal(f.emitted.length,0);
+    assert.equal(f.tree.root.findAllByType('button').find(node=>content(node).trim()==='Reintentar lectura').props.disabled,false);
+  }finally{f.close();}
 });

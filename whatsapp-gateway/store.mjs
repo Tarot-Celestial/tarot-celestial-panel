@@ -254,9 +254,42 @@ export class ChatStore {
 
   listChats() {
     return [...this.chats.values()]
-      .filter((c) => c.lastTs || c.lastText)
+      .filter((c) => c.lastTs || c.lastText || c.unread > 0)
       .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0))
       .map((c) => ({ ...c, name: c.name || this.displayName(c.id) }));
+  }
+
+  /** Read-only metadata for the global attention badge; never exposes message bodies. */
+  attentionSummary() {
+    const items = [];
+    let unreadTotal = 0;
+    for (const chat of this.listChats()) {
+      const unread = chat.unread ?? 0;
+      if (!Number.isSafeInteger(unread) || unread < 0) throw new Error("INVALID_UNREAD_COUNT");
+      if (!unread) continue;
+      const messages = this.messages.get(chat.id) || [];
+      let incoming = null;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (!messages[i].fromMe) { incoming = messages[i]; break; }
+      }
+      const incomingDate = new Date(Number(incoming?.ts) * 1000);
+      items.push({
+        id: chat.id,
+        name: typeof chat.name === "string" ? chat.name.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 80) || null : null,
+        unread,
+        last_incoming_id: typeof incoming?.id === "string" ? incoming.id : null,
+        last_incoming_at: incoming && Number(incoming.ts) > 0 && Number.isFinite(incomingDate.getTime()) ? incomingDate.toISOString() : null,
+      });
+      unreadTotal += unread;
+    }
+    if (!Number.isSafeInteger(unreadTotal)) throw new Error("INVALID_UNREAD_COUNT");
+    // Preserve every unread chat. If many long display names would exceed the
+    // bridge's bounded response, omit names rather than silently dropping chats.
+    if (Buffer.byteLength(JSON.stringify(items), "utf8") > 360 * 1024) {
+      for (const item of items) item.name = null;
+    }
+    if (Buffer.byteLength(JSON.stringify(items), "utf8") > 400 * 1024) throw new Error("ATTENTION_TOO_LARGE");
+    return { unread_total: unreadTotal, unread_chats: items.length, items };
   }
 
   getMessages(rawJid, limit = 100) {
