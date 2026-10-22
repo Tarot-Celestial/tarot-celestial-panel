@@ -1,4 +1,5 @@
-const JID_RE = /^[0-9A-Za-z.:_-]{3,80}@(s\.whatsapp\.net|lid|g\.us)$/;
+// WhatsApp service chats can use a one-character user part (e.g. 0).
+const JID_RE = /^[0-9A-Za-z.:_-]{1,80}@(s\.whatsapp\.net|lid|g\.us)$/;
 type Row = Record<string, any>;
 
 /** Validate the gateway snapshot and expose only the global badge's metadata. */

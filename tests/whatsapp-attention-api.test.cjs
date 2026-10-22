@@ -50,7 +50,7 @@ function fixture(options = {}) {
     return exports;
   }
   const api = load('src/app/api/central/whatsapp/route.ts');
-  return { calls, parser: load('src/lib/server/whatsapp-attention.ts'), bridge: load('src/lib/server/whatsapp-local-bridge.ts'),
+  return { api, calls, parser: load('src/lib/server/whatsapp-attention.ts'), bridge: load('src/lib/server/whatsapp-local-bridge.ts'),
     get: (token = 'verified', query = '') => api.GET(new Request('https://fixture.invalid/api/central/whatsapp?action=attention' + query, { headers: token === null ? {} : { Authorization: `Bearer ${token}` } })) };
 }
 
@@ -106,6 +106,37 @@ test('historical unread without stored inbound message counts without inventing 
   assert.equal(response.status, 200); assert.equal(body.unread_total, 3); assert.equal(body.items[0].last_incoming_id, null);
   const empty = await fixture({ json: snapshot({ items: [], unread_total: 0, unread_chats: 0 }) }).get();
   assert.equal(empty.status, 200); assert.equal((await empty.json()).unread_total, 0);
+});
+
+test('a one-character WhatsApp service JID remains in the unread snapshot and can be opened or read', async () => {
+  const serviceId = '0@s.whatsapp.net';
+  const value = snapshot({ unread_total: 4, unread_chats: 2, items: [
+    ...snapshot().items,
+    { id: serviceId, name: null, unread: 1, last_incoming_id: 'SERVICE-INCOMING', last_incoming_at: incomingAt },
+  ] });
+  const f = fixture({ json: value }), response = await f.get(), body = await response.json();
+  assert.equal(response.status, 200); assert.equal(body.unread_total, 4); assert.equal(body.items[1].id, serviceId);
+  for (const [method, action] of [['GET', 'messages'], ['POST', 'read']]) {
+    const request = new Request(`https://fixture.invalid/api/central/whatsapp?action=${action}&jid=${encodeURIComponent(serviceId)}`, {
+      method, headers: { Authorization: 'Bearer verified' },
+    });
+    assert.equal((await f.api[method](request)).status, 200);
+    assert.equal(f.calls.filter(call => call.gateway).at(-1).gateway,
+      `/sessions/central/chats/${encodeURIComponent(serviceId)}/${action === 'read' ? 'read' : 'messages?limit=120'}`);
+  }
+});
+
+test('short JID support still rejects empty, oversized, path-like and unsupported addresses', async () => {
+  for (const jid of ['@s.whatsapp.net', 'x'.repeat(81) + '@s.whatsapp.net', '../0@s.whatsapp.net', '0@example.com']) {
+    const value = snapshot({ items: [{ ...snapshot().items[0], id: jid }] });
+    assert.equal((await fixture({ json: value }).get()).status, 503);
+    for (const [method, action] of [['GET', 'messages'], ['POST', 'read']]) {
+      const f = fixture(), request = new Request(`https://fixture.invalid/api/central/whatsapp?action=${action}&jid=${encodeURIComponent(jid)}`, {
+        method, headers: { Authorization: 'Bearer verified' },
+      });
+      assert.equal((await f.api[method](request)).status, 400); assert.equal(f.calls.filter(call => call.gateway).length, 0);
+    }
+  }
 });
 
 test('attention is allowed only as a bounded GET by both bridge layers', async () => {
