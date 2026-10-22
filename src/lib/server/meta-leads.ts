@@ -407,7 +407,9 @@ async function tryInsertLeadLog(args: {
 
 export async function fetchMetaLeadById(leadgenId: string, deadlineAt?: number) {
   return await metaGraphRequest(leadgenId, {
-    fields: "id,created_time,field_data,campaign_id,campaign_name,ad_id,ad_name,form_id,form_name,is_organic,platform",
+    // form_name belongs to the form node (as "name"), not to Lead. Requesting
+    // it here makes Graph reject the whole lead, including its contact data.
+    fields: "id,created_time,field_data,campaign_id,campaign_name,ad_id,ad_name,form_id,is_organic,platform",
   }, deadlineAt) as MetaLeadPayload;
 }
 

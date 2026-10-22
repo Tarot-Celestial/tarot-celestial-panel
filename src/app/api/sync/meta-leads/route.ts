@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
         // only an opaque cursor goes to the fixed Graph host. No assumed order.
         const json = await metaGraphRequest(`${formId}/leads`, {
           limit: String(PAGE_SIZE),
-          fields: "id,created_time,field_data,campaign_id,campaign_name,ad_id,ad_name,form_id,form_name,platform",
+          fields: "id,created_time,field_data,campaign_id,campaign_name,ad_id,ad_name,form_id,platform",
           ...(after ? { after } : {}),
         }, deadlineAt);
         if (!Array.isArray(json.data)) {
