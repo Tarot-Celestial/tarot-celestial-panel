@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { Activity, CalendarClock, ChevronDown, Clock3, ExternalLink, Filter, Mail, Megaphone, Phone, RefreshCw, Search, Sparkles, Target, UserCheck, Users } from "lucide-react";
+import { Activity, CalendarClock, ChevronDown, Clock3, ExternalLink, Filter, Mail, Megaphone, MessageCircle, Phone, RefreshCw, Search, Sparkles, Target, UserCheck, Users } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import styles from "./CaptacionPanel.module.css";
+import CaptacionWhatsAppComposer from "./CaptacionWhatsAppComposer";
 
 type ColumnKey = "nuevo" | "pend_free" | "pend_cap" | "cliente" | "cerrado";
 type ViewKey = "pendientes" | "hoy" | "urgentes" | "todos" | "cerrados";
@@ -137,6 +138,11 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
   const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
   const [metaDiagnostics, setMetaDiagnostics] = useState<MetaDiagnostics | null>(null);
   const [nextPage, setNextPage] = useState<number | null>(null);
+  const [messageLeadId, setMessageLeadId] = useState<string | null>(null);
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const [focusedLead, setFocusedLead] = useState<Lead | null>(null);
+  const [focusRevision, setFocusRevision] = useState(0);
+  const focusOpenedRef = useRef<string | null>(null);
   const requestRef = useRef<{ id: number; key: string; controller: AbortController; reading: boolean; firstPage: number } | null>(null);
   const sequenceRef = useRef(0);
   const pendingRefreshRef = useRef(false);
@@ -153,10 +159,60 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
   itemsRef.current = items;
   nextPageRef.current = nextPage;
   const visibleColumns = view === "todos" ? COLUMNS : COLUMNS.slice(0, 3);
+  const availableItems = useMemo(() => focusedLead && !items.some(item => item.id === focusedLead.id) ? [focusedLead, ...items] : items, [focusedLead, items]);
+
+  const prepareWhatsApp = useCallback((lead: Lead) => {
+    setMessageLeadId(lead.id);
+    document.getElementById?.("captacion-whatsapp")?.scrollIntoView({ block: "start", behavior: "auto" });
+  }, []);
+
+  useEffect(() => {
+    const focus = (value: unknown) => {
+      if (typeof value !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) return;
+      focusOpenedRef.current = null;
+      setFocusId(value); setFocusedLead(null); setMessageLeadId(null);
+      setView("todos"); setQuery(""); setOrigin("all"); setCampaign("all"); setWorker("all");
+      try { sessionStorage.removeItem("tc-captacion-focus-lead"); } catch { /* Optional navigation handoff. */ }
+    };
+    try { focus(sessionStorage.getItem("tc-captacion-focus-lead")); } catch { /* Direct navigation still works. */ }
+    const onFocus = (event: Event) => focus((event as CustomEvent)?.detail?.leadId);
+    window.addEventListener("tc-captacion-focus-lead", onFocus);
+    return () => window.removeEventListener("tc-captacion-focus-lead", onFocus);
+  }, []);
+
+  useEffect(() => {
+    if (!focusId) return;
+    let cancelled = false;
+    const controller = new AbortController();
+    const deadline = window.setTimeout(() => controller.abort(), 20_000);
+    void (async () => {
+      try {
+        const { data } = await sb.auth.getSession();
+        if (controller.signal.aborted) return;
+        const token = data.session?.access_token;
+        if (!token) throw new Error("Vuelve a iniciar sesión para abrir este contacto.");
+        const response = await fetch(`/api/captacion/list?scope=todos&brand=${brand}&lead_id=${encodeURIComponent(focusId)}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: controller.signal });
+        const json = await response.json();
+        if (controller.signal.aborted) return;
+        const lead = response.ok && json.ok ? json.items?.find((item: Lead) => item.id === focusId) : null;
+        if (!lead) throw new Error("Este contacto ya no está disponible en tu cartera. Actualiza Captación.");
+        setFocusedLead(lead);
+        const focusKey = `${brand}:${focusId}`;
+        if (focusOpenedRef.current !== focusKey) {
+          focusOpenedRef.current = focusKey;
+          setMessageLeadId(lead.id); setMobileColumn(phaseOf(lead));
+          document.getElementById?.("captacion-whatsapp")?.scrollIntoView({ block: "start", behavior: "auto" });
+        }
+      } catch (error) {
+        if (!cancelled) { setFocusedLead(null); setMessageLeadId(null); setMessage(error instanceof Error ? error.message : "No se pudo abrir el contacto del aviso."); }
+      } finally { window.clearTimeout(deadline); }
+    })();
+    return () => { cancelled = true; controller.abort(); window.clearTimeout(deadline); };
+  }, [focusId, brand, focusRevision]);
 
   useEffect(() => {
     setBrand(getActiveBrand());
-    const onBrand = (event: Event) => setBrand(String((event as CustomEvent)?.detail?.brand || "celestial") === "orion" ? "orion" : "celestial");
+    const onBrand = (event: Event) => { setBrand(String((event as CustomEvent)?.detail?.brand || "celestial") === "orion" ? "orion" : "celestial"); setFocusId(null); setFocusedLead(null); setMessageLeadId(null); };
     window.addEventListener("tc-brand-changed", onBrand);
     return () => window.removeEventListener("tc-brand-changed", onBrand);
   }, []);
@@ -203,7 +259,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
         const json: any = await response.json().catch(() => null);
         if (!isCurrent()) return;
         if (!response.ok || !json?.ok) {
-          if (response.status === 401 || response.status === 403) { setItems([]); setMetaDiagnostics(null); setNextPage(null); setLastRefreshed(null); }
+          if (response.status === 401 || response.status === 403) { setItems([]); setMetaDiagnostics(null); setNextPage(null); setLastRefreshed(null); setFocusId(null); setFocusedLead(null); setMessageLeadId(null); }
           throw new Error(json?.error || "No se pudo cargar Captación");
         }
         for (const item of Array.isArray(json.items) ? json.items : []) collected.set(item.id, item);
@@ -216,6 +272,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
       if (!isCurrent()) return;
       pagesToLoadRef.current = Math.max(pagesToLoadRef.current, firstPage + completedPages);
       setItems(Array.from(collected.values()));
+      setFocusRevision(value => value + 1);
       setNextPage(page);
       setMetaDiagnostics(latest?.meta_diagnostics || null);
       setLastRefreshed(latest?.server_time || new Date().toISOString());
@@ -256,6 +313,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
       requestRef.current = null;
       pendingRefreshRef.current = false;
       setItems([]); setMetaDiagnostics(null); setNextPage(null); setLastRefreshed(null); setLoading(false);
+      setFocusId(null); setFocusedLead(null); setMessageLeadId(null);
       setLoadError("Tu sesión ha caducado. Vuelve a iniciar sesión.");
     });
     return () => data.subscription.unsubscribe();
@@ -340,6 +398,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
       });
       const json = await response.json().catch(() => null);
       if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudo actualizar el lead");
+      window.dispatchEvent(new Event("tc-captacion-changed"));
       if (currentKeyRef.current !== actionKey) return;
       setMessage(json.message || "✓ Lead actualizado");
       window.setTimeout(() => setMessage(""), 3500);
@@ -378,7 +437,8 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
   const filtered = useMemo(() => {
     const q = deferredQuery.trim().toLowerCase();
     const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
-    const rows = items.filter((lead) => {
+    const rows = availableItems.filter((lead) => {
+      if (focusId && lead.id !== focusId) return false;
       const due = timestamp(lead.next_contact_at);
       if (view === "hoy" && due > todayEnd.getTime()) return false;
       if (view === "urgentes" && due && due > Date.now()) return false;
@@ -396,7 +456,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
       if (sort === "origin") return String(a.origen || "").localeCompare(String(b.origen || ""));
       return priorityScore(b) - priorityScore(a);
     });
-  }, [campaign, deferredQuery, items, origin, sort, view, worker]);
+  }, [campaign, deferredQuery, availableItems, focusId, origin, sort, view, worker]);
 
   const byColumn = useMemo(() => {
     const map: Record<ColumnKey | "cerrado", Lead[]> = { nuevo: [], pend_free: [], pend_cap: [], cliente: [], cerrado: [] };
@@ -444,7 +504,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
       <div className={styles.funnel} aria-label="Embudo actual"><span>NUEVOS <b>{totals.nuevo}</b></span><i /><span>FREE <b>{totals.pend_free}</b></span><i /><span>PEND CAP <b>{totals.pend_cap}</b></span><i /><span>CLIENTES <b>{totals.cliente}</b></span></div>
 
       <div className={styles.viewTabs}>
-        {(["pendientes", "hoy", "urgentes", "todos", "cerrados"] as ViewKey[]).map((key) => <button type="button" key={key} className={view === key ? styles.active : ""} onClick={() => setView(key)}>{key === "pendientes" ? "Pendientes" : key === "hoy" ? "Hoy" : key === "urgentes" ? "Urgentes" : key === "todos" ? "Todos" : `Cerrados · ${totals.cerrado}`}</button>)}
+        {(["pendientes", "hoy", "urgentes", "todos", "cerrados"] as ViewKey[]).map((key) => <button type="button" key={key} className={view === key ? styles.active : ""} onClick={() => { setView(key); setFocusId(null); setFocusedLead(null); }}>{key === "pendientes" ? "Pendientes" : key === "hoy" ? "Hoy" : key === "urgentes" ? "Urgentes" : key === "todos" ? "Todos" : `Cerrados · ${totals.cerrado}`}</button>)}
       </div>
 
       <div className={styles.filters}>
@@ -453,17 +513,19 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
         <Select value={campaign} onChange={setCampaign} label="Todas las campañas" options={options.campaigns.map((value) => [value, value])} />
         {options.workers.length ? <Select value={worker} onChange={setWorker} label="Todas las centrales" options={options.workers} /> : null}
         <Select value={sort} onChange={(value) => setSort(value as SortKey)} label="Prioridad automática" options={[["priority","Más urgente"],["recent","Más reciente"],["oldest","Más antiguo"],["next","Próxima gestión"],["attempts","Más intentos"],["origin","Origen"]]} />
-        {query || origin !== "all" || campaign !== "all" || worker !== "all" ? <button className={styles.clearFilters} type="button" onClick={() => { setQuery(""); setOrigin("all"); setCampaign("all"); setWorker("all"); }}>Limpiar filtros</button> : null}
+        {query || focusId || origin !== "all" || campaign !== "all" || worker !== "all" ? <button className={styles.clearFilters} type="button" onClick={() => { setQuery(""); setFocusId(null); setFocusedLead(null); setOrigin("all"); setCampaign("all"); setWorker("all"); }}>Limpiar filtros</button> : null}
       </div>
       {message ? <div className={styles.feedback}>{message}</div> : null}
     </header>
 
-    {view === "cerrados" ? <div className={styles.closedList}>{filtered.length ? filtered.map((lead) => <LeadCard key={lead.id} lead={lead} fresh={newLeadIds.has(lead.id)} busy={busyId === lead.id} onAction={act} onOpen={openClient} />) : <Empty />}</div> : <>
+    {brand === "celestial" ? <CaptacionWhatsAppComposer contacts={availableItems} selectedLeadId={messageLeadId} onSelectLead={setMessageLeadId} /> : null}
+
+    {view === "cerrados" ? <div className={styles.closedList}>{filtered.length ? filtered.map((lead) => <LeadCard key={lead.id} lead={lead} fresh={newLeadIds.has(lead.id)} busy={busyId === lead.id} onAction={act} onOpen={openClient} onWhatsApp={brand === "celestial" ? prepareWhatsApp : undefined} />) : <Empty />}</div> : <>
       <div className={styles.mobileTabs}>{visibleColumns.map((column) => <button type="button" key={column.key} className={mobileColumn === column.key ? styles.active : ""} onClick={() => setMobileColumn(column.key)}>{column.short}<b>{byColumn[column.key].length}</b></button>)}</div>
       <div className={`${styles.board} ${view === "todos" ? styles.allBoard : ""}`}>
         {visibleColumns.map((column) => { const Icon = column.icon; const rows = byColumn[column.key]; const shown = rows.slice(0, limits[column.key]); return <article key={column.key} className={`${styles.column} ${styles[column.key]} ${mobileColumn === column.key ? styles.mobileActive : ""}`}>
           <div className={styles.columnHead}><span><Icon /></span><div><h3>{column.title}</h3><p>{column.subtitle}</p></div><b>{rows.length}</b></div>
-          <div className={styles.cards}>{shown.length ? shown.map((lead) => <LeadCard key={lead.id} lead={lead} fresh={newLeadIds.has(lead.id)} busy={busyId === lead.id} onAction={act} onOpen={openClient} />) : <Empty />}</div>
+          <div className={styles.cards}>{shown.length ? shown.map((lead) => <LeadCard key={lead.id} lead={lead} fresh={newLeadIds.has(lead.id)} busy={busyId === lead.id} onAction={act} onOpen={openClient} onWhatsApp={brand === "celestial" ? prepareWhatsApp : undefined} />) : <Empty />}</div>
           {shown.length < rows.length ? <button type="button" className={styles.more} onClick={() => setLimits((current) => ({ ...current, [column.key]: current[column.key] + PAGE_SIZE }))}>Ver {Math.min(PAGE_SIZE, rows.length - shown.length)} más <ChevronDown /></button> : null}
         </article>; })}
       </div>
@@ -483,7 +545,7 @@ function Select({ icon: Icon, value, onChange, label, options }: { icon?: typeof
   return <label className={styles.select}>{Icon ? <Icon /> : null}<select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}><option value="all">{label}</option>{options.map(([key,text]) => <option key={key} value={key}>{text}</option>)}</select><ChevronDown /></label>;
 }
 
-function LeadCard({ lead, fresh, busy, onAction, onOpen }: { lead: Lead; fresh: boolean; busy: boolean; onAction: (lead: Lead, action: ActionKey, next?: string) => void; onOpen: (lead: Lead) => void }) {
+function LeadCard({ lead, fresh, busy, onAction, onOpen, onWhatsApp }: { lead: Lead; fresh: boolean; busy: boolean; onAction: (lead: Lead, action: ActionKey, next?: string) => void; onOpen: (lead: Lead) => void; onWhatsApp?: (lead: Lead) => void }) {
   const phase = phaseOf(lead);
   const due = urgency(lead);
   const metaLeadAt = timestamp(lead.latest_meta_lead_at);
@@ -499,6 +561,7 @@ function LeadCard({ lead, fresh, busy, onAction, onOpen }: { lead: Lead; fresh: 
     <div className={styles.primaryActions}><a className={!phone(lead) ? styles.disabled : ""} href={phone(lead) ? `tel:${phone(lead)}` : undefined}><Phone />Llamar</a><button type="button" onClick={() => onOpen(lead)}><ExternalLink />Abrir CRM</button></div>
     <details className={styles.quick}><summary>Acciones rápidas <ChevronDown /></summary><div>
       {phase !== "cerrado" && phase !== "cliente" ? <><button disabled={busy} onClick={() => onAction(lead,"no_contesta")}>No responde</button><button disabled={busy} onClick={() => onAction(lead,"pendiente_free")}>Pend FREE</button><button disabled={busy} onClick={() => onAction(lead, phase === "pend_cap" ? "recontacto" : "hizo_free")}>{phase === "pend_cap" ? "Recontactar promo" : "FREE realizada"}</button><button disabled={busy} onClick={() => onAction(lead,"captado")}>Cliente</button><button disabled={busy} className={styles.danger} onClick={() => onAction(lead,"no_interesado")}>No interesa</button></> : <button disabled={busy} onClick={() => onAction(lead,"reabrir")}>Reabrir</button>}
+      {onWhatsApp ? <button type="button" className={styles.whatsappAction} onClick={() => onWhatsApp(lead)} title="Revisar el mensaje y enviar con la imagen"><MessageCircle size={13} />Enviar WhatsApp</button> : null}
       <label><CalendarClock /><input type="datetime-local" value={schedule} onChange={(event) => setSchedule(event.target.value)} /><button disabled={busy || !schedule} onClick={() => onAction(lead,"programar",new Date(schedule).toISOString())}>Programar</button></label>
     </div></details>
   </div>;

@@ -12,6 +12,11 @@ const text = value => Array.isArray(value) ? value.map(text).join('') : value &&
 function fixture(options = {}) {
   const hooks = [], requests = [], timers = new Map(), intervals = new Map(), channels = [];
   let cursor = 0, dirty = false, tree, timerId = 0, effects = [], authCallback;
+  let brand = 'celestial', session = { access_token: 'fake-fixture', user: { id: 'fixture-user' } };
+  const storage = new Map(options.focusId ? [['tc-captacion-focus-lead', options.focusId]] : []), emitted = [], scrolls = [];
+  const sessionStorage = { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) };
+  class FixtureEvent { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } }
+  function CaptacionWhatsAppComposer() {}
   const equal = (a, b) => a && b && a.length === b.length && a.every((value, index) => Object.is(value, b[index]));
   const react = {
     useState(initial) { const i = cursor++; if (!hooks[i]) hooks[i] = { value: typeof initial === 'function' ? initial() : initial }; return [hooks[i].value, next => { const value = typeof next === 'function' ? next(hooks[i].value) : next; if (!Object.is(hooks[i].value, value)) { hooks[i].value = value; dirty = true; } }]; },
@@ -21,31 +26,39 @@ function fixture(options = {}) {
     useDeferredValue(value) { return value; },
     useEffect(fn, deps) { const i = cursor++; if (!hooks[i] || !equal(hooks[i].deps, deps)) { const prior = hooks[i]; hooks[i] = { deps }; effects.push(() => { prior?.cleanup?.(); hooks[i].cleanup = fn(); }); } },
   };
-  function target() { const listeners = new Map(); return { visibilityState: 'visible', addEventListener(name, fn) { if (!listeners.has(name)) listeners.set(name, new Set()); listeners.get(name).add(fn); }, removeEventListener(name, fn) { listeners.get(name)?.delete(fn); }, emit(name) { listeners.get(name)?.forEach(fn => fn({})); } }; }
+  function target() { const listeners = new Map(); return { visibilityState: 'visible', addEventListener(name, fn) { if (!listeners.has(name)) listeners.set(name, new Set()); listeners.get(name).add(fn); }, removeEventListener(name, fn) { listeners.get(name)?.delete(fn); }, emit(name, event = {}) { listeners.get(name)?.forEach(fn => fn(event)); }, dispatchEvent(event) { emitted.push(event); listeners.get(event.type)?.forEach(fn => fn(event)); return true; } }; }
   const win = { ...target(), setTimeout(fn, ms) { const id = ++timerId; timers.set(id, { fn, ms }); return id; }, clearTimeout(id) { timers.delete(id); }, setInterval(fn, ms) { const id = ++timerId; intervals.set(id, { fn, ms }); return id; }, clearInterval(id) { intervals.delete(id); } }, doc = target();
-  const sb = { auth: { getSession: async () => ({ data: { session: { access_token: 'fake-fixture', user: { id: 'fixture-user' } } } }), onAuthStateChange(fn) { authCallback = fn; return { data: { subscription: { unsubscribe() { authCallback = null; } } } }; } }, channel() { const channel = { change: null, status: null, on(_event, _filter, fn) { channel.change = fn; return channel; }, subscribe(fn) { channel.status = fn; if (options.subscribeImmediately !== false) fn('SUBSCRIBED'); return channel; } }; channels.push(channel); return channel; }, removeChannel() {} };
+  doc.getElementById = id => ({ scrollIntoView: init => scrolls.push({ id, ...init }) });
+  const sb = { auth: { getSession: async () => ({ data: { session } }), onAuthStateChange(fn) { authCallback = fn; return { data: { subscription: { unsubscribe() { authCallback = null; } } } }; } }, channel() { const channel = { change: null, status: null, on(_event, _filter, fn) { channel.change = fn; return channel; }, subscribe(fn) { channel.status = fn; if (options.subscribeImmediately !== false) fn('SUBSCRIBED'); return channel; } }; channels.push(channel); return channel; }, removeChannel() {} };
   const exports = {}, jsx = (type, props) => ({ type, props });
   vm.runInNewContext(compiled, { exports, require(name) {
     if (name === 'react') return react;
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: 'Fragment' };
     if (name === 'lucide-react') return new Proxy({}, { get: (_, key) => 'Icon:' + String(key) });
     if (name === '@/lib/supabase-browser') return { supabaseBrowser: () => sb };
-    if (name === '@/components/global/BrandSwitcher') return { getActiveBrand: () => 'celestial' };
+    if (name === '@/components/global/BrandSwitcher') return { getActiveBrand: () => brand };
+    if (name === './CaptacionWhatsAppComposer') return { default: CaptacionWhatsAppComposer };
     if (name.endsWith('.css')) return { default: new Proxy({}, { get: (_, key) => String(key) }) };
     throw new Error(name);
-  }, window: win, document: doc, Date, Set, Map, AbortController, console, fetch(url, requestOptions) { return new Promise((resolve, reject) => { requests.push({ url, options: requestOptions, resolve, reject }); if (!options.ignoreAbort) requestOptions.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true }); }); } });
+  }, window: win, document: doc, sessionStorage, Event: FixtureEvent, CustomEvent: FixtureEvent, Date, Set, Map, AbortController, console, fetch(url, requestOptions) { return new Promise((resolve, reject) => { requests.push({ url, options: requestOptions, resolve, reject }); if (!options.ignoreAbort) requestOptions.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true }); }); } });
   function render() { cursor = 0; dirty = false; effects = []; tree = exports.default({}); for (const effect of effects) effect(); }
   async function flush() { for (let i = 0; i < 5; i++) { await new Promise(resolve => setImmediate(resolve)); if (dirty) render(); } }
   render();
-  return { requests, channels, win, doc, async flush() { await flush(); }, tree: () => tree, text: () => text(tree),
-    async respond(index, value, status = 200) { requests[index].resolve({ ok: status >= 200 && status < 300, status, json: async () => value }); await flush(); },
+  return { requests, channels, win, doc, storage, emitted, scrolls, async flush() { await flush(); }, tree: () => tree, text: () => text(tree),
+    async respond(index, value, status = 200) { assert.ok(requests[index], `Request ${index} exists`); requests[index].answered = true; requests[index].resolve({ ok: status >= 200 && status < 300, status, json: async () => value }); await flush(); },
     async click(label) { const button = nodes(tree).find(node => node.type === 'button' && text(node) === label); assert.ok(button, 'Button: ' + label); button.props.onClick(); if (dirty) render(); await flush(); },
     async change(label, value) { const select = nodes(tree).find(node => node.type?.name === 'Select' && node.props.label === label); assert.ok(select); select.props.onChange(value); if (dirty) render(); await flush(); },
     cards: () => nodes(tree).filter(node => node.type?.name === 'LeadCard').map(node => node.props.lead),
+    composer: () => nodes(tree).find(node => node.type?.name === 'CaptacionWhatsAppComposer')?.props,
+    async selectRecipient(id) { const composer = nodes(tree).find(node => node.type?.name === 'CaptacionWhatsAppComposer'); assert.ok(composer); composer.props.onSelectLead(id); await flush(); },
+    async prepare(id) { const card = nodes(tree).find(node => node.type?.name === 'LeadCard' && node.props.lead.id === id); assert.ok(card); card.props.onWhatsApp(card.props.lead); await flush(); },
+    async manage(id, action) { const card = nodes(tree).find(node => node.type?.name === 'LeadCard' && node.props.lead.id === id); assert.ok(card); void card.props.onAction(card.props.lead, action); await flush(); },
+    async focus(id) { win.emit('tc-captacion-focus-lead', { detail: { leadId: id } }); await flush(); },
+    async brand(value) { brand = value; win.emit('tc-brand-changed', { detail: { brand } }); await flush(); },
     count(label = 'En vista') { return nodes(tree).find(node => node.type?.name === 'Hud' && node.props.label === label)?.props.value; },
     async fireTimeout(ms) { for (const [id, timer] of [...timers]) if (timer.ms === ms) { timers.delete(id); timer.fn(); } await flush(); },
     async interval(ms) { for (const timer of intervals.values()) if (timer.ms === ms) timer.fn(); await flush(); },
-    async signOut() { authCallback?.('SIGNED_OUT'); await flush(); },
+    async signOut() { session = null; authCallback?.('SIGNED_OUT', null); await flush(); },
     close() { for (const hook of hooks) hook?.cleanup?.(); },
   };
 }
@@ -60,6 +73,7 @@ function leadCardFixture() {
     if (name === 'lucide-react') return new Proxy({}, { get: (_, key) => 'Icon:' + String(key) });
     if (name === '@/lib/supabase-browser') return { supabaseBrowser: () => ({}) };
     if (name === '@/components/global/BrandSwitcher') return { getActiveBrand: () => 'celestial' };
+    if (name === './CaptacionWhatsAppComposer') return { default: function CaptacionWhatsAppComposer() {} };
     if (name.endsWith('.css')) return { default: new Proxy({}, { get: (_, key) => String(key) }) };
     throw new Error(name);
   } });
@@ -236,6 +250,141 @@ test('large catalogues expose continuation instead of silently truncating after 
 test('unmount cancels reads and prevents a queued refresh from restarting them', async () => {
   const f = fixture(); await f.flush(); f.channels.at(-1).change({ eventType: 'UPDATE', new: {} }); await f.respond(0, body([]));
   f.close(); await f.fireTimeout(100); assert.equal(f.requests.length, 1);
+});
+
+const focusedId = '00112233-4455-6677-8899-aabbccddeeff';
+const secondFocusedId = '10112233-4455-6677-8899-aabbccddeeff';
+const pendingRequest = (f, match) => f.requests.findIndex(request => !request.answered && !request.options.signal?.aborted && match(request));
+const focusRequest = f => pendingRequest(f, request => request.url.includes('lead_id='));
+async function resolveMainList(f, items = []) {
+  const index = pendingRequest(f, request => request.url.startsWith('/api/captacion/list') && !request.url.includes('lead_id='));
+  if (index >= 0) await f.respond(index, body(items));
+}
+async function loadFocused(f, item) {
+  await f.flush();
+  const first = pendingRequest(f, request => request.url.includes('page='));
+  if (first >= 0) await f.respond(first, body([]));
+  await f.focus(item.id); await resolveMainList(f);
+  await f.respond(focusRequest(f), body([item]));
+}
+
+test('the companion handoff opens a closed contact beyond the first four pages without reopening it', async () => {
+  const f = fixture(); try {
+    await f.flush();
+    for (let page = 0; page < 4; page++) await f.respond(page, body(Array.from({ length: 250 }, (_, i) => row(`page-${page}-${i}`)), page + 1));
+    assert.equal(f.count(), 1000);
+    await f.focus(focusedId);
+    const request = focusRequest(f);
+    assert.match(f.requests[request].url, new RegExp(`scope=todos&brand=celestial&lead_id=${focusedId}`));
+    assert.equal(f.requests[request].options.headers.Authorization, 'Bearer fake-fixture');
+    await resolveMainList(f, [row('some-other-loaded-contact')]);
+    const closed = row(focusedId, 'no_interesado', { closed_at: '2026-09-01T10:00:00Z' });
+    await f.respond(focusRequest(f), body([closed]));
+    assert.deepEqual(f.cards().map(item => item.id), [focusedId]);
+    assert.equal(f.cards()[0].estado, 'no_interesado');
+    assert.equal(f.composer().selectedLeadId, focusedId);
+    assert.equal(f.composer().contacts.find(item => item.id === focusedId).closed_at, closed.closed_at);
+    assert.ok(f.scrolls.some(item => item.id === 'captacion-whatsapp'));
+    assert.equal(f.requests.filter(request => request.options.method === 'POST').length, 0);
+    const activeClosed = nodes(f.tree()).find(node => node.type === 'article' && /cerrado/.test(node.props.className) && /mobileActive/.test(node.props.className));
+    assert.ok(activeClosed, 'closed column selected on mobile');
+  } finally { f.close(); }
+});
+
+test('a saved companion handoff survives mounting and is consumed only after a valid contact id', async () => {
+  const f = fixture({ focusId: focusedId }); try {
+    await f.flush(); await resolveMainList(f);
+    await f.respond(focusRequest(f), body([row(focusedId)]));
+    assert.equal(f.storage.has('tc-captacion-focus-lead'), false);
+    assert.equal(f.composer().selectedLeadId, focusedId);
+    const count = f.requests.length;
+    await f.focus('malformed-id'); assert.equal(f.requests.length, count); assert.equal(f.composer().selectedLeadId, focusedId);
+  } finally { f.close(); }
+});
+
+test('WhatsApp preparation selects the correct recipient and never calls a management endpoint', async () => {
+  const f = fixture(); try {
+    await f.flush(); await f.respond(0, body([row('first'), row('second', 'pend_cap')]));
+    await f.prepare('second');
+    assert.equal(f.composer().selectedLeadId, 'second');
+    assert.equal(f.composer().contacts.find(item => item.id === 'second').estado, 'pend_cap');
+    assert.equal(f.cards().find(item => item.id === 'second').last_contact_at, undefined);
+    assert.equal(f.requests.length, 1);
+    assert.equal(f.emitted.some(event => event.type === 'tc-captacion-changed'), false);
+  } finally { f.close(); }
+});
+
+test('successful management informs companions after confirmation; a rejected action does not', async () => {
+  for (const ok of [true, false]) {
+    const f = fixture(); try {
+      await f.flush(); await f.respond(0, body([row('manageable')]));
+      await f.manage('manageable', 'no_contesta');
+      assert.equal(f.emitted.some(event => event.type === 'tc-captacion-changed'), false);
+      assert.equal(f.requests[1].options.method, 'POST');
+      await f.respond(1, { ok, error: ok ? undefined : 'Denied' }, ok ? 200 : 403);
+      assert.equal(f.emitted.filter(event => event.type === 'tc-captacion-changed').length, ok ? 1 : 0);
+      if (!ok) assert.equal(f.cards()[0].estado, 'nuevo');
+    } finally { f.close(); }
+  }
+});
+
+test('late focused reads cannot restore the old contact after another focus, sign-out or a brand change', async () => {
+  for (const transition of ['focus', 'logout', 'brand']) {
+    const f = fixture({ ignoreAbort: true }); try {
+      await f.flush(); await f.respond(0, body([])); await f.focus(focusedId); await resolveMainList(f);
+      const old = focusRequest(f);
+      if (transition === 'focus') {
+        await f.focus(secondFocusedId);
+        await f.respond(focusRequest(f), body([row(secondFocusedId)]));
+      } else if (transition === 'logout') await f.signOut();
+      else await f.brand('orion');
+      assert.equal(f.requests[old].options.signal.aborted, true);
+      await f.respond(old, body([row(focusedId)]));
+      assert.equal(f.cards().some(item => item.id === focusedId), false, transition);
+      assert.equal(f.composer()?.contacts.some(item => item.id === focusedId) || false, false, transition);
+      if (transition === 'focus') assert.equal(f.composer().selectedLeadId, secondFocusedId);
+    } finally { f.close(); }
+  }
+});
+
+test('permission denial removes an extra focused contact from cards and the WhatsApp composer', async () => {
+  for (const status of [401, 403]) {
+    const f = fixture(); try {
+      await loadFocused(f, row(focusedId)); assert.equal(f.composer().selectedLeadId, focusedId);
+      await f.click('Actualizar');
+      await f.respond(pendingRequest(f, request => request.url.includes('page=')), { ok: false, error: 'No autorizado' }, status);
+      assert.equal(f.cards().some(item => item.id === focusedId), false);
+      assert.equal(f.composer()?.contacts.some(item => item.id === focusedId) || false, false);
+    } finally { f.close(); }
+  }
+});
+
+test('a focused contact outside the loaded pages is refreshed or removed after its management', async () => {
+  const f = fixture(); try {
+    await loadFocused(f, row(focusedId, 'nuevo', { latest_meta_lead_at: new Date().toISOString() }));
+    await f.manage(focusedId, 'no_contesta');
+    await f.respond(pendingRequest(f, request => request.url === '/api/captacion/action'), { ok: true });
+    await resolveMainList(f);
+    const recheck = focusRequest(f);
+    if (recheck >= 0) await f.respond(recheck, body([row(focusedId, 'pend_free', { last_contact_at: new Date().toISOString() })]));
+    const remaining = f.cards().find(item => item.id === focusedId);
+    assert.ok(!remaining || remaining.estado === 'pend_free', 'a separate focused snapshot must not retain the old workflow after management');
+  } finally { f.close(); }
+});
+
+test('revalidating a focused contact never changes a subsequently selected WhatsApp recipient or jumps the scroll', async () => {
+  const f = fixture(); try {
+    await f.flush(); await f.respond(0, body([])); await f.focus(focusedId);
+    await resolveMainList(f, [row('other-recipient')]);
+    await f.respond(focusRequest(f), body([row(focusedId)]));
+    await f.selectRecipient('other-recipient');
+    assert.equal(f.composer().selectedLeadId, 'other-recipient');
+    const scrollsBefore = f.scrolls.length;
+    await f.interval(60000); await resolveMainList(f, [row('other-recipient')]);
+    await f.respond(focusRequest(f), body([row(focusedId, 'pend_free')]));
+    assert.equal(f.composer().selectedLeadId, 'other-recipient');
+    assert.equal(f.scrolls.length, scrollsBefore);
+  } finally { f.close(); }
 });
 
 function inboxLoader(status = 200) {

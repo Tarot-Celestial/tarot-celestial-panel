@@ -246,19 +246,30 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
       setEstadoLoading(true);
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
-      if (!token) return;
+      if (!token) throw new Error("SESSION_REQUIRED");
 
-      await fetch("/api/attendance/event", {
+      const response = await fetch("/api/attendance/event", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ event_type: nuevo === "break" ? "heartbeat" : nuevo }),
+        body: JSON.stringify({ event_type: nuevo === "break" ? "break_start" : nuevo }),
       });
+      const result = await response.json().catch(() => null);
+      if (response.status === 401) throw new Error("SESSION_REQUIRED");
+      if (!response.ok || result?.ok !== true || result.state_updated === false) throw new Error("STATE_NOT_CONFIRMED");
 
-      attendance.refreshAttendance();
+      await attendance.refreshAttendance();
       window.dispatchEvent(new CustomEvent("tc-attendance-changed"));
+    } catch (error) {
+      tcToast({
+        title: "No se pudo cambiar tu estado",
+        description: error instanceof Error && error.message === "SESSION_REQUIRED"
+          ? "Tu sesión ha caducado. Vuelve a entrar antes de cambiar tu estado."
+          : "No se ha confirmado el cambio. Vuelve a intentarlo.",
+        tone: "error",
+      });
     } finally {
       setEstadoLoading(false);
     }
