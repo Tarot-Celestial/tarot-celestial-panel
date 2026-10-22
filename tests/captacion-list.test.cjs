@@ -43,6 +43,7 @@ function fixture(options = {}) {
       lte(key, value) { predicates.push(row => row[key] <= value); ops.push('lte:' + key); return query; },
       is(key, value) { predicates.push(row => (row[key] ?? null) === value); ops.push('is:' + key); return query; },
       in(key, values) { predicates.push(row => values.includes(row[key])); ops.push('in:' + key); return query; },
+      not(key, op, value) { predicates.push(row => matches(row, `${key}.not.${op}.${value}`)); ops.push('not:' + key); return query; },
       or(value) { predicates.push(row => split(value).some(part => matches(row, part))); ops.push('or:' + value); return query; },
       order(key, settings) { orders.push([key, settings.ascending]); ops.push('order:' + key); return query; },
       range(from, to) { start = from; end = to; ops.push('range'); return query; },
@@ -66,6 +67,7 @@ function fixture(options = {}) {
     'next/server': { NextResponse: class extends Response { static json(value, init) { return new Response(JSON.stringify(value), init); } } },
     '@supabase/supabase-js': { createClient: () => db },
     '@/lib/server/brand-filter': brand,
+    '@/lib/server/captacion-attention': load('src/lib/server/captacion-attention.ts', {}),
     '@/lib/server/auth-fast': { getBearerToken: req => req.headers.get('authorization')?.replace(/^Bearer /, '') },
   }, { process: { env } });
   return { reads, worker, get: (query = 'scope=todos', token = 'fixture') => api.GET(new Request('http://localhost/api/captacion/list?' + query, { headers: token ? { authorization: 'Bearer ' + token } : {} })) };
@@ -120,12 +122,13 @@ test('fallback has the same scope and pagination and joins the permitted clients
 test('diagnostics are admin-only booleans and allowlisted event fields, never secret values or error payloads', async () => {
   const options = { env: { META_ACCESS_TOKEN: 'secret-access', META_APP_SECRET: 'secret-app', META_INGEST_SECRET: 'secret-ingest', CRON_SECRET: 'secret-cron', META_FORM_IDS: ' , ' }, event: { status: 'processed', source: 'internal_ingest', received_at: '2026-10-12', last_error: 'private-phone', payload: 'private-payload' } };
   const central = fixture(options); const centralBody = await (await central.get()).json();
-  assert.equal(centralBody.meta_diagnostics, undefined); assert.equal(central.reads.some(read => read.table === 'meta_lead_events'), false);
+  assert.equal(centralBody.meta_diagnostics, undefined);
+  assert.ok(central.reads.filter(read => read.table === 'meta_lead_events').every(read => read.fields === 'captacion_lead_id,meta_created_at'));
   const admin = fixture({ ...options, role: 'admin' }); const response = await admin.get(), body = await response.json();
   assert.match(response.headers.get('cache-control'), /private.*no-store/);
   assert.equal(body.meta_diagnostics.configuration.access_token, true); assert.equal(body.meta_diagnostics.configuration.form_ids, false); assert.equal(body.meta_diagnostics.configuration.verify_token, false);
   assert.equal(body.meta_diagnostics.last_event.source, 'internal_ingest'); assert.doesNotMatch(JSON.stringify(body), /secret-|private-/);
-  const unavailable = await (await fixture({ role: 'admin', metaError: true }).get()).json(); assert.equal(unavailable.meta_diagnostics.event_read_available, false);
+  const unavailable = await fixture({ role: 'admin', metaError: true }).get(); assert.equal(unavailable.status, 503);
 });
 
 test('invalid page and scope inputs never execute a lead query', async () => {
@@ -157,17 +160,80 @@ test('recent original Meta submissions are attached only to authorized leads wit
   assert.equal(body.items.find(item => item.id === row(3).id).workflow_state, 'cerrado');
   assert.doesNotMatch(JSON.stringify(body), /private-data/);
   const reads = f.reads.filter(read => read.table === 'meta_lead_events');
-  assert.ok(reads.length > 0 && reads.every(read => read.fields === 'captacion_lead_id,meta_created_at' && read.ops.includes('in:captacion_lead_id') && read.ops.includes('eq:status')));
+  assert.ok(reads.length > 0 && reads.every(read => read.fields === 'captacion_lead_id,meta_created_at' && read.ops.includes('eq:status')));
 });
 
-test('recent submission lookup paginates repeated events and an unavailable ledger does not block leads', async () => {
+test('recent submission lookup paginates repeated events and a failed ledger cannot hide new requests', async () => {
   const fresh = new Date(Date.now() - 3600000).toISOString();
   const events = Array.from({ length: 501 }, (_, n) => ({ captacion_lead_id: row(n < 500 ? 1 : 2).id, leadgen_id: String(1000 - n), status: 'processed', meta_created_at: fresh }));
   const f = fixture({ rows: [row(1), row(2)], events });
   const body = await (await f.get()).json();
   assert.ok(body.items.every(item => item.latest_meta_lead_at === fresh));
   assert.equal(f.reads.filter(read => read.table === 'meta_lead_events').length, 2);
-  const unavailable = await (await fixture({ rows: [row(1)], metaError: true }).get()).json();
-  assert.equal(unavailable.ok, true); assert.equal(unavailable.items.length, 1);
-  assert.equal(unavailable.items[0].latest_meta_lead_at, null);
+  const response = await fixture({ rows: [row(1)], metaError: true }).get();
+  const unavailable = await response.json();
+  assert.equal(response.status, 503); assert.equal(unavailable.ok, false);
+  assert.equal(unavailable.items, undefined); assert.equal(unavailable.error, 'ERR_CAPTACION_LIST');
+  assert.doesNotMatch(JSON.stringify(unavailable), /private/);
+});
+
+test('new submissions on old CRM rows are first globally and pagination never repeats them', async () => {
+  const fresh = new Date(Date.now() - 3600000).toISOString();
+  const rows = [...Array.from({ length: 1100 }, (_, n) => row(n, { created_at: '2026-10-20', next_contact_at: '2026-01-01' })), row(2000, { created_at: '2020-01-01', estado: 'pend_cap', next_contact_at: '2026-12-01' })];
+  const f = fixture({ rows, events: [{ captacion_lead_id: row(2000).id, meta_created_at: fresh, status: 'processed' }] });
+  const pages = [];
+  for (let page = 0; page < 5; page++) pages.push(await (await f.get('scope=pendientes&page=' + page)).json());
+  assert.equal(pages[0].items[0].id, row(2000).id);
+  assert.equal(pages[0].items[0].new_submission_pending, true);
+  assert.equal(pages[0].items[0].workflow_state, 'pend_cap');
+  const ids = pages.flatMap(page => page.items.map(item => item.id));
+  assert.equal(ids.length, 1101); assert.equal(new Set(ids).size, 1101);
+  assert.deepEqual(pages.map(page => page.items.length), [250, 250, 250, 250, 101]);
+  assert.equal(pages[4].pagination.has_more, false);
+});
+
+test('closed historical workflow reentry is visible in pending without rewriting its history', async () => {
+  const fresh = new Date(Date.now() - 3600000).toISOString();
+  const oldClosed = new Date(Date.now() - 72 * 3600000).toISOString();
+  const managed = new Date(Date.now() - 1800000).toISOString();
+  const rows = [row(1, { estado: 'no_interesado', closed_at: oldClosed, last_contact_at: oldClosed }), row(2, { estado: 'no_interesado', closed_at: managed }), row(3, { estado: 'pend_cap', last_contact_at: oldClosed })];
+  const events = [1, 2, 3].map(n => ({ captacion_lead_id: row(n).id, meta_created_at: fresh, status: 'processed' }));
+  const f = fixture({ rows, events });
+  const pending = await (await f.get('scope=pendientes')).json();
+  assert.deepEqual(pending.items.map(item => item.id).sort(), [row(1).id, row(3).id]);
+  const reentry = pending.items.find(item => item.id === row(1).id);
+  assert.equal(reentry.estado, 'no_interesado'); assert.equal(reentry.closed_at, oldClosed);
+  assert.equal(reentry.workflow_state, 'cerrado'); assert.equal(reentry.is_closed, true);
+  assert.equal(reentry.new_submission_pending, true); assert.equal(reentry.reentry_pending, true);
+  const closed = await (await f.get('scope=cerrados')).json();
+  assert.deepEqual(closed.items.map(item => item.id), [row(2).id]);
+  assert.equal(closed.items[0].new_submission_pending, false);
+});
+
+test('priority page respects assignment and explicit brand, including fallback join', async () => {
+  const fresh = new Date(Date.now() - 3600000).toISOString();
+  const rows = [row(1), row(2, { assigned_worker_id: id(99) }), row(3)];
+  const events = [1, 2, 3].map(n => ({ captacion_lead_id: row(n).id, meta_created_at: fresh, status: 'processed' }));
+  const clients = rows.map(item => ({ id: item.cliente_id, origen: item.id === row(3).id ? 'Orion Facebook' : 'Facebook' }));
+  const f = fixture({ rows, clients, events, joinError: true });
+  const celestial = await (await f.get('scope=pendientes&brand=celestial')).json();
+  assert.deepEqual(celestial.items.map(item => item.id), [row(1).id]);
+  const orion = await (await f.get('scope=pendientes&brand=orion')).json();
+  assert.equal(orion.brand, 'orion'); assert.deepEqual(orion.items.map(item => item.id), [row(3).id]);
+  assert.equal((await f.get('brand=invalid')).status, 400);
+});
+
+test('more than 250 new requests are globally ordered across batches and pages before ordinary rows', async () => {
+  const since = Date.now() - 3600000;
+  const rows = Array.from({ length: 270 }, (_, n) => row(n, { created_at: '2020-01-01' }));
+  const events = rows.map((item, n) => ({ captacion_lead_id: item.id, meta_created_at: new Date(since + n * 1000).toISOString(), status: 'processed' }));
+  const f = fixture({ rows: [...rows, row(9999, { created_at: '2026-10-22' })], events });
+  const first = await (await f.get('scope=pendientes')).json();
+  const second = await (await f.get('scope=pendientes&page=1')).json();
+  assert.equal(first.items.length, 250); assert.equal(first.items[0].id, row(269).id);
+  assert.equal(second.items.length, 21); assert.equal(second.items[0].id, row(19).id);
+  assert.equal(second.items.at(-1).id, row(9999).id);
+  assert.equal(new Set([...first.items, ...second.items].map(item => item.id)).size, 271);
+  assert.ok(f.reads.some(read => read.table === 'captacion_leads' && read.fields === 'id'));
+  assert.equal(f.reads.some(read => read.ops.includes('not:id')), false);
 });

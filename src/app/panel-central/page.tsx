@@ -10,6 +10,7 @@ import CentralDailyOverview, { type CentralDailyOverviewData, type RecentNotific
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
 import CentralCompanion from "@/features/central/assistant/CentralCompanion";
 import type { PetId } from "@/lib/central-assistant";
+import type { CaptacionAttentionSnapshot } from "@/lib/captacion-attention";
 import CentralDateSelector from "@/features/central/CentralDateSelector";
 import { CentralThemeProvider } from "@/features/central/CentralTheme";
 import { useCentralXpData } from "@/features/central/useCentralXpData";
@@ -263,6 +264,11 @@ function CentralPage() {
   const [tab, setTab] = useState<TabKey>("panel");
   const [summaryPet, setSummaryPet] = useState<PetId|null>(null);
   const [companionOpenRequest, setCompanionOpenRequest] = useState(0);
+  const [captacionAttention, setCaptacionAttention] = useState({ count: 0, error: "", brand: "celestial" });
+  const handleCaptacionAttention = useCallback((next: CaptacionAttentionSnapshot) => {
+    setCaptacionAttention(previous => previous.count === next.count && previous.error === next.error && previous.brand === next.brand
+      ? previous : { count: next.count, error: next.error, brand: next.brand });
+  }, []);
   const notificationFeed = useCentralNotificationsFeed();
   const myInvoiceFeed = useMyInvoice(ok && (tab === "mi-factura" || tab === "central"));
   const searchParams = useSearchParams();
@@ -1272,15 +1278,17 @@ function CentralPage() {
   }
 
   const centralNavItems = useMemo(
-    () => CENTRAL_NAV.map((item) => item.key === "notificaciones" ? { ...item, badge: notificationCount } : item),
-    [notificationCount]
+    () => CENTRAL_NAV.map((item) => item.key === "notificaciones" ? { ...item, badge: notificationCount }
+      : item.key === "captacion" ? { ...item, badge: captacionAttention.count, badgeStale: !!captacionAttention.error,
+        kicker: captacionAttention.error ? "Recuento sin actualizar" : captacionAttention.count > 0 ? "Nuevos · atender ahora" : undefined } : item),
+    [notificationCount, captacionAttention]
   );
 
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
   return (
     <CentralThemeProvider workerId={themeWorkerId} rank={xpProgress?.tier?.key}>
-      {ok && <CentralCompanion tab={tab} workerId={themeWorkerId} captacionEnabled={attOnline && attStatus === "working"} onPetChange={setSummaryPet} openRequest={companionOpenRequest} clientId={tab === 'mis-clientas' ? searchParams?.get('cliente') : null} onOpenReservation={(id) => openReservaFromPopup({id})} onNavigate={(nextTab, clientId) => {
+      {ok && <CentralCompanion tab={tab} workerId={themeWorkerId} captacionEnabled={ok} onCaptacionAttentionChange={handleCaptacionAttention} onPetChange={setSummaryPet} openRequest={companionOpenRequest} clientId={tab === 'mis-clientas' ? searchParams?.get('cliente') : null} onOpenReservation={(id) => openReservaFromPopup({id})} onNavigate={(nextTab, clientId) => {
         if (!TABS.includes(nextTab as TabKey) || HIDDEN_TELEPHONIST_TABS.has(nextTab as TabKey)) return;
         setTab(nextTab as TabKey);
         const params = new URLSearchParams(searchParams?.toString() || "");

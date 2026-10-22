@@ -61,6 +61,7 @@ function fixture(options = {}) {
     'next/server': { NextResponse: class extends Response { static json(body, init) { return new Response(JSON.stringify(body), init); } } },
     '@supabase/supabase-js': { createClient: () => db },
     '@/lib/server/brand-filter': brand,
+    '@/lib/server/captacion-attention': load('src/lib/server/captacion-attention.ts', {}),
   }, { process: { env: { NEXT_PUBLIC_SUPABASE_URL: 'https://fixture.invalid', SUPABASE_SERVICE_ROLE_KEY: 'fixture-only' } } });
   return { reads, authTokens, get: (query = '', token = 'verified') => api.GET(new Request(`http://localhost/api/captacion/attention?${query}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })) };
 }
@@ -107,7 +108,7 @@ test('admin can see other assignments while preserving brand filtering', async (
 test('only processed original Meta dates in the last 24h qualify, including repeat submissions', async () => {
   const f = fixture({ events: [event(1, 3), event(1, 1, { leadgen_id: 'latest' }), event(2, 48), event(3, 1, { status: 'failed' }), event(4, -1), event(5, 24), event(6, 24.0001), event(7, 1, { captacion_lead_id: null })], leads: [1, 2, 3, 4, 5, 6].map(n => lead(n)), clients: [1, 2, 3, 4, 5, 6].map(n => client(n)) });
   const body = await (await f.get()).json();
-  assert.deepEqual(body.items.map(item => item.id), [lead(1).id, lead(5).id]);
+  assert.deepEqual(body.items.map(item => item.id), [lead(1).id]);
   assert.equal(body.items[0].latest_meta_lead_at, at(1));
   const read = f.reads.find(read => read.table === 'meta_lead_events');
   assert.equal(read.fields, 'captacion_lead_id,meta_created_at');

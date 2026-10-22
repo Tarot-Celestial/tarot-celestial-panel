@@ -17,3 +17,4 @@
 @media(max-width:900px){.board.allBoard{grid-template-columns:repeat(5,minmax(260px,82vw))}}
 @media(max-width:640px){.heroActions{flex-wrap:wrap}.live{height:auto;min-height:40px;white-space:normal}.board.allBoard{display:block}.metaStatus li{display:block}.metaStatus li strong{display:block}.readStatus{font-size:12px}}
 .quick .whatsappAction{display:inline-flex;align-items:center;gap:5px;color:#9bf2c5;background:rgba(37,211,102,.12);border-color:rgba(37,211,102,.32)}
+.newPriorityNotice{display:flex;align-items:flex-start;gap:11px;margin-top:14px;padding:13px 15px;border:1px solid rgba(247,198,88,.65);border-radius:13px;background:linear-gradient(110deg,rgba(147,100,19,.25),rgba(74,39,65,.2));color:#ffe4a0}.newPriorityNotice>svg{width:20px;height:20px;flex:0 0 auto;margin-top:1px}.newPriorityNotice strong{font-size:13px;line-height:1.45}.newPriorityNotice p{margin:4px 0 0;color:#f3dec0;font-size:12px;line-height:1.45}

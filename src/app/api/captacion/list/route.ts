@@ -4,8 +4,9 @@ export const revalidate = 0;
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { brandFromRequest, originMatchesBrand } from "@/lib/server/brand-filter";
+import { originMatchesBrand, type BrandKey } from "@/lib/server/brand-filter";
 import { getBearerToken } from "@/lib/server/auth-fast";
+import { pendingMetaSubmissionAt, recentMetaSubmissions } from "@/lib/server/captacion-attention";
 
 function env(name: string) {
   const v = process.env[name];
@@ -28,12 +29,16 @@ type LeadItem = AnyRow & {
 
 const CLOSED_STATES = ["cliente", "captado", "no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"];
 const PAGE_SIZE = 250;
+const ID_BATCH_SIZE = 100;
+type PageOptions = { from?: number; to?: number; includeIds?: string[]; excludeIds?: string[] };
 
-function scopedPage(query: any, worker: AnyRow, scope: string, page: number, leadId?: string) {
+function scopedPage(query: any, worker: AnyRow, scope: string, page: number, leadId?: string, options: PageOptions = {}) {
   // Apply access and workflow filters before pagination, so another central's
   // rows or recent closed leads cannot push permitted pending leads out.
   const alternatives: string[] = [];
   if (leadId) query = query.eq("id", leadId);
+  if (options.includeIds?.length) query = query.in("id", options.includeIds);
+  if (options.excludeIds?.length) query = query.not("id", "in", `(${options.excludeIds.join(",")})`);
   if (worker.role === "central") alternatives.push(`assigned_worker_id.is.null,assigned_worker_id.eq.${worker.id}`);
   if (scope === "pendientes") {
     query = query.is("closed_at", null);
@@ -42,7 +47,8 @@ function scopedPage(query: any, worker: AnyRow, scope: string, page: number, lea
     alternatives.push(`closed_at.not.is.null,estado.in.(${CLOSED_STATES.join(",")})`);
   }
   if (alternatives.length) query = query.or(alternatives.length === 1 ? alternatives[0] : `and(${alternatives.map(filter => `or(${filter})`).join(",")})`);
-  return query.order("created_at", { ascending: false }).order("id", { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+  return query.order("created_at", { ascending: false }).order("id", { ascending: false })
+    .range(options.from ?? page * PAGE_SIZE, options.to ?? (page + 1) * PAGE_SIZE - 1);
 }
 
 async function currentWorker(req: NextRequest) {
@@ -85,7 +91,7 @@ function isClosed(item: AnyRow) {
   );
 }
 
-async function fetchWithJoin(worker: AnyRow, scope: string, page: number, leadId?: string) {
+async function fetchWithJoin(worker: AnyRow, scope: string, page: number, leadId?: string, options: PageOptions = {}) {
   const { data, error } = await scopedPage(supabase
     .from("captacion_leads")
     .select(`
@@ -120,16 +126,16 @@ async function fetchWithJoin(worker: AnyRow, scope: string, page: number, leadId
         lead_form_name,
         created_at
       )
-    `), worker, scope, page, leadId);
+    `), worker, scope, page, leadId, options);
 
   if (error) throw error;
   return Array.isArray(data) ? data : [];
 }
 
-async function fetchFallback(worker: AnyRow, scope: string, page: number, leadId?: string) {
+async function fetchFallback(worker: AnyRow, scope: string, page: number, leadId?: string, options: PageOptions = {}) {
   const { data, error } = await scopedPage(supabase
     .from("captacion_leads")
-    .select("id, cliente_id, estado, intento_actual, max_intentos, next_contact_at, last_contact_at, contacted_at, closed_at, last_result, campaign_name, form_name, origen, notas, assigned_worker_id, assigned_role, created_at, updated_at"), worker, scope, page, leadId);
+    .select("id, cliente_id, estado, intento_actual, max_intentos, next_contact_at, last_contact_at, contacted_at, closed_at, last_result, campaign_name, form_name, origen, notas, assigned_worker_id, assigned_role, created_at, updated_at"), worker, scope, page, leadId, options);
 
   if (error) throw error;
 
@@ -156,41 +162,56 @@ async function fetchFallback(worker: AnyRow, scope: string, page: number, leadId
   }));
 }
 
-async function recentMetaSubmissions(rows: AnyRow[]) {
-  const latest = new Map<string, string>();
-  const ids = rows.map(row => String(row.id));
-  if (!ids.length) return latest;
-  const now = Date.now();
-  const since = new Date(now - 24 * 60 * 60 * 1000).toISOString();
-  // Only read timestamps for this already-authorized page. The event ledger
-  // retains repeat submissions without overwriting the customer's workflow.
-  // Original Meta dates avoid highlighting historical backfills as new.
-  const batchSize = 500;
-  try {
-    for (let page = 0; ; page++) {
-      const { data, error } = await supabase.from("meta_lead_events")
-        .select("captacion_lead_id,meta_created_at")
-        .in("captacion_lead_id", ids)
-        .eq("status", "processed")
-        .gte("meta_created_at", since)
-        .lte("meta_created_at", new Date(now).toISOString())
-        .order("meta_created_at", { ascending: false })
-        .order("leadgen_id", { ascending: false })
-        .range(page * batchSize, (page + 1) * batchSize - 1);
-      if (error) throw error;
-      for (const event of data || []) {
-        const id = String(event.captacion_lead_id);
-        if (!latest.has(id)) latest.set(id, event.meta_created_at);
-      }
-      if (!data || data.length < batchSize) break;
-    }
-  } catch {
-    // Optional highlighting must not prevent access to the existing lead list.
-    latest.clear();
-  }
-  return latest;
+async function fetchRows(worker: AnyRow, scope: string, page: number, leadId?: string, options: PageOptions = {}) {
+  try { return await fetchWithJoin(worker, scope, page, leadId, options); }
+  catch { return fetchFallback(worker, scope, page, leadId, options); }
 }
 
+function permittedRows(rows: AnyRow[], worker: AnyRow, brand: BrandKey) {
+  return rows.filter(row => originMatchesBrand(row?.cliente?.origen || row?.origen, brand)
+    && (worker.role === "admin" || !row.assigned_worker_id || String(row.assigned_worker_id) === String(worker.id)));
+}
+
+async function priorityRows(worker: AnyRow, brand: BrandKey, latest: Map<string, string>, now: number, leadId?: string) {
+  const ids = [...latest.keys()].filter(id => !leadId || id === leadId);
+  const rows: AnyRow[] = [];
+  for (let offset = 0; offset < ids.length; offset += ID_BATCH_SIZE) {
+    // Ignore the previous workflow only for selecting new requests. The actual
+    // state/closed_at are preserved; no database record is reopened by this GET.
+    const batch = await fetchRows(worker, "todos", 0, leadId, { includeIds: ids.slice(offset, offset + ID_BATCH_SIZE) });
+    rows.push(...permittedRows(batch, worker, brand).filter(row => pendingMetaSubmissionAt(row, latest.get(String(row.id)), now)));
+  }
+  return rows.sort((a, b) => latest.get(String(b.id))!.localeCompare(latest.get(String(a.id))!) || String(a.id).localeCompare(String(b.id)));
+}
+
+async function ordinaryRows(worker: AnyRow, scope: string, leadId: string | undefined, offset: number, count: number, excludedIds: string[]) {
+  if (!count) return [];
+  if (excludedIds.length <= ID_BATCH_SIZE) {
+    return fetchRows(worker, scope, 0, leadId, { from: offset, to: offset + count - 1, excludeIds: excludedIds });
+  }
+  // Avoid an unbounded NOT IN URL when a campaign brings hundreds of forms.
+  // Scan only IDs in stable pages, then hydrate the requested ordinary window.
+  const excluded = new Set(excludedIds);
+  const selected: string[] = [];
+  let skipped = 0;
+  for (let page = 0; ; page++) {
+    const { data, error } = await scopedPage(supabase.from("captacion_leads").select("id"), worker, scope, page, leadId);
+    if (error || !Array.isArray(data)) throw new Error("CAPTACION_UNAVAILABLE");
+    for (const row of data) {
+      if (excluded.has(String(row.id))) continue;
+      if (skipped++ < offset) continue;
+      selected.push(String(row.id));
+      if (selected.length === count) break;
+    }
+    if (selected.length === count || data.length < PAGE_SIZE) break;
+  }
+  const rows: AnyRow[] = [];
+  for (let start = 0; start < selected.length; start += ID_BATCH_SIZE) {
+    const ids = selected.slice(start, start + ID_BATCH_SIZE);
+    rows.push(...await fetchRows(worker, scope, 0, leadId, { includeIds: ids, from: 0, to: ids.length - 1 }));
+  }
+  return rows;
+}
 
 function cleanNum(value: unknown) {
   const n = Number(value);
@@ -305,7 +326,10 @@ export async function GET(req: NextRequest) {
     }
     const { searchParams } = new URL(req.url);
     const scope = norm(searchParams.get("scope") || "pendientes");
-    const brand = brandFromRequest(req);
+    const brand = searchParams.get("brand") || searchParams.get("marca") || "celestial";
+    if (brand !== "celestial" && brand !== "orion") {
+      return NextResponse.json({ ok: false, error: "INVALID_BRAND" }, { status: 400 });
+    }
     const page = Number(searchParams.get("page") || 0);
     const leadId = searchParams.get("lead_id") || undefined;
     if (leadId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leadId)) {
@@ -315,24 +339,27 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "INVALID_PAGINATION" }, { status: 400 });
     }
 
-    let raw: AnyRow[] = [];
-
-    try {
-      raw = await fetchWithJoin(worker, scope, page, leadId);
-    } catch {
-      raw = await fetchFallback(worker, scope, page, leadId);
-    }
+    const now = Date.now();
+    // The event ledger now determines pagination and historical reentries. A
+    // failed read must retain the UI's last good list, not silently hide requests.
+    const latestMeta = await recentMetaSubmissions(supabase, now);
+    const pendingNew = await priorityRows(worker, brand, latestMeta, now, leadId);
+    const priority = scope === "cerrados" ? [] : pendingNew;
+    const pageStart = page * PAGE_SIZE;
+    const highlighted = priority.slice(pageStart, pageStart + PAGE_SIZE);
+    const normalCount = PAGE_SIZE - highlighted.length;
+    const normalStart = Math.max(0, pageStart - priority.length);
+    // Prioritize across the entire result set BEFORE pagination. A repeat form
+    // on an old client must not be buried behind hundreds of newer CRM rows.
+    const ordinary = await ordinaryRows(worker, scope, leadId, normalStart, normalCount, pendingNew.map(row => String(row.id)));
+    const hasMore = priority.length >= pageStart + PAGE_SIZE || (normalCount > 0 && ordinary.length === normalCount);
+    let raw = [...highlighted, ...ordinary];
 
     // Importante para Supabase Nano: la vista de captación no necesita calcular ingresos
     // de cada cliente en cada refresco. Evitamos agregaciones pesadas en pagos/rendimiento.
 
     // Advance over raw pages even if a page contains only the other brand.
-    const hasMore = raw.length === PAGE_SIZE;
-    raw = raw.filter((item: AnyRow) => originMatchesBrand(item?.cliente?.origen || item?.origen, brand));
-    if (worker.role === "central") {
-      raw = raw.filter((item: AnyRow) => !item?.assigned_worker_id || String(item.assigned_worker_id) === String(worker.id));
-    }
-    const latestMeta = await recentMetaSubmissions(raw);
+    raw = permittedRows(raw, worker, brand);
 
     const workerIds = Array.from(new Set(raw.map((item) => String(item?.assigned_worker_id || "")).filter(Boolean)));
     const workerNames = new Map<string, string>();
@@ -345,17 +372,22 @@ export async function GET(req: NextRequest) {
       ...item,
       assigned_worker_name: workerNames.get(String(item?.assigned_worker_id || "")) || null,
       latest_meta_lead_at: latestMeta.get(String(item.id)) || null,
+      new_submission_pending: Boolean(pendingMetaSubmissionAt(item, latestMeta.get(String(item.id)), now)),
+      reentry_pending: isClosed(item) && Boolean(pendingMetaSubmissionAt(item, latestMeta.get(String(item.id)), now)),
       workflow_state: computeWorkflowState(item),
       is_closed: isClosed(item),
     }));
 
     if (scope === "pendientes") {
-      items = items.filter((item) => !item.is_closed);
+      items = items.filter((item) => !item.is_closed || item.new_submission_pending);
     } else if (scope === "cerrados") {
-      items = items.filter((item) => item.is_closed);
+      items = items.filter((item) => item.is_closed && !item.new_submission_pending);
     }
 
     items.sort((a, b) => {
+      const aRecent = pendingMetaSubmissionAt(a, a.latest_meta_lead_at, now);
+      const bRecent = pendingMetaSubmissionAt(b, b.latest_meta_lead_at, now);
+      if (aRecent !== bRecent) return bRecent - aRecent;
       const aNext = a.next_contact_at ? new Date(a.next_contact_at).getTime() : Number.MAX_SAFE_INTEGER;
       const bNext = b.next_contact_at ? new Date(b.next_contact_at).getTime() : Number.MAX_SAFE_INTEGER;
 
@@ -400,17 +432,17 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    return new NextResponse(JSON.stringify({ ok: true, brand, items, server_time: new Date().toISOString(), pagination: { page, page_size: PAGE_SIZE, next_page: hasMore ? page + 1 : null, has_more: hasMore }, meta_diagnostics: metaDiagnostics }), {
+    return new NextResponse(JSON.stringify({ ok: true, brand, items, server_time: new Date(now).toISOString(), pagination: { page, page_size: PAGE_SIZE, next_page: hasMore ? page + 1 : null, has_more: hasMore }, meta_diagnostics: metaDiagnostics }), {
       headers: {
         "Cache-Control": "private, no-store, no-cache, must-revalidate, proxy-revalidate",
       },
     });
 
-  } catch (err: any) {
+  } catch {
     return new NextResponse(
-      JSON.stringify({ ok: false, error: err?.message || "ERR_CAPTACION_LIST" }),
+      JSON.stringify({ ok: false, error: "ERR_CAPTACION_LIST" }),
       {
-        status: 500,
+        status: 503,
         headers: {
           "Cache-Control": "no-store",
         },

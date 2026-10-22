@@ -13,6 +13,25 @@ export type CaptacionAttentionNotice = {
   announcedAt: number;
   items: CaptacionAttentionItem[];
 };
+export type CaptacionAttentionSnapshot = {
+  count: number;
+  items: CaptacionAttentionItem[];
+  error: string;
+  brand: 'celestial' | 'orion';
+};
+
+export function captacionEntryKey(item: CaptacionAttentionItem) {
+  return `${item.id}:${Date.parse(item.latest_meta_lead_at)}`;
+}
+
+export function captacionKnownEntries(value: unknown, now: number): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((key): key is string => {
+    if (typeof key !== 'string') return false;
+    const submitted = Number(key.slice(key.lastIndexOf(':') + 1));
+    return Number.isFinite(submitted) && submitted <= now && now - submitted < 86_400_000;
+  });
+}
 
 // The server checks management timestamps and permissions; this additionally
 // rejects malformed/future/expired original Meta dates in a cached response.

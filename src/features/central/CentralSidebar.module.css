@@ -83,6 +83,18 @@
 }
 .invoiceButton .iconHud { color: #a0e4ba; }
 .alertButton .iconHud { color: #f5a5bd; }
+.captacionUrgent, .captacionUrgent:hover {
+  border-color: #ff667f;
+  color: #fff;
+  background: linear-gradient(115deg, #a62542, #591b31);
+  box-shadow: 0 0 0 1px #ff607b30, 0 0 18px #e8325730;
+  animation: captacionPulse 2.8s ease-in-out infinite;
+}
+.captacionUrgent .iconHud { color: #fff0c6; }
+.captacionUrgent .kicker { color: #ffe4e9; font-weight: 650; }
+.captacionUrgent::before { background: #ffb6c5; box-shadow: 0 0 9px #ff667f80; }
+.captacionBadge { background: #fff1e4; border-color: #fff5ed; color: #8e1530; min-width: 29px; font-size: calc(14px * var(--ct-font-scale, 1)); }
+@keyframes captacionPulse { 50% { box-shadow: 0 0 0 2px #ff607b40, 0 0 23px #e8325750; } }
 .chevron { display: grid; place-items: center; align-self: center; width: 34px; min-height: 44px; flex: 0 0 34px; border: 1px solid rgba(192, 172, 221, 0.14); border-radius: 9px; color: #d8cae8; background: rgba(190, 163, 228, 0.045); cursor: pointer; }
 .chevron:hover { color: #fff; background: rgba(190, 163, 228, 0.14); }
 .chevron svg { transition: transform 160ms ease; }
@@ -109,4 +121,5 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .navButton, .chevron svg { transition: none; }
+  .captacionUrgent { animation: none; }
 }

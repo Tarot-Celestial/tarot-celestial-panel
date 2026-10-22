@@ -115,13 +115,13 @@ test('original Meta dates exclude historical imports, future dates and malformed
   assert.deepEqual(Array.from(items, item => item.id), ['lead-a']);
 });
 
-test('first arrival announces immediately, groups arrivals, and repeats exactly after sixty seconds', async () => {
+test('each new arrival announces inside the prior minute and resets the sixty-second repeat', async () => {
   const f = fixture({ rows: [row('Daisy'), row('Guadalupe')] }); await f.mount();
   assert.equal(f.notices.length, 1); assert.equal(f.current.notice.items.length, 2);
   f.records.push(row('Wilfredo')); await f.realtime(); await f.advance(900);
-  assert.equal(f.notices.length, 1);
-  await f.advance(59099); assert.equal(f.notices.length, 1);
-  await f.advance(1); assert.equal(f.notices.length, 2); assert.equal(f.current.notice.items.length, 3);
+  assert.equal(f.notices.length, 2); assert.equal(f.current.items.length, 3);
+  await f.advance(59999); assert.equal(f.notices.length, 2);
+  await f.advance(101); assert.equal(f.notices.length, 3); assert.equal(f.current.notice.items.length, 3);
   assert.match(f.logic.captacionAttentionMessage(f.current.notice.items), /3 contactos/);
   await f.unmount();
 });
@@ -129,7 +129,8 @@ test('first arrival announces immediately, groups arrivals, and repeats exactly 
 test('opening or dismissing does not mark a contact handled; a real management refresh stops reminders', async () => {
   const f = fixture(); await f.mount(); await f.dismiss(); assert.equal(f.current.notice, null);
   await f.advance(60000); assert.equal(f.notices.length, 2);
-  f.records.length = 0; await f.changed(); assert.equal(f.current.notice, null);
+  assert.equal(f.current.items.length, 1, 'dismissing an overlay does not clear sidebar attention');
+  f.records.length = 0; await f.changed(); await f.advance(900); assert.equal(f.current.notice, null); assert.equal(f.current.items.length, 0);
   await f.advance(120000); assert.equal(f.notices.length, 2); assert.equal(f.current.notice, null);
   await f.unmount();
 });
@@ -137,6 +138,7 @@ test('opening or dismissing does not mark a contact handled; a real management r
 test('a failed or offline read hides the notice and cannot announce cached pending clients', async () => {
   const f = fixture(); await f.mount(); f.status(503); await f.refresh();
   assert.equal(f.current.notice, null); assert.ok(f.current.error);
+  assert.equal(f.current.items.length, 1, 'read failures preserve the last known queue for an explicitly stale sidebar');
   await f.advance(120000); assert.equal(f.notices.length, 1);
   f.status(200); await f.online(); await f.advance(900); assert.equal(f.notices.length, 2);
   await f.offline(); assert.equal(f.current.notice, null);
@@ -176,7 +178,7 @@ test('storage-claim fallback avoids duplicate visible notifications in browsers 
   await first.unmount(); await second.unmount();
 });
 
-test('an inactive central stays quiet; entering work resumes and a break stops reminders and background reads', async () => {
+test('monitor lifecycle stops reads while disabled and resumes pending requests when enabled', async () => {
   const f = fixture({ enabled: false }); await f.mount();
   await f.advance(60000); assert.equal(f.calls.length, 0); assert.equal(f.notices.length, 0);
   await f.update({ enabled: true }); assert.equal(f.notices.length, 1); assert.ok(f.current.notice);
@@ -188,11 +190,51 @@ test('an inactive central stays quiet; entering work resumes and a break stops r
   await f.unmount();
 });
 
-test('a delayed attention read cannot announce after the central disconnects or starts a break', async () => {
+test('a delayed attention read cannot announce after the monitor is disabled', async () => {
   const f = fixture(); let release;
   f.block(new Promise(resolve => { release = resolve; })); await f.mount();
   await f.update({ enabled: false }); assert.equal(f.calls[0].signal.aborted, true);
   release(); await f.settle();
   assert.equal(f.notices.length, 0); assert.equal(f.current.notice, null); assert.equal(f.timers.size, 0);
+  await f.unmount();
+});
+
+test('the same client submitting again announces immediately, while duplicate refreshes do not', async () => {
+  const f = fixture(); await f.mount();
+  await f.advance(2000);
+  f.records[0].latest_meta_lead_at = new Date(start + 2000).toISOString();
+  await f.realtime(); await f.advance(900);
+  assert.equal(f.notices.length, 2); assert.equal(f.current.items.length, 1);
+  const visible = f.current.notice;
+  await f.realtime(); assert.equal(f.current.notice, visible, 'a routine refresh does not hide a pending urgent notice');
+  await f.advance(900); await f.refresh(); assert.equal(f.notices.length, 2);
+  await f.unmount();
+});
+
+test('new-entry announcements are shared across tabs without waiting for the minute', async () => {
+  const shared = sharedBrowser(), first = fixture({ shared }), second = fixture({ shared });
+  await first.mount(); await second.mount();
+  first.records.push(row('lead-new')); second.records.push(row('lead-new'));
+  await first.realtime(); await second.realtime();
+  await first.advance(900); await second.advance(900);
+  assert.equal(first.notices.length + second.notices.length, 2, 'one first announcement and one shared new-entry announcement');
+  assert.equal(first.current.items.length, 2); assert.equal(second.current.items.length, 2);
+  await first.dismiss(); await second.dismiss();
+  assert.equal(first.current.items.length, 2); assert.equal(second.current.items.length, 2);
+  await first.unmount(); await second.unmount();
+});
+
+test('old announced entries survive queue changes and cannot become new again without a fresh submission', async () => {
+  const f = fixture(); await f.mount();
+  f.records.length = 0; await f.refresh(); assert.equal(f.current.items.length, 0);
+  f.records.push(row()); await f.refresh(); assert.equal(f.notices.length, 1);
+  f.records.push(row('another')); await f.refresh(); assert.equal(f.notices.length, 2);
+  await f.unmount();
+});
+
+test('an interrupted fallback claim cannot suppress a new arrival that was never shown', async () => {
+  const f = fixture({ noLocks: true }); await f.mount();
+  await f.realtime(); await f.advance(80); assert.equal(f.notices.length, 0);
+  await f.advance(1000); assert.equal(f.notices.length, 1);
   await f.unmount();
 });
