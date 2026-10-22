@@ -134,6 +134,15 @@ test('invalid page and scope inputs never execute a lead query', async () => {
   }
 });
 
+test('attention deep links fetch only the requested authorized lead, including a historic closed one', async () => {
+  const f = fixture({ rows: [row(1, { estado: 'no_interesado' }), row(2, { assigned_worker_id: id(99) }), row(3, { cliente: { origen: 'Orion' } })] });
+  const selected = await (await f.get('scope=todos&lead_id=' + row(1).id)).json();
+  assert.equal(selected.items.length, 1); assert.equal(selected.items[0].id, row(1).id);
+  for (const n of [2, 3]) assert.equal((await (await f.get('scope=todos&lead_id=' + row(n).id)).json()).items.length, 0);
+  const invalid = fixture(); assert.equal((await invalid.get('lead_id=invalid')).status, 400);
+  assert.equal(invalid.reads.some(read => read.table === 'captacion_leads'), false);
+});
+
 test('recent original Meta submissions are attached only to authorized leads without changing their workflow', async () => {
   const at = hours => new Date(Date.now() - hours * 3600000).toISOString();
   const fresh = at(1), previous = at(2);

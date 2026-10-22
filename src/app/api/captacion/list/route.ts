@@ -29,10 +29,11 @@ type LeadItem = AnyRow & {
 const CLOSED_STATES = ["cliente", "captado", "no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"];
 const PAGE_SIZE = 250;
 
-function scopedPage(query: any, worker: AnyRow, scope: string, page: number) {
+function scopedPage(query: any, worker: AnyRow, scope: string, page: number, leadId?: string) {
   // Apply access and workflow filters before pagination, so another central's
   // rows or recent closed leads cannot push permitted pending leads out.
   const alternatives: string[] = [];
+  if (leadId) query = query.eq("id", leadId);
   if (worker.role === "central") alternatives.push(`assigned_worker_id.is.null,assigned_worker_id.eq.${worker.id}`);
   if (scope === "pendientes") {
     query = query.is("closed_at", null);
@@ -84,7 +85,7 @@ function isClosed(item: AnyRow) {
   );
 }
 
-async function fetchWithJoin(worker: AnyRow, scope: string, page: number) {
+async function fetchWithJoin(worker: AnyRow, scope: string, page: number, leadId?: string) {
   const { data, error } = await scopedPage(supabase
     .from("captacion_leads")
     .select(`
@@ -119,16 +120,16 @@ async function fetchWithJoin(worker: AnyRow, scope: string, page: number) {
         lead_form_name,
         created_at
       )
-    `), worker, scope, page);
+    `), worker, scope, page, leadId);
 
   if (error) throw error;
   return Array.isArray(data) ? data : [];
 }
 
-async function fetchFallback(worker: AnyRow, scope: string, page: number) {
+async function fetchFallback(worker: AnyRow, scope: string, page: number, leadId?: string) {
   const { data, error } = await scopedPage(supabase
     .from("captacion_leads")
-    .select("id, cliente_id, estado, intento_actual, max_intentos, next_contact_at, last_contact_at, contacted_at, closed_at, last_result, campaign_name, form_name, origen, notas, assigned_worker_id, assigned_role, created_at, updated_at"), worker, scope, page);
+    .select("id, cliente_id, estado, intento_actual, max_intentos, next_contact_at, last_contact_at, contacted_at, closed_at, last_result, campaign_name, form_name, origen, notas, assigned_worker_id, assigned_role, created_at, updated_at"), worker, scope, page, leadId);
 
   if (error) throw error;
 
@@ -306,6 +307,10 @@ export async function GET(req: NextRequest) {
     const scope = norm(searchParams.get("scope") || "pendientes");
     const brand = brandFromRequest(req);
     const page = Number(searchParams.get("page") || 0);
+    const leadId = searchParams.get("lead_id") || undefined;
+    if (leadId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leadId)) {
+      return NextResponse.json({ ok: false, error: "INVALID_LEAD_ID" }, { status: 400 });
+    }
     if (!Number.isSafeInteger(page) || page < 0 || page > 100_000 || !["pendientes", "cerrados", "todos"].includes(scope)) {
       return NextResponse.json({ ok: false, error: "INVALID_PAGINATION" }, { status: 400 });
     }
@@ -313,9 +318,9 @@ export async function GET(req: NextRequest) {
     let raw: AnyRow[] = [];
 
     try {
-      raw = await fetchWithJoin(worker, scope, page);
+      raw = await fetchWithJoin(worker, scope, page, leadId);
     } catch {
-      raw = await fetchFallback(worker, scope, page);
+      raw = await fetchFallback(worker, scope, page, leadId);
     }
 
     // Importante para Supabase Nano: la vista de captación no necesita calcular ingresos
