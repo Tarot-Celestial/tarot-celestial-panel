@@ -24,3 +24,39 @@ test('cached inbox reads every saved post without calling Graph and uses server 
 test('reading a comment cannot mark that author private messages as read',async()=>{const keys=[],row={id:'00000000-0000-4000-8000-000000000001',kind:'comment',remote_id:'comment-id',recipient_id:'customer-peer'};const chain={select:()=>chain,eq:()=>chain,maybeSingle:async()=>({data:row})};const mod=load('src/lib/server/instagram-inbox.ts',{'@/lib/supabase-admin':{supabaseAdmin:()=>({from:()=>chain})},'./instagram-graph':{instagramConnection:async()=>account,InstagramError,graphId:()=>true},'./instagram-message-identity':{},'./instagram-sync':{},'./social-inbox-activity':{markSocialThreadRead:async(u,p,a,k,t)=>{keys.push(...k);return {ok:true,unread:0}}}});await mod.instagramRead('user',{threadId:row.id,through:when});assert.deepEqual(keys,['comment-id']);});
 
 test('webhook alias ingestion retains canonical account and ignores an unconfigured foreign account',async()=>{const h=harness(),alias='17841451159294130',timestamp=Date.now()-1000;const body={object:'instagram',entry:[{id:alias,messaging:[{sender:{id:'222'},recipient:{id:alias},timestamp,message:{mid:'alias-message',text:'fixture'}}]}]};await h.mod.processInstagramWebhook(body,account);assert.equal(h.writes.length,0);await h.mod.processInstagramWebhook(body,{...account,verifiedAccountIds:[alias]});assert.equal(h.writes.length,1);assert.equal(h.writes[0].remote_id,'peer:222');assert.equal(h.activity[0].remoteId,'alias-message');assert.equal(h.calls.length,0);});
+
+test('unavailable conversation history rotates for retry without blocking other inbound messages',async()=>{
+ const own={id:'account',username:account.username},person={id:'222',username:'client'};
+ let recovered=false;
+ const h=harness({'account/conversations':{data:['blocked','good'].map(id=>({id,updated_time:when,participants:{data:[own,person]}}))},
+  blocked:()=>{if(!recovered)throw new InstagramError('META_OBJECT_UNAVAILABLE','private');return {messages:{data:[{id:'recovered-message'}]}};},
+  good:{messages:{data:[{id:'good-message'}]}},
+  'good-message':{id:'good-message',from:person,to:{data:[own]},created_time:when},
+  'recovered-message':{id:'recovered-message',from:person,to:{data:[own]},created_time:when}});
+ await h.mod.ensureInstagramFresh();
+ assert.deepEqual(h.activity.map(e=>e.remoteId),['good-message']);
+ assert.equal(h.cursor.pendingConversations.length,1);assert.equal(h.cursor.pendingConversations[0].conversation_id,'blocked');
+ assert.equal(h.cursor.messageError,'MESSAGE_HISTORY_PARTIAL');assert.equal(h.errors[0],'MESSAGE_HISTORY_PARTIAL');
+ recovered=true;await h.mod.ensureInstagramFresh();
+ assert.deepEqual(h.activity.map(e=>e.remoteId),['good-message','recovered-message']);
+ assert.equal(h.cursor.pendingConversations.length,0);assert.equal(h.cursor.messageError,null);
+});
+
+test('permission and network failures keep message retry order and remain visible',async()=>{
+ for(const code of ['META_PERMISSION','META_UNAVAILABLE','TOKEN_EXPIRED']){
+  const h=harness({'account/conversations':{data:[{id:'blocked',updated_time:when}]},blocked:new InstagramError(code,'private')});
+  await h.mod.ensureInstagramFresh();assert.equal(h.cursor.messageError,code);assert.equal(h.cursor.pendingConversations[0].conversation_id,'blocked');assert.equal(h.activity.length,0);
+ }
+});
+
+test('three unavailable histories do not prevent advancing to older customer conversations',async()=>{
+ const own={id:'account',username:account.username},person={id:'222',username:'client'};
+ const h=harness({'account/conversations':q=>q.after?{data:[{id:'older',updated_time:when,participants:{data:[own,person]}}]}:{data:['a','b','c'].map(id=>({id,updated_time:when})),paging:{next:'PRIVATE-URL',cursors:{after:'page-two'}}},
+  a:new InstagramError('META_OBJECT_UNAVAILABLE','private'),b:new InstagramError('META_OBJECT_UNAVAILABLE','private'),c:new InstagramError('META_OBJECT_UNAVAILABLE','private'),
+  older:{messages:{data:[{id:'older-message'}]}},'older-message':{id:'older-message',from:person,to:{data:[own]},created_time:when}});
+ await h.mod.ensureInstagramFresh();assert.equal(h.cursor.pendingConversations.length,3);
+ await h.mod.ensureInstagramFresh();
+ assert.ok(h.calls.some(call=>call.q.after==='page-two'));
+ assert.ok(h.activity.some(event=>event.remoteId==='older-message'));
+ assert.equal(h.cursor.pendingConversations.length,3);
+});

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 import { FacebookError, facebookIdentity } from '@/lib/server/facebook-graph';
-import { facebookInbox, facebookMessages, facebookRead, facebookResolve, facebookSend, ensureFacebookFresh } from '@/lib/server/facebook-inbox';
+import { facebookInbox, facebookMessages, facebookRead, facebookResolve, facebookSend, facebookSyncPost, ensureFacebookFresh } from '@/lib/server/facebook-inbox';
 import { facebookDiagnostics, facebookSubscribe } from '@/lib/server/facebook-diagnostics';
 
 export const runtime = 'nodejs';
@@ -33,6 +33,10 @@ export async function POST(req: Request) {
     if (action === 'subscribe') {
       if (identity.worker.role !== 'admin') throw new FacebookError('FORBIDDEN', 'Solo administración puede configurar la conexión.', 403);
       return json(await facebookSubscribe(body));
+    }
+    if (action === 'sync-post') {
+      if (identity.worker.role !== 'admin') throw new FacebookError('FORBIDDEN', 'Solo administración puede importar una publicación.', 403);
+      return json(await facebookSyncPost(identity.userId, body));
     }
     if (action === 'read') return json(await facebookRead(identity.userId, body));
     if (action === 'resolve') return json(await facebookResolve(identity.userId, body));

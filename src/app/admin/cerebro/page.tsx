@@ -9,7 +9,7 @@ import AppHeader from "@/components/AppHeader";
 import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
 import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationWatcher";
 import BrainControlledActionsPanel from "@/features/brain/BrainControlledActionsPanel";
-import { loadPanelIdentity, panelPathForRole, redirectToLogin } from "@/lib/panel-access";
+import { loadPanelIdentity, panelPathForRole, panelSessionRejected, redirectToLogin } from "@/lib/panel-access";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 const CelestialBrain = nextDynamic(() => import("@/features/brain/CelestialBrain"), {
@@ -26,25 +26,18 @@ const sb = supabaseBrowser();
 export default function CelestialBrainPage() {
   const router = useRouter();
   const [authorized, setAuthorized] = useState(false);
+  const [accessError, setAccessError] = useState<string | null>(null);
+  const [accessAttempt, setAccessAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
+    setAccessError(null);
 
     void (async () => {
       try {
-        const cachedRole = sessionStorage.getItem("tc_admin_role");
-        const cachedAt = Number(sessionStorage.getItem("tc_admin_role_ts") || "0");
-
-        if (cachedRole === "admin" && Date.now() - cachedAt < 300000) {
-          if (active) setAuthorized(true);
-          return;
-        }
-
         const identity = await loadPanelIdentity(sb);
         if (!active) return;
         const role = String(identity.role || "").toLowerCase();
-        sessionStorage.setItem("tc_admin_role", role);
-        sessionStorage.setItem("tc_admin_role_ts", String(Date.now()));
 
         if (role !== "admin") {
           window.location.replace(panelPathForRole(role));
@@ -53,12 +46,26 @@ export default function CelestialBrainPage() {
 
         setAuthorized(true);
       } catch (error) {
-        if (active) redirectToLogin(error instanceof Error ? error.message : "session");
+        if (!active) return;
+        if (panelSessionRejected(error)) {
+          redirectToLogin(error instanceof Error ? error.message : "session");
+          return;
+        }
+        setAccessError(error instanceof Error ? error.message : "No se pudo verificar el acceso. Vuelve a intentarlo.");
       }
     })();
 
     return () => { active = false; };
-  }, []);
+  }, [accessAttempt]);
+
+  if (!authorized) return (
+    <div style={{ padding: 40, minHeight: "100vh", display: "grid", placeItems: "center", color: "rgba(255,255,255,.92)", background: "#08060d" }}>
+      {accessError ? <div role="alert" style={{ maxWidth: 520, textAlign: "center" }}>
+        <p>{accessError}</p>
+        <button type="button" onClick={() => setAccessAttempt(attempt => attempt + 1)} style={{ marginTop: 16, padding: "12px 20px", borderRadius: 12, background: "#e5c276", color: "#23172f" }}>Reintentar acceso</button>
+      </div> : "Verificando acceso de administración…"}
+    </div>
+  );
 
   return (
     <>

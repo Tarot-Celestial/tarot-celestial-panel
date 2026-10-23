@@ -11,6 +11,7 @@ import AppHeader from "@/components/AppHeader";
 import PanelTheme from "@/components/ui/PanelTheme";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { loadPanelIdentity, panelPathForRole, panelSessionRejected, redirectToLogin } from "@/lib/panel-access";
 import { normalizeMonthKey } from "@/lib/month-key";
 import { AtlasLauncher } from "@/features/admin/atlas/AtlasCharacter";
 import { useAtlasWatches } from "@/features/admin/atlas/useAtlasWatches";
@@ -336,6 +337,8 @@ function PreviousMonthComparison({ invoice }: { invoice: any }) {
 function AdminPage() {
   const searchParams = useSearchParams();
   const [ok, setOk] = useState(false);
+  const [accessError, setAccessError] = useState<string | null>(null);
+  const [accessAttempt, setAccessAttempt] = useState(0);
   const atlasWatches = useAtlasWatches(ok);
   const atlasWatchAlerts = atlasUnreadWatches(atlasWatches.watches);
   const [atlasOpenView, setAtlasOpenView] = useState<'chat' | 'supervision'>('chat');
@@ -562,53 +565,29 @@ function AdminPage() {
   }, [tab]);
 
   useEffect(() => {
-  (async () => {
-    try {
-      const cachedRole = sessionStorage.getItem("tc_admin_role");
-      const cachedTs = Number(sessionStorage.getItem("tc_admin_role_ts") || "0");
-
-      if (cachedRole === "admin" && Date.now() - cachedTs < 300000) {
+    let active = true;
+    setAccessError(null);
+    void (async () => {
+      try {
+        const identity = await loadPanelIdentity(sb);
+        if (!active) return;
+        const role = String(identity.role || "").toLowerCase();
+        if (role !== "admin") {
+          window.location.replace(panelPathForRole(role));
+          return;
+        }
         setOk(true);
-        return;
+      } catch (error) {
+        if (!active) return;
+        if (panelSessionRejected(error)) {
+          redirectToLogin(error instanceof Error ? error.message : "session");
+          return;
+        }
+        setAccessError(error instanceof Error ? error.message : "No se pudo verificar el acceso. Vuelve a intentarlo.");
       }
-
-      const { data } = await sb.auth.getSession();
-      const user = data.session?.user;
-
-      if (!user) {
-        window.location.href = "/login";
-        return;
-      }
-
-      const { data: worker, error } = await sb
-        .from("workers")
-        .select("role")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (error || !worker) {
-        console.error("❌ No se encontró worker:", error);
-        window.location.href = "/login";
-        return;
-      }
-
-      const role = worker.role?.toLowerCase();
-
-      sessionStorage.setItem("tc_admin_role", role || "");
-      sessionStorage.setItem("tc_admin_role_ts", String(Date.now()));
-
-      if (role !== "admin") {
-        window.location.href =
-          role === "central" ? "/panel-central" : "/panel-tarotista";
-        return;
-      }
-
-      setOk(true);
-    } catch (e) {
-      console.error("admin auth error", e);
-    }
-  })();
-}, []);
+    })();
+    return () => { active = false; };
+  }, [accessAttempt]);
 
   useEffect(() => {
     if (!ok) return;
@@ -682,9 +661,10 @@ function AdminPage() {
   }
 
   async function getTokenOrLogin() {
-    const { data } = await sb.auth.getSession();
+    const { data, error } = await sb.auth.getSession();
     const token = data.session?.access_token;
     if (!token) {
+      if (error) throw new Error("No se pudo comprobar la sesión. Reintenta en unos segundos.");
       window.location.href = "/login";
       return "";
     }
@@ -1842,7 +1822,14 @@ function AdminPage() {
     return map;
   }, [staffSchedules]);
 
-  if (!ok) return <div style={{ padding: 40, minHeight: "100vh", display: "grid", placeItems: "center", color: "rgba(255,255,255,.92)", fontSize: 18, letterSpacing: ".02em", background: "transparent" }}>Cargando…</div>;
+  if (!ok) return (
+    <div style={{ padding: 40, minHeight: "100vh", display: "grid", placeItems: "center", color: "rgba(255,255,255,.92)", fontSize: 18, letterSpacing: ".02em", background: "transparent" }}>
+      {accessError ? <div role="alert" style={{ maxWidth: 520, textAlign: "center" }}>
+        <p>{accessError}</p>
+        <button type="button" onClick={() => setAccessAttempt(attempt => attempt + 1)} style={{ marginTop: 16, padding: "12px 20px", borderRadius: 12, background: "#e5c276", color: "#23172f" }}>Reintentar acceso</button>
+      </div> : "Verificando acceso…"}
+    </div>
+  );
 
   return (
     <PanelTheme>

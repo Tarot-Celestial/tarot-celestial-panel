@@ -18,6 +18,45 @@ function sessionNeedsRefresh(session: any): boolean {
   return Boolean(session?.refresh_token) && (!expiresAt || expiresAt <= Date.now() + SESSION_REFRESH_MARGIN_MS);
 }
 
+function temporaryRefreshError(error: any): boolean {
+  const status = Number(error?.status || 0);
+  return Boolean(error) && (error.name === "AuthRetryableFetchError" || status === 429 || status >= 500);
+}
+
+function browserFetchForProject(projectUrl: string): typeof fetch {
+  const projectOrigin = new URL(projectUrl).origin;
+  return async (input, init) => {
+    const request = input instanceof Request ? input : null;
+    const target = new URL(request?.url || String(input));
+    const method = String(init?.method || request?.method || "GET").toUpperCase();
+    if (typeof window === "undefined" || target.origin !== projectOrigin || target.pathname !== "/auth/v1/user" || method !== "GET") {
+      return fetch(input, init);
+    }
+
+    // setSession verifies the user through the SDK. Keep that verification on
+    // the panel's origin; only this exact Auth read is delegated to the server.
+    const headers = new Headers(init?.headers || request?.headers);
+    const controller = new AbortController();
+    const upstreamSignal = init?.signal || request?.signal;
+    const abort = () => controller.abort();
+    if (upstreamSignal?.aborted) abort();
+    else upstreamSignal?.addEventListener("abort", abort, { once: true });
+    const timer = setTimeout(abort, 10000);
+    try {
+      return await fetch("/api/auth/user", {
+        method: "GET",
+        headers: { Authorization: headers.get("authorization") || "" },
+        credentials: "same-origin",
+        cache: "no-store",
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+      upstreamSignal?.removeEventListener("abort", abort);
+    }
+  };
+}
+
 export function supabaseBrowserStorageKey(): string {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (!url) throw new Error("Missing env NEXT_PUBLIC_SUPABASE_URL");
@@ -35,6 +74,7 @@ function createBrowserClient(storageKey: string): SupabaseClient {
   if (!anon) throw new Error("Missing env NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
   const browserClient = createClient(url, anon, {
+    global: { fetch: browserFetchForProject(url) },
     auth: {
       storageKey,
       // ✅ Mantén refresh y persistencia
@@ -70,6 +110,9 @@ function createBrowserClient(storageKey: string): SupabaseClient {
       return { data: { session: refreshed.data.session }, error: null };
     }
 
+    // A temporary proactive-refresh error does not invalidate a still-live
+    // access token. Protected APIs continue to verify that token themselves.
+    if (temporaryRefreshError(refreshed.error) && Number(session.expires_at || 0) * 1000 > Date.now()) return current;
     return { data: { session: null }, error: refreshed.error || current.error };
   }) as typeof browserClient.auth.getSession;
 
