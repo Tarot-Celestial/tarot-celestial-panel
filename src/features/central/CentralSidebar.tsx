@@ -45,11 +45,12 @@ const NAV_TONES: Record<string, NavTone> = {
   habituales: { rgb: "192, 132, 252" },
   whatsapp: { rgb: "37, 211, 102" },
   instagram: { rgb: "232, 117, 179" },
+  facebook: { rgb: "98, 163, 255" },
 };
 
 const NAV_SECTIONS = [
   { key: "turno", title: "MI TURNO", keys: ["central", "panel", "reservas", "notificaciones", "primera-tarotista", "checklist", "llamadas", "diario"] },
-  { key: "clientas", title: "CLIENTAS Y SEGUIMIENTO", keys: ["mis-clientas", "recuperar-clientes", "crm", "whatsapp", "instagram", "captacion", "incidencias", "habituales"] },
+  { key: "clientas", title: "CLIENTAS Y SEGUIMIENTO", keys: ["mis-clientas", "recuperar-clientes", "crm", "whatsapp", "instagram", "facebook", "captacion", "incidencias", "habituales"] },
   { key: "equipo", title: "EQUIPO", keys: ["equipo", "chat"] },
   { key: "progreso", title: "PROGRESO Y RECOMPENSAS", keys: ["tu-sistema-xp", "tu-sistema-xp-niveles", "tu-sistema-xp-coins", "tienda", "mi-factura", "sorteo", "rendimiento", "ranking"] },
 ] as const;
@@ -66,7 +67,7 @@ export default function CentralSidebar<T extends string = string>({ items, activ
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [chatUnread, setChatUnread] = useState(0);
   const { hiddenKeys, toggleHidden, resetHidden } = useHiddenNavigation("tc:navigation:hidden:central:v1");
-  const visibleItems = items.filter((item) => !hiddenKeys.includes(String(item.key)) || (["captacion", "whatsapp"].includes(String(item.key)) && (item.badge || 0) > 0));
+  const visibleItems = items.filter((item) => !hiddenKeys.includes(String(item.key)) || (["captacion", "whatsapp", "instagram", "facebook"].includes(String(item.key)) && (item.badge || 0) > 0));
   const sections = NAV_SECTIONS.map(section => ({
     ...section,
     items: section.keys.flatMap(key => visibleItems.filter(item => String(item.key) === key)),
@@ -113,8 +114,9 @@ export default function CentralSidebar<T extends string = string>({ items, activ
             const notificationAlert = key === "notificaciones" && typeof item.badge === "number" && item.badge > 0;
             const captacionUrgent = key === "captacion" && typeof item.badge === "number" && item.badge > 0;
             const whatsappUrgent = key === "whatsapp" && typeof item.badge === "number" && item.badge > 0;
-            const operationalUrgent = captacionUrgent || whatsappUrgent;
-            const pendingLabel = whatsappUrgent ? `${item.badge} mensajes sin leer` : `${item.badge} contactos nuevos pendientes`;
+            const socialUrgent = ["instagram", "facebook"].includes(key) && typeof item.badge === "number" && item.badge > 0;
+            const operationalUrgent = captacionUrgent || whatsappUrgent || socialUrgent;
+            const pendingLabel = socialUrgent ? `${item.badge} mensajes y comentarios pendientes de revisar` : whatsappUrgent ? `${item.badge} mensajes sin leer` : `${item.badge} contactos nuevos pendientes`;
             const tone = navTone(key, notificationAlert || operationalUrgent);
             const toneStyle = { "--nav-rgb": tone.rgb } as CSSProperties;
             const label = NAV_LABELS[key] || item.label;
@@ -126,6 +128,7 @@ export default function CentralSidebar<T extends string = string>({ items, activ
                   data-companion-nav={item.key}
                   data-captacion-pending={captacionUrgent ? item.badge : undefined}
                   data-whatsapp-unread={whatsappUrgent ? item.badge : undefined}
+                  data-social-unread={socialUrgent ? item.badge : undefined}
                   className={[
                     styles.navButton,
                     active ? styles.navButtonActive : "",
@@ -141,7 +144,7 @@ export default function CentralSidebar<T extends string = string>({ items, activ
                   type="button"
                   aria-current={activeTab === item.key ? "page" : undefined}
                   aria-label={operationalUrgent ? `${label}: ${pendingLabel}${item.badgeStale ? ", pendiente de actualizar" : ""}` : undefined}
-                  title={operationalUrgent ? (item.badgeStale ? "Último recuento confirmado. Recuperando la conexión." : whatsappUrgent ? "Hay mensajes de WhatsApp sin leer. Revisa la bandeja." : "Hay contactos nuevos pendientes. Atiéndelos ahora.") : undefined}
+                  title={operationalUrgent ? (item.badgeStale ? "Último recuento confirmado. Recuperando la conexión." : socialUrgent ? "Hay mensajes o comentarios pendientes de revisar. Abre la bandeja." : whatsappUrgent ? "Hay mensajes de WhatsApp sin leer. Revisa la bandeja." : "Hay contactos nuevos pendientes. Atiéndelos ahora.") : undefined}
                 >
                   <div className={styles.navContent}>
                     <div className={styles.iconHud} aria-hidden="true">

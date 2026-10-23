@@ -16,6 +16,10 @@ function fixture({ provider = 'instagram', connected = true } = {}) {
     './TarotVideoStudio': { default: () => null },
     'lucide-react': new Proxy({}, { get: (_, key) => props => React.createElement('span', { ...props, 'data-icon': key }) }),
   };
+  const webhookExports = {};
+  const webhookCode = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../src/components/admin/SocialInboxWebhookSetup.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+  vm.runInNewContext(webhookCode, { exports: webhookExports, Error, console, require: name => name in imports ? imports[name] : require(name) });
+  imports['./SocialInboxWebhookSetup'] = webhookExports;
   const exports = {};
   const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../src/components/admin/SocialChannelAdminPanel.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   vm.runInNewContext(code, { exports, require: name => name in imports ? imports[name] : require(name), Date, Intl, URL, URLSearchParams, console,

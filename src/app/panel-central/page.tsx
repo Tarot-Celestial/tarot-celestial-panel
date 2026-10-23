@@ -15,6 +15,7 @@ import CentralDateSelector from "@/features/central/CentralDateSelector";
 import { CentralThemeProvider } from "@/features/central/CentralTheme";
 import { useCentralXpData } from "@/features/central/useCentralXpData";
 import { useCentralFidelityData } from "@/features/central/useCentralFidelityData";
+import { useSocialAttention } from "@/features/central/useSocialAttention";
 import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
 import ClientRecoveryPanel from "@/features/central/ClientRecoveryPanel";
 import type { MyClientsView } from "@/features/central/MyClientsList";
@@ -39,7 +40,7 @@ import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationW
 import OperatorPanel from "@/components/panel/OperatorPanel";
 import OperationalInbox from "@/components/central/OperationalInbox";
 import StaffDirectChatPanel from "@/components/chat/StaffDirectChatPanel";
-import { BarChart3, BadgeEuro, Bell, CalendarDays, CheckSquare, Gift, Headphones, Instagram, LayoutDashboard, Megaphone, MessageCircle, ShieldCheck, ShoppingBag, Sparkles, Star, Users, UsersRound, RotateCcw } from "lucide-react";
+import { BarChart3, BadgeEuro, Bell, CalendarDays, CheckSquare, Facebook, Gift, Headphones, Instagram, LayoutDashboard, Megaphone, MessageCircle, ShieldCheck, ShoppingBag, Sparkles, Star, Users, UsersRound, RotateCcw } from "lucide-react";
 
 const sb = supabaseBrowser();
 const tabLoading = () => <section className="tc-card" role="status"><div className="tc-sub">Preparando tu apartado…</div></section>;
@@ -89,6 +90,7 @@ const TABS = [
   "ranking",
   "whatsapp",
   "instagram",
+  "facebook",
 ] as const;
 
 type TabKey = typeof TABS[number];
@@ -127,6 +129,7 @@ const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
   },
   { key: "whatsapp", label: "WhatsApp", icon: MessageCircle, kicker: "Chats con clientas" },
   { key: "instagram", label: "Instagram", icon: Instagram, kicker: "@tarotcelestialof" },
+  { key: "facebook", label: "Facebook", icon: Facebook, kicker: "Tarot Celestial" },
   { key: "crm", label: "CRM", icon: Users },
   { key: "sorteo", label: "Sorteo", icon: Gift },
   { key: "captacion", label: "Captación", icon: Megaphone },
@@ -424,6 +427,7 @@ function CentralPage() {
 
   const [connectedOperator, setConnectedOperator] = useState<any>(null);
   const themeWorkerId = String(connectedOperator?.worker?.id || connectedOperator?.id || connectedOperator?.user?.id || "");
+  const socialAttention = useSocialAttention(ok, themeWorkerId);
 
   useEffect(() => {
     if (!ok || tab !== "central") return;
@@ -1287,8 +1291,10 @@ function CentralPage() {
       : item.key === "captacion" ? { ...item, badge: captacionAttention.count, badgeStale: !!captacionAttention.error,
         kicker: captacionAttention.error ? "Recuento sin actualizar" : captacionAttention.count > 0 ? "Nuevos · atender ahora" : undefined }
       : item.key === "whatsapp" ? { ...item, badge: whatsappAttention.count, badgeStale: !!whatsappAttention.error,
-        kicker: whatsappAttention.error ? "Recuento sin actualizar" : whatsappAttention.count > 0 ? "Mensajes sin leer" : item.kicker } : item),
-    [notificationCount, captacionAttention, whatsappAttention]
+        kicker: whatsappAttention.error ? "Recuento sin actualizar" : whatsappAttention.count > 0 ? "Mensajes sin leer" : item.kicker }
+      : item.key === "instagram" || item.key === "facebook" ? { ...item, badge: socialAttention[item.key].count, badgeStale: !!socialAttention[item.key].error,
+        kicker: socialAttention[item.key].error ? "Recuento sin actualizar" : socialAttention[item.key].configured === false ? "Sin conectar" : socialAttention[item.key].count > 0 ? "Pendientes de revisar" : item.kicker } : item),
+    [notificationCount, captacionAttention, whatsappAttention, socialAttention.instagram, socialAttention.facebook]
   );
 
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
@@ -1635,7 +1641,8 @@ function CentralPage() {
           )}
 
           {tab === "whatsapp" && <CentralWhatsAppPanel />}
-          {tab === "instagram" && <CentralInstagramPanel />}
+          {tab === "instagram" && <CentralInstagramPanel provider="instagram" attention={socialAttention.instagram} />}
+          {tab === "facebook" && <CentralInstagramPanel provider="facebook" attention={socialAttention.facebook} />}
           {tab === "crm" && <CRMClientesPanel mode="central" showImportButton={false} />}
           {tab === "sorteo" && <CentralRafflePanel />}
           {tab === "captacion" && (

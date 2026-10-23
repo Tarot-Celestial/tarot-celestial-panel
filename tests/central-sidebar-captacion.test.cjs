@@ -13,8 +13,8 @@ function fixture(hiddenKeys=[]){
     throw Error(name);
   }});
   let tree;
-  const render=(count,activeTab='central',stale=false,whatsapp=0)=>act(()=>{
-    const props={activeTab,onTabChange:tab=>navigation.push(tab),items:[{key:'central',label:'Resumen',icon:'svg'},{key:'captacion',label:'Captación',icon:'svg',badge:count,badgeStale:stale,kicker:count?'Nuevos · atender ahora':undefined},{key:'whatsapp',label:'WhatsApp',icon:'svg',badge:whatsapp,badgeStale:stale},{key:'notificaciones',label:'Notificaciones',icon:'svg',badge:2}]};
+  const render=(count,activeTab='central',stale=false,whatsapp=0,instagram=0,facebook=0)=>act(()=>{
+    const props={activeTab,onTabChange:tab=>navigation.push(tab),items:[{key:'central',label:'Resumen',icon:'svg'},{key:'captacion',label:'Captación',icon:'svg',badge:count,badgeStale:stale,kicker:count?'Nuevos · atender ahora':undefined},{key:'whatsapp',label:'WhatsApp',icon:'svg',badge:whatsapp,badgeStale:stale},{key:'instagram',label:'Instagram',icon:'svg',badge:instagram,badgeStale:stale},{key:'facebook',label:'Facebook',icon:'svg',badge:facebook,badgeStale:stale},{key:'notificaciones',label:'Notificaciones',icon:'svg',badge:2}]};
     if(tree)tree.update(React.createElement(exports.default,props));else tree=renderer.create(React.createElement(exports.default,props));
   });
   return {render,get tree(){return tree;},navigation,get preferencesWrites(){return preferencesWrites;},button:key=>tree.root.findAllByType('button').find(x=>x.props['data-companion-nav']===key),close:()=>act(()=>tree.unmount())};
@@ -47,5 +47,20 @@ test('a connection failure labels the retained count as stale instead of present
   const f=fixture();try{
     f.render(4,'central',true);assert.match(f.button('captacion').props['aria-label'],/pendiente de actualizar/);assert.match(f.button('captacion').props.title,/Último recuento confirmado/);
     f.render(4,'central',false);assert.doesNotMatch(f.button('captacion').props['aria-label'],/pendiente de actualizar/);
+  }finally{f.close();}
+});
+
+test('Instagram and Facebook are separate, ordered entries with independent red pending totals',()=>{
+  const f=fixture(['instagram','facebook']);try{
+    f.render(5,'central',false,2,7,11);
+    for(const [key,count] of [['instagram',7],['facebook',11]]){
+      const button=f.button(key);assert.equal(button.props['data-social-unread'],count);assert.match(button.props.className,/captacionUrgent/);
+      assert.match(button.props['aria-label'],new RegExp(`${count} mensajes y comentarios pendientes de revisar`));
+    }
+    const keys=f.tree.root.findAllByType('button').map(button=>button.props['data-companion-nav']).filter(Boolean);
+    assert.equal(keys.indexOf('facebook'),keys.indexOf('instagram')+1);
+    act(()=>f.button('facebook').props.onClick());assert.deepEqual(f.navigation,['facebook']);
+    f.render(5,'facebook',true,2,7,11);assert.match(f.button('facebook').props.title,/Último recuento confirmado/);
+    f.render(5,'central',false,2,7,0);assert.equal(f.button('facebook'),undefined);assert.equal(f.button('instagram').props['data-social-unread'],7);assert.equal(f.preferencesWrites,0);
   }finally{f.close();}
 });

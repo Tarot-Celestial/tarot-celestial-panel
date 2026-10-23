@@ -1,6 +1,7 @@
 import 'server-only';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { instagramConnection, instagramGraph, instagramReadWithQueryToken, InstagramError, graphId } from './instagram-graph';
+import { instagramSubscriptionStatus } from './instagram-subscriptions';
 
 type Check = { label: string; ok: boolean; count?: number; code?: string };
 
@@ -26,6 +27,7 @@ export async function instagramDiagnostics() {
   const mediaParams = { fields: 'id', limit: '8' };
   const commentParams = { fields: 'id,text,timestamp', limit: '50' };
   const checks = await Promise.all([
+    count('Permisos de la conexión', () => instagramGraph(account, `${account.accountId}/permissions`)),
     count('Publicaciones · conexión actual', () => instagramGraph(account, `${account.accountId}/media`, mediaParams)),
     count('Publicaciones · conexión alternativa', () => instagramReadWithQueryToken(account, `${account.accountId}/media`, mediaParams)),
     ...(postId ? [
@@ -33,5 +35,8 @@ export async function instagramDiagnostics() {
       count('Comentarios del último post · conexión alternativa', () => instagramReadWithQueryToken(account, `${postId}/comments`, commentParams)),
     ] : []),
   ]);
-  return { ok: true, checks, postId };
+  let subscription: {subscribed:boolean;fields:string[];ready:boolean;code?:string};
+  try {subscription=await instagramSubscriptionStatus(account);}
+  catch(error){subscription={subscribed:false,fields:[],ready:false,code:error instanceof InstagramError?error.code:'SERVICE_UNAVAILABLE'};}
+  return { ok: true, checks, postId, subscription, webhookConfigured:!!process.env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN };
 }

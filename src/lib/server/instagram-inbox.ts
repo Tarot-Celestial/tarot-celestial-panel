@@ -3,10 +3,12 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { instagramConnection, instagramGraph, InstagramError, graphId, replyWindowOpen, type InstagramAccount } from './instagram-graph';
 import type { InstagramMessage, InstagramThread } from '@/lib/instagram-inbox';
 import { resolveMessageIdentity } from './instagram-message-identity';
+import { markSocialThreadRead, recordSocialActivity, socialSyncState, socialThreadUnread } from './social-inbox-activity';
+import { persistInstagramThreads, ownInstagramActor } from './instagram-sync';
 
 const THREADS = 'tc_instagram_threads';
 const SENDS = 'tc_instagram_sends';
-type ThreadRow = { id: string; account_id: string; kind: 'message' | 'comment'; remote_id: string; recipient_id: string | null; name: string; username: string | null; preview: string; remote_created_at: string | null; remote_updated_at: string; permalink: string | null; last_reply_at: string | null; private_reply_sent: boolean };
+type ThreadRow = { id: string; account_id: string; kind: 'message' | 'comment'; remote_id: string; recipient_id: string | null; conversation_id?: string | null; name: string; username: string | null; preview: string; remote_created_at: string | null; remote_updated_at: string; permalink: string | null; last_reply_at: string | null; private_reply_sent: boolean };
 const present = (row: ThreadRow): InstagramThread => ({ id: row.id, kind: row.kind, name: row.name, username: row.username, preview: row.preview, updatedAt: row.remote_updated_at, permalink: row.permalink });
 const iso = (value: unknown) => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : new Date().toISOString();
 const verifiedDate = (value: unknown) => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null;
@@ -15,56 +17,34 @@ function afterCursor(value: string | null): Record<string, string> {
   if (value.length > 2048 || !/^[A-Za-z0-9_=+/-]+$/.test(value)) throw new InstagramError('INVALID_CURSOR', 'Actualiza la bandeja.', 400);
   return { after: value };
 }
-async function persist(account: InstagramAccount, rows: Array<Partial<ThreadRow> & { kind: 'message' | 'comment'; remote_id: string }>) {
-  if (!rows.length) return [] as ThreadRow[];
-  const { data, error } = await supabaseAdmin().from(THREADS).upsert(rows.map(r => ({ ...r, account_id: account.accountId, synced_at: new Date().toISOString() })), { onConflict: 'account_id,kind,remote_id' }).select('*');
-  if (error) throw error;
-  return data as ThreadRow[];
-}
-
 export async function instagramInbox(kind: 'message' | 'comment', cursor: string | null) {
-  const account = await instagramConnection();
-  const rows: Array<Partial<ThreadRow> & { kind: 'message' | 'comment'; remote_id: string }> = [];
-  let nextCursor: string | null = null;
-  let partialHint: string | null = null;
-  if (kind === 'message') {
-    const result = await instagramGraph(account, `${account.accountId}/conversations`, { platform: 'instagram', fields: 'id,updated_time,participants', limit: '25', ...afterCursor(cursor) });
-    if (!Array.isArray(result?.data)) throw new InstagramError('META_INVALID_RESPONSE', 'Instagram no devolvió una lista de conversaciones válida. Actualiza para volver a intentarlo.');
-    for (const conversation of result.data) {
-      const participants = Array.isArray(conversation.participants?.data) ? conversation.participants.data : [];
-      const identity = resolveMessageIdentity(account, participants, []);
-      const person = participants.find((p: any) => p.id === identity.recipientId);
-      rows.push({ kind, remote_id: String(conversation.id), recipient_id: person?.id ? String(person.id) : null, name: person?.username || 'Conversación de Instagram', username: person?.username || null, preview: 'Abrir conversación', remote_updated_at: iso(conversation.updated_time) });
-    }
-    nextCursor = result.paging?.next ? result.paging?.cursors?.after || null : null;
-  } else {
-    const media = await instagramGraph(account, `${account.accountId}/media`, { fields: 'id,permalink,caption,timestamp,comments_count', limit: '8', ...afterCursor(cursor) });
-    if (!Array.isArray(media?.data)) throw new InstagramError('META_INVALID_RESPONSE', 'Instagram no devolvió una lista de publicaciones válida. Actualiza para volver a intentarlo.');
-    let commentsNotReturned = false;
-    const results = await Promise.allSettled(media.data.map(async (post: any) => {
-      const comments = await instagramGraph(account, `${post.id}/comments`, { fields: 'id,text,timestamp,from', limit: '50' });
-      if (!Array.isArray(comments?.data)) throw new InstagramError('META_INVALID_RESPONSE', 'Instagram no devolvió una lista de comentarios válida. Actualiza para volver a intentarlo.');
-      if (typeof post.comments_count === 'number' && post.comments_count > 0 && comments.data.length === 0) commentsNotReturned = true;
-      if (comments.paging?.next) partialHint = 'Hay publicaciones con más de 50 comentarios. Abre la publicación para consultar el resto.';
-      return comments.data.map((comment: any) => ({ kind, remote_id: String(comment.id), recipient_id: comment.from?.id ? String(comment.from.id) : null, name: comment.from?.username || 'Comentario de Instagram', username: comment.from?.username || null, preview: String(comment.text || ''), remote_created_at: verifiedDate(comment.timestamp), remote_updated_at: iso(comment.timestamp), permalink: post.permalink || null }));
-    }));
-    for (const result of results) {
-      if (result.status === 'fulfilled') rows.push(...result.value);
-      else if (!rows.length && results.every(r => r.status === 'rejected')) throw result.reason;
-      else partialHint = 'No se han podido cargar todos los comentarios. Actualiza para volver a intentarlo.';
-    }
-    if (commentsNotReturned) partialHint = 'Instagram indica comentarios en algunas publicaciones, pero no los ha devuelto. Administración debe revisar la conexión de Meta.';
-    nextCursor = media.paging?.next ? media.paging?.cursors?.after || null : null;
+  const account=await instagramConnection();
+  let page: {before:string;id:string} | null=null;
+  if(cursor) {
+    try {
+      if(cursor.length>1024 || !/^[A-Za-z0-9_-]+$/.test(cursor)) throw Error();
+      page=JSON.parse(Buffer.from(cursor,'base64url').toString('utf8'));
+      if(!page || !verifiedDate(page.before) || !/^[a-f\d-]{36}$/i.test(page.id)) throw Error();
+    } catch {throw new InstagramError('INVALID_CURSOR','Actualiza la bandeja.',400);}
   }
-  const saved = await persist(account, rows);
-  return { ok: true, connection: { username: account.username, connected: true, ready: true }, threads: saved.map(present).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), nextCursor, partialHint };
+  let query=supabaseAdmin().from(THREADS).select('*').eq('account_id',account.accountId).eq('kind',kind).is('merged_into',null).order('remote_updated_at',{ascending:false}).order('id',{ascending:false}).limit(51);
+  if(page) query=query.or('remote_updated_at.lt.'+page.before+',and(remote_updated_at.eq.'+page.before+',id.lt.'+page.id+')');
+  const result=await query;
+  if(result.error) throw result.error;
+  const all=(result.data || []) as ThreadRow[],rows=all.slice(0,50);
+  const unread=await socialThreadUnread('instagram',account.accountId,rows.map(row=>row.kind==='message'?row.recipient_id || row.remote_id:row.remote_id));
+  const state=await socialSyncState('instagram',account.accountId),code=state.cursor[kind+'Error'];
+  const hint=code==='COMMENTS_NOT_RETURNED'?'Instagram indica comentarios, pero no los devuelve. Administración debe revisar la conexión.':code?'No se pudo completar la sincronización con Instagram. Se conservan los elementos recibidos; revisa la conexión y actualiza.':null;
+  const last=rows[rows.length-1];
+  return {ok:true,connection:{username:account.username,connected:true,ready:!hint,message:hint},threads:rows.map(row=>({...present(row),unread:unread.get(row.kind==='message'?row.recipient_id || row.remote_id:row.remote_id)||0})),nextCursor:all.length>50&&last?Buffer.from(JSON.stringify({before:last.remote_updated_at,id:last.id})).toString('base64url'):null,partialHint:hint};
 }
 
-async function threadForAccount(id: string, account: InstagramAccount) {
+async function threadForAccount(id: string, account: InstagramAccount): Promise<ThreadRow> {
   if (!/^[a-f\d-]{36}$/i.test(id)) throw new InstagramError('INVALID_THREAD', 'Selecciona una conversación de la bandeja.', 400);
   const { data, error } = await supabaseAdmin().from(THREADS).select('*').eq('id', id).eq('account_id', account.accountId).maybeSingle();
   if (error) throw error;
   if (!data) throw new InstagramError('NOT_FOUND', 'Actualiza la bandeja y selecciona la conversación.', 404);
+  if(data.merged_into)return threadForAccount(String(data.merged_into),account);
   if (!graphId(data.remote_id)) throw new InstagramError('INVALID_THREAD', 'Instagram devolvió una referencia no válida.');
   return data as ThreadRow;
 }
@@ -77,7 +57,14 @@ async function loadMessages(account: InstagramAccount, row: ThreadRow) {
   if (row.kind === 'message') {
     // Meta documents listing message IDs first, then reading details. Only the
     // latest 20 can be retrieved; a removed message must not hide the others.
-    const list = await instagramGraph(account, row.remote_id, { fields: 'messages' });
+    let conversationId = row.conversation_id || (row.remote_id.startsWith('peer:') ? null : row.remote_id);
+    if (!conversationId && row.recipient_id) {
+      const lookup=await instagramGraph(account, account.accountId+'/conversations', {platform:'instagram',user_id:row.recipient_id,fields:'id,participants',limit:'25'});
+      const found=(lookup.data || []).find((item:any)=>resolveMessageIdentity(account,item.participants?.data || [],[]).recipientId===row.recipient_id);
+      if (graphId(found?.id)) {conversationId=found.id;await persistInstagramThreads(account,[{kind:'message',remote_id:row.remote_id,recipient_id:row.recipient_id,conversation_id:found.id}]);}
+    }
+    if (!conversationId) throw new InstagramError('CONVERSATION_PENDING','El mensaje ya está recibido. Instagram aún no permite consultar su conversación; vuelve a actualizar.');
+    const list = await instagramGraph(account, conversationId, { fields: 'messages' });
     if (!Array.isArray(list.messages?.data)) throw new InstagramError('META_INVALID_RESPONSE', 'Instagram no devolvió el historial de esta conversación. Actualiza para volver a intentarlo.');
     const details = await Promise.all(list.messages.data.slice(0, 20).map(async (item: any) => {
       if (!graphId(item?.id)) throw new InstagramError('META_INVALID_RESPONSE', 'Instagram devolvió un mensaje sin referencia válida. Actualiza la conversación.');
@@ -98,6 +85,10 @@ async function loadMessages(account: InstagramAccount, row: ThreadRow) {
     const available = details.filter((message): message is Record<string, any> => message !== null);
     const identity = resolveMessageIdentity(account, [], available);
     recipientId = identity.recipientId;
+    if(recipientId) {
+      await persistInstagramThreads(account,[{kind:'message',remote_id:row.remote_id,conversation_id:conversationId,recipient_id:recipientId}]);
+      row.recipient_id=recipientId;
+    }
     for (const message of available) {
       const fromMe = identity.isOwnActor(message.from);
       if (recipientId && message.from?.id === recipientId && !fromMe) {
@@ -107,15 +98,18 @@ async function loadMessages(account: InstagramAccount, row: ThreadRow) {
     }
   } else {
     const root = await instagramGraph(account, row.remote_id, { fields: 'id,text,timestamp,from' });
-    messages.push({ id: String(root.id), text: String(root.text || ''), fromMe: String(root.from?.id) === account.accountId, createdAt: iso(root.timestamp), senderName: root.from?.username || row.name });
+    messages.push({ id: String(root.id), text: String(root.text || ''), fromMe: ownInstagramActor(account, root.from), createdAt: iso(root.timestamp), senderName: root.from?.username || row.name });
     const replies = await instagramGraph(account, `${row.remote_id}/replies`, { fields: 'id,text,timestamp,from', limit: '50' });
-    for (const reply of replies.data || []) messages.push({ id: String(reply.id), text: String(reply.text || ''), fromMe: String(reply.from?.id) === account.accountId, createdAt: iso(reply.timestamp), senderName: reply.from?.username || 'Instagram' });
+    for (const reply of replies.data || []) messages.push({ id: String(reply.id), text: String(reply.text || ''), fromMe: ownInstagramActor(account, reply.from), createdAt: iso(reply.timestamp), senderName: reply.from?.username || 'Instagram' });
   }
   messages.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const activity=messages.filter(message=>!message.fromMe && verifiedDate(message.createdAt) && (row.kind==='comment' || recipientId)).map(message=>({kind:row.kind,remoteId:message.id,threadRemoteId:row.kind==='message'?recipientId!:row.remote_id,occurredAt:message.createdAt}));
+  await recordSocialActivity('instagram',account.accountId,activity);
   return { messages, recipientId, lastInbound, incompleteHistory };
 }
 
 export async function instagramMessages(id: string, requestId?: string | null) {
+  const observedAt = new Date().toISOString();
   const account = await instagramConnection();
   const row = await threadForAccount(id, account);
   const loaded = await loadMessages(account, row);
@@ -125,17 +119,17 @@ export async function instagramMessages(id: string, requestId?: string | null) {
     : !loaded.lastInbound ? 'No hay un mensaje entrante verificable del cliente. Espera a que la persona escriba para poder responder.'
     : 'Han pasado 24 horas desde el último mensaje del cliente. Podrás responder aquí cuando vuelva a escribir.';
   const canPrivateReply = row.kind === 'message' ? canReply : !row.private_reply_sent && replyWindowOpen(row.remote_created_at, 7 * 24);
-  const pending = await supabaseAdmin().from(SENDS).select('request_id,status,created_at,body').eq('thread_id', id).in('status', ['sending', 'uncertain']).limit(1);
+  const pending = await supabaseAdmin().from(SENDS).select('request_id,status,created_at,body').eq('thread_id', row.id).in('status', ['sending', 'uncertain']).limit(1);
   if (pending.error) throw pending.error;
   const blocked = Boolean(pending.data?.length);
   const operation = pending.data?.[0];
   let requestStatus: string | null = null;
   if (requestId && /^[a-f\d-]{36}$/i.test(requestId)) {
-    const receipt = await supabaseAdmin().from(SENDS).select('status').eq('request_id', requestId).eq('thread_id', id).maybeSingle();
+    const receipt = await supabaseAdmin().from(SENDS).select('status').eq('request_id', requestId).eq('thread_id', row.id).maybeSingle();
     if (receipt.error) throw receipt.error;
     requestStatus = receipt.data?.status || 'not_found';
   }
-  return { ok: true, messages: loaded.messages, canReply: canReply && !blocked, canPrivateReply: canPrivateReply && !blocked, lastReplyAt: row.last_reply_at, privateReplySent: row.private_reply_sent,
+  return { ok: true, observedAt, messages: loaded.messages, canReply: canReply && !blocked, canPrivateReply: canPrivateReply && !blocked, lastReplyAt: row.last_reply_at, privateReplySent: row.private_reply_sent,
     requestStatus,
     pendingSend: operation ? { requestId: operation.request_id, status: operation.status, createdAt: operation.created_at, text: operation.body } : null,
     replyHint: blocked ? 'Hay un envío pendiente de confirmar. Comprueba su estado en Instagram antes de repetirlo.' : canReply ? null : unavailableHint,
@@ -191,4 +185,9 @@ export async function instagramResolve(userId: string, input: any) {
   const result = await supabaseAdmin().rpc('tc_instagram_resolve_send', { p_user: userId, p_thread: row.id, p_request: input.requestId, p_outcome: input.outcome });
   if (result.error) throw new InstagramError(result.error.message === 'SEND_IN_PROGRESS' ? 'SEND_IN_PROGRESS' : 'RESOLVE_FAILED', result.error.message === 'SEND_IN_PROGRESS' ? 'Espera un minuto desde el envío antes de comprobar el resultado.' : 'No se ha podido guardar la comprobación. Actualiza la conversación.', 409);
   return { ok: true };
+}
+
+export async function instagramRead(userId: string,input:any) {
+  const account=await instagramConnection(),row=await threadForAccount(String(input?.threadId || ''),account);
+  return markSocialThreadRead(userId,'instagram',account.accountId,[row.remote_id,...(row.kind==='message'&&row.recipient_id?[row.recipient_id]:[])],input?.through);
 }

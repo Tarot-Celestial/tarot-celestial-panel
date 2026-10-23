@@ -14,7 +14,7 @@ export async function instagramIdentity(req: Request) {
   if (error || !data.user) throw new InstagramError('NO_AUTH', 'Tu sesión ha caducado. Vuelve a entrar.', 401);
   const workers = await db.from('workers').select('id,role,is_active').eq('user_id', data.user.id);
   if (workers.error) throw workers.error;
-  const worker = workers.data?.find(w => w.is_active !== false && ['central', 'admin'].includes(w.role));
+  const worker = workers.data?.find(w => w.is_active === true && ['central', 'admin'].includes(w.role));
   if (!worker) throw new InstagramError('FORBIDDEN', 'Solo las centrales y administración pueden atender Instagram.', 403);
   return { db, worker, userId: data.user.id };
 }
@@ -40,8 +40,8 @@ export type InstagramAccount = Awaited<ReturnType<typeof instagramConnection>>;
 
 // All resource paths and cursors are constructed locally; never fetch Meta's
 // paging.next URL, which can contain tokens or an unexpected destination.
-export async function instagramGraph(account: InstagramAccount, path: string, params: Record<string, string> = {}, body?: object) {
-  return graphRequest(account, path, params, body, false);
+export async function instagramGraph(account: InstagramAccount, path: string, params: Record<string, string> = {}, body?: object, deadline?: number) {
+  return graphRequest(account, path, params, body, false, deadline);
 }
 
 // Read-only compatibility check for Meta's documented query-token examples.
@@ -50,7 +50,7 @@ export async function instagramReadWithQueryToken(account: InstagramAccount, pat
   return graphRequest(account, path, params, undefined, true);
 }
 
-async function graphRequest(account: InstagramAccount, path: string, params: Record<string, string>, body: object | undefined, queryToken: boolean) {
+async function graphRequest(account: InstagramAccount, path: string, params: Record<string, string>, body: object | undefined, queryToken: boolean, deadline?: number) {
   const version = /^v\d+\.\d+$/.test(process.env.META_GRAPH_API_VERSION || '') ? process.env.META_GRAPH_API_VERSION : 'v24.0';
   const url = new URL(`https://graph.instagram.com/${version}/${path}`);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
@@ -58,7 +58,7 @@ async function graphRequest(account: InstagramAccount, path: string, params: Rec
   let response: Response;
   try {
     response = await fetch(url, {
-      method: body ? 'POST' : 'GET', cache: 'no-store', signal: AbortSignal.timeout(15000),
+      method: body ? 'POST' : 'GET', cache: 'no-store', signal: AbortSignal.timeout(Math.max(1, Math.min(15000, deadline ? deadline - Date.now() : 15000))),
       headers: { ...(!queryToken ? { Authorization: `Bearer ${account.token}` } : {}), ...(body ? { 'Content-Type': 'application/json' } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
