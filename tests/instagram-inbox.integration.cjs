@@ -8,7 +8,7 @@ const query=async(q,p=[]) => (await db.query(q,p)).rows;
 const claim=(req=100,user=1,text='Hola',mode='private',expected=null)=>query('select tc_instagram_claim_send($1,$2,$3,$4,$5,$6) result',[id(user),id(10),id(req),text,mode,expected]);
 const finish=(req=100,status='sent',remote='ig-1')=>query('select tc_instagram_finish_send($1,$2,$3,$4)',[id(req),status,remote,null]);
 before(async()=>{db=new PGlite();await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create table workers(id uuid primary key,user_id uuid,role text,is_active bool);insert into workers values('${id(1)}','${id(1)}','central',true),('${id(2)}','${id(2)}','central',true),('${id(3)}','${id(3)}','central',false),('${id(4)}','${id(4)}','tarotista',true);`);
-const migration=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261019180222_instagram_central_inbox.sql'),'utf8');await db.exec(migration);await db.exec(migration);});
+const migration=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261019180222_instagram_central_inbox.sql'),'utf8');await db.exec(migration);await db.exec(migration);const lockFix=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261023020107_instagram_finish_lock_order.sql'),'utf8');await db.exec(lockFix);await db.exec(lockFix);});
 beforeEach(async()=>{await db.exec(`truncate tc_instagram_sends,tc_instagram_threads,tc_instagram_webhook_events;insert into tc_instagram_threads(id,account_id,kind,remote_id,remote_created_at) values('${id(10)}','account','comment','comment-1',now());`);});
 after(async()=>db.close());
 test('tables and RPC deny browser roles; schema repeatable',async()=>{
