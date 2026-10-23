@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { subscribeInstagram } from '@/lib/server/instagram-subscriptions';
 import {
   encodeSocialRecovery,
   instagramScopes,
@@ -148,7 +149,10 @@ export async function GET(req: NextRequest) {
       createdAt: Date.now(),
     });
 
-    return adminRedirect(req, { social_connected: "instagram", social_saved: "1" }, recoveryCookie);
+    let setupError = '';
+    try { await subscribeInstagram({accountId,username:String(profile?.username || ''),token:accessToken}); }
+    catch {setupError='Instagram está conectado, pero faltan los avisos en directo. Revisa las suscripciones de mensajes y comentarios en Administración.';}
+    return adminRedirect(req, { social_connected: "instagram", social_saved: "1", ...(setupError?{social_error:setupError}:{}) }, recoveryCookie);
   } catch (error: any) {
     return adminRedirect(req, { social_error: String(error?.message || "Error conectando Instagram").slice(0, 220) });
   }

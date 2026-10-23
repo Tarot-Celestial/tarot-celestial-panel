@@ -10,19 +10,24 @@ function evaluate(file, imports = {}, globals = {}) {
   return exports;
 }
 const shared = evaluate('src/lib/instagram-inbox.ts');
+const social = evaluate('src/lib/social-attention.ts');
 const content = node => typeof node === 'string' ? node : node.children?.map(content).join('') || '';
 const thread = (id, kind = 'message') => ({ id, kind, name: `Persona ${id}`, username: `persona_${id}`, preview: 'Hola, ¿cómo puedo consultar?', updatedAt: '2026-10-19T17:00:00Z' });
 
 function fixture(options = {}) {
-  const requests = [], timers = new Map(), listeners = new Map();
+  const requests = [], timers = new Map(), timeouts = new Map(), listeners = new Map(), events = [];
   let tree, sequence = 0, requestSequence = 0, failSend = null, failDetail = null, failInbox = null, detailBlocked = null, pendingSend = null, requestStatus = null;
   let sendError = 'Explicación en español del servidor.', detailError = 'La consulta falló.', inboxError = 'La consulta falló.';
   let connection = { connected: true, ready: true, username: 'tarotcelestialof' };
   let canReply = options.canReply ?? true, canPrivateReply = options.canPrivateReply ?? true;
   let session = { access_token: 'test-token', user: { id: 'worker-one' } }, authCallback, inboxResponse = options.inboxResponse, inboxBlocked = null;
+  let readFailure = false, provider = options.provider || 'instagram';
+  const unread = { ...(options.unread || {}) };
+  const dispatch = event => { events.push(event); for (const [fn, name] of [...listeners]) if (name === event.type) fn(event); };
   const document = { hidden: false, addEventListener(name, fn) { listeners.set(fn, name); }, removeEventListener(name, fn) { listeners.delete(fn); } };
   const Component = evaluate('src/features/central/CentralInstagramPanel.tsx', {
     '@/lib/instagram-inbox': shared,
+    '@/lib/social-attention': social,
     '@/lib/supabase-browser': { supabaseBrowser: () => ({ auth: {
       getSession: async () => ({ data: { session } }),
       onAuthStateChange(callback) { authCallback = callback; return { data: { subscription: { unsubscribe() { authCallback = null; } } } }; },
@@ -31,11 +36,19 @@ function fixture(options = {}) {
     'lucide-react': new Proxy({}, { get: (_, name) => props => React.createElement('span', { ...props, 'data-icon': name }) }),
   }, {
     document,
-    window: { setInterval(fn, delay) { timers.set(++sequence, { fn, delay }); return sequence; }, clearInterval(id) { timers.delete(id); } },
+    CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options?.detail; } },
+    window: { setInterval(fn, delay) { timers.set(++sequence, { fn, delay }); return sequence; }, clearInterval(id) { timers.delete(id); },
+      setTimeout(fn, delay) { timeouts.set(++sequence, { fn, delay }); return sequence; }, clearTimeout(id) { timeouts.delete(id); },
+      addEventListener(name, fn) { listeners.set(fn, name); }, removeEventListener(name, fn) { listeners.delete(fn); }, dispatchEvent: dispatch },
     crypto: { randomUUID: () => `00000000-0000-4000-8000-${String(++requestSequence).padStart(12, '0')}` },
     fetch: async (url, init) => {
       const params = new URL(url, 'https://test.local').searchParams;
-      requests.push({ action: params.get('action'), params, ...init });
+      requests.push({ action: params.get('action'), url, params, ...init });
+      if (params.get('action') === 'read') {
+        if (options.onRead) await options.onRead(JSON.parse(init.body));
+        if (!readFailure) unread[JSON.parse(init.body).threadId] = options.remainingAfterRead || 0;
+        return { ok: !readFailure, status: readFailure ? 503 : 200, json: async () => readFailure ? { ok: false, code: 'READ_UNAVAILABLE' } : { ok: true, unread: unread[JSON.parse(init.body).threadId] } };
+      }
       if (params.get('action') === 'resolve') { pendingSend = null; return { ok: true, json: async () => ({ ok: true }) }; }
       if (params.get('action') === 'send') return { ok: !failSend, json: async () => failSend ? { ok: false, code: failSend, error: sendError } : { ok: true } };
       if (params.get('action') === 'inbox') {
@@ -43,29 +56,33 @@ function fixture(options = {}) {
         const kind = params.get('kind');
         const payload = inboxResponse ? inboxResponse(kind, params.get('cursor')) : { threads: [thread(params.get('cursor') ? 'older' : 'one', kind), ...(params.get('cursor') ? [] : [thread('two', kind)])], nextCursor: params.get('cursor') ? null : 'more' };
         if (inboxBlocked) await inboxBlocked;
-        return { ok: true, json: async () => ({ ok: true, connection, ...payload }) };
+        return { ok: true, json: async () => ({ ok: true, connection, ...payload, threads: payload.threads.map(row => ({ ...row, ...(Object.hasOwn(unread, row.id) ? { unread: unread[row.id] } : {}) })) }) };
       }
       const id = params.get('threadId');
       if (failDetail) return { ok: false, json: async () => ({ ok: false, code: failDetail, error: detailError }) };
       if (detailBlocked?.id === id) await detailBlocked.promise;
-      return { ok: true, json: async () => ({ ok: true, messages: [{ id: `${id}-message`, text: `Mensaje de ${id}`, fromMe: false, createdAt: '2026-10-19T17:00:00Z' }], canReply: canReply && !pendingSend, canPrivateReply: canPrivateReply && !pendingSend, replyHint: options.replyHint, privateReplyHint: options.privateReplyHint, privateReplySent: false, lastReplyAt: null, pendingSend, requestStatus: params.has('requestId') ? requestStatus : null }) };
+      return { ok: true, json: async () => ({ ok: true, observedAt: options.observedAt, messages: options.messages || [{ id: `${id}-message`, text: `Mensaje de ${id}`, fromMe: false, createdAt: '2026-10-19T17:00:00Z' }], canReply: canReply && !pendingSend, canPrivateReply: canPrivateReply && !pendingSend, replyHint: options.replyHint, privateReplyHint: options.privateReplyHint, privateReplySent: false, lastReplyAt: null, pendingSend, requestStatus: params.has('requestId') ? requestStatus : null }) };
     },
   }).default;
   const act = async fn => renderer.act(async () => { fn(); await new Promise(resolve => setImmediate(resolve)); });
   const button = label => tree.root.findAllByType('button').find(node => content(node).includes(label));
   return {
-    requests, timers, listeners, document, button,
+    requests, timers, timeouts, listeners, document, button, events,
     get tree() { return tree; }, get sends() { return requests.filter(item => item.action === 'send'); },
-    async mount() { await act(() => { tree = renderer.create(React.createElement(Component)); }); },
+    async mount() { await act(() => { tree = renderer.create(React.createElement(Component, { provider, attention: options.attention })); }); },
+    async provider(value) { await act(() => { provider = value; tree.update(React.createElement(Component, { provider, attention: options.attention })); }); },
     async click(label) { const target = button(label); assert.ok(target, label); assert.equal(Boolean(target.props.disabled), false, label); await act(() => target.props.onClick()); },
     async write(text) { await act(() => tree.root.findByType('textarea').props.onChange({ target: { value: text } })); },
     async checkPending() { await act(() => tree.root.findByProps({ type: 'checkbox' }).props.onChange({ target: { checked: true } })); },
     async search(text) { await act(() => tree.root.findAllByType('input').find(input => input.props.placeholder === 'Buscar en la bandeja…').props.onChange({ target: { value: text } })); },
     async send() { await act(() => { void tree.root.findByType('form').props.onSubmit({ preventDefault() {} }); }); },
     async tick() { await act(() => { for (const timer of [...timers.values()]) timer.fn(); }); },
+    async event(type, detail) { await act(() => dispatch({ type, detail })); },
+    async flush(delay) { await act(() => { for (const [id, timer] of [...timeouts]) if (timer.delay === delay) { timeouts.delete(id); timer.fn(); } }); },
     async settle() { await act(() => {}); },
     failSend(code, message = 'Explicación en español del servidor.') { failSend = code; sendError = message; }, blockDetail(id, promise) { detailBlocked = { id, promise }; },
     failDetail(code, message = 'La consulta falló.') { failDetail = code; detailError = message; }, failInbox(code, message = 'La consulta falló.') { failInbox = code; inboxError = message; },
+    failRead(value) { readFailure = value; },
     setPending(value) { pendingSend = value; }, setRequestStatus(value) { requestStatus = value; },
     setConnection(value) { connection = value; }, setCanReply(value) { canReply = value; },
     setInboxResponse(value) { inboxResponse = value; }, blockInbox(value) { inboxBlocked = value; },
@@ -164,7 +181,7 @@ test('pagination adds earlier entries and visible-only polling is cleaned up on 
   const f = fixture(); await f.mount();
   await f.click('Cargar anteriores'); assert.ok(f.button('Persona older')); assert.ok(f.button('Persona one'));
   await f.click('Persona one');
-  assert.deepEqual([...f.timers.values()].map(timer => timer.delay).sort(), [30000, 60000]);
+  assert.deepEqual([...f.timers.values()].map(timer => timer.delay).sort(), [30000]);
   f.document.hidden = true; const before = f.requests.length; await f.tick(); assert.equal(f.requests.length, before);
   f.document.hidden = false; await f.tick(); assert.equal(f.requests.length, before + 2);
   await f.unmount(); assert.equal(f.timers.size, 0); assert.equal(f.listeners.size, 0);
@@ -353,4 +370,91 @@ test('a missing reply reason stays neutral and detail failures replace any stale
     assert.equal(content(g.tree.root).includes(staleHint), false);
     assert.equal(g.tree.root.findByType('textarea').props.placeholder, 'No se pudo volver a consultar esta conversación.');
   } finally { await g.unmount(); }
+});
+
+test('Instagram and Facebook keep separate requests, drafts, branding and reply templates', async () => {
+  const f = fixture(); await f.mount();
+  try {
+    await f.click('Persona one'); await f.write('Borrador privado de Instagram');
+    await f.provider('facebook');
+    assert.equal(f.tree.root.findAllByType('textarea').length, 0);
+    assert.equal(f.tree.root.findByType('h2').children.join(''), 'Facebook');
+    assert.ok(f.requests.at(-1).url.startsWith('/api/central/facebook?'));
+    await f.click('Persona one'); assert.equal(f.tree.root.findByType('textarea').props.value, '');
+    await f.click('1 · Panel y Oráculo');
+    assert.match(f.tree.root.findByType('textarea').props.value, /\/cliente\/oraculo(?:\s|$)/);
+    assert.doesNotMatch(f.tree.root.findByType('textarea').props.value, /source=/);
+    assert.equal(f.sends.length, 0);
+  } finally { await f.unmount(); }
+});
+
+test('opening the inbox does not read; a loaded visible selection sends only the observed cutoff', async () => {
+  const observedAt = '2026-10-23T10:00:00.000Z'; let release;
+  const f = fixture({ unread: { one: 3 }, observedAt, onRead: () => new Promise(resolve => { release = resolve; }), remainingAfterRead: 1 });
+  await f.mount();
+  try {
+    assert.equal(f.requests.some(request => request.action === 'read'), false);
+    await f.click('Persona one');
+    assert.deepEqual(JSON.parse(f.requests.find(request => request.action === 'read').body), { threadId: 'one', through: observedAt });
+    assert.equal(f.button('Persona one').findAllByProps({ 'aria-label': '3 pendientes de revisar' }).length, 1);
+    release(); await f.settle();
+    assert.equal(f.button('Persona one').findAllByProps({ 'aria-label': '1 pendientes de revisar' }).length, 1);
+    assert.ok(f.events.some(event => event.type === social.SOCIAL_ATTENTION_REFRESH && event.detail.provider === 'instagram'));
+    assert.equal(f.sends.length, 0);
+  } finally { release?.(); await f.unmount(); }
+});
+
+test('failed review preserves unread and offers a retry; server-confirmed review clears a paginated thread', async () => {
+  const f = fixture({ unread: { older: 2 }, observedAt: '2026-10-23T10:00:00Z' }); await f.mount();
+  try {
+    await f.click('Cargar anteriores'); f.failRead(true); await f.click('Persona older');
+    assert.ok(f.button('Persona older').findAllByProps({ 'aria-label': '2 pendientes de revisar' }).length);
+    assert.match(content(f.tree.root.findByProps({ role: 'alert' })), /sigue pendiente/);
+    assert.equal(f.events.some(event => event.type === social.SOCIAL_ATTENTION_REFRESH), false);
+    f.failRead(false); await f.click('Reintentar revisión');
+    assert.equal(f.button('Persona older').findAllByProps({ 'aria-label': '2 pendientes de revisar' }).length, 0);
+    assert.equal(f.tree.root.findAllByProps({ role: 'alert' }).length, 0);
+  } finally { await f.unmount(); }
+});
+
+test('late, hidden, empty or failed details never acknowledge unread content', async () => {
+  for (const variant of ['late', 'hidden', 'empty', 'failed']) {
+    const f = fixture({ unread: { one: 1 }, observedAt: '2026-10-23T10:00:00Z', ...(variant === 'empty' ? { messages: [] } : {}) });
+    await f.mount(); let release;
+    try {
+      if (variant === 'failed') f.failDetail('META_UNAVAILABLE');
+      if (variant === 'late' || variant === 'hidden') f.blockDetail('one', new Promise(resolve => { release = resolve; }));
+      await f.click('Persona one');
+      if (variant === 'late') await f.click('Persona two');
+      if (variant === 'hidden') f.document.hidden = true;
+      release?.(); await f.settle();
+      assert.equal(f.requests.some(request => request.action === 'read'), false, variant);
+    } finally { release?.(); await f.unmount(); }
+  }
+});
+
+test('provider invalidation refreshes the visible inbox without overlapping requests or sending', async () => {
+  const f = fixture(); await f.mount(); let release;
+  try {
+    const before = f.requests.length;
+    await f.event(social.SOCIAL_INBOX_INVALIDATE, { provider: 'facebook' }); await f.flush(500);
+    assert.equal(f.requests.length, before);
+    f.blockInbox(new Promise(resolve => { release = resolve; }));
+    await f.event(social.SOCIAL_INBOX_INVALIDATE, { provider: 'instagram' }); await f.flush(500);
+    await f.tick(); await f.tick(); assert.equal(f.requests.length, before + 1);
+    release(); await f.settle(); f.blockInbox(null);
+    f.document.hidden = true; await f.event(social.SOCIAL_INBOX_INVALIDATE, { provider: 'instagram' }); await f.flush(500);
+    assert.equal(f.requests.length, before + 1); assert.equal(f.sends.length, 0);
+  } finally { release?.(); await f.unmount(); }
+});
+
+test('global totals remain distinct from the loaded page and captioned as shared review state', async () => {
+  const f = fixture({ attention: { count: 14, messages: 10, comments: 4, revision: '1', accountId: 'one', configured: true, error: '' } }); await f.mount();
+  try {
+    assert.match(content(f.tree.root), /14 pendientes de revisar/);
+    assert.match(content(f.tree.root), /10 mensajes · 4 comentarios/);
+    assert.match(content(f.tree.root), /revisión se comparte/);
+    assert.ok(f.button('Mensajes').findAllByProps({ 'aria-label': '10 pendientes de revisar' }).length);
+    assert.ok(f.button('Comentarios').findAllByProps({ 'aria-label': '4 pendientes de revisar' }).length);
+  } finally { await f.unmount(); }
 });

@@ -1,4 +1,9 @@
 .wrap{display:grid;gap:16px;color:#f8f4ff}
+.facebook .hero{border-color:#78a8ec42;background:radial-gradient(ellipse at top left,#4289ed24,transparent 55%),linear-gradient(120deg,#1b2735,#0f1620)}
+.facebook .eyebrow{color:#acd2ff}.facebook .avatar{background:linear-gradient(140deg,#426ca2,#414f70)}
+.unreadBadge{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-width:22px;height:22px;padding:0 6px;box-sizing:border-box;border-radius:99px;background:#c6223f;color:#fff;font-size:11px;font-weight:800;box-shadow:0 0 0 1px #ff7a9252}
+.unreadThread{border-color:#e95e7840;background:#e34a6610}.unreadThread .threadTitle strong{color:#fff}
+.pendingSummary{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;border:1px solid #ffffff18;border-radius:14px;background:#ffffff04;font-size:12px}.pendingSummary strong{color:#ffbdc8}.pendingSummary span{color:#e5d9ef}.pendingSummary small{margin-left:auto;color:#bdafca;font-size:11px}
 .hero{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;padding:24px;border:1px solid #d886b342;border-radius:24px;background:radial-gradient(ellipse at top left,#dd6b9e24,transparent 55%),linear-gradient(120deg,#261b35,#110f20)}
 .eyebrow{display:flex;align-items:center;gap:8px;color:#f1b5ce;font-size:10px;letter-spacing:.14em;font-weight:800}.hero h2{font:500 clamp(28px,3vw,40px)/1.2 var(--font-display,Georgia,serif);margin:9px 0 7px}.hero p{font-size:13px;color:#c8bbd4;margin:0;line-height:1.6}.hero a{color:#f7dbe9;text-decoration:none;white-space:nowrap}.hero a svg{vertical-align:middle}
 .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}.badge{display:flex;gap:8px;align-items:center;min-height:40px;padding:0 12px;border:1px solid #ffffff1c;border-radius:12px;background:#ffffff07;color:#e3d9eb;font-size:12px}.badge i{width:7px;height:7px;border-radius:50%;background:#e7bb76}.ready i{background:#8ee1ad}

@@ -54,7 +54,7 @@ function harness() {
   h.api = load('src/lib/server/meta-leads.ts', { '@/lib/supabase-admin': { supabaseAdmin: () => db } });
   const next = { NextResponse: { json: (data, options) => new Response(JSON.stringify(data), options) } };
   h.loadSync = (override = {}) => load('src/app/api/sync/meta-leads/route.ts', { 'next/server': next, '@/lib/server/meta-leads': { ...h.api, ...override } });
-  h.loadWebhook = (override = {}) => load('src/app/api/webhooks/meta-leads/route.ts', { crypto: require('node:crypto'), 'next/server': next, '@/lib/server/meta-leads': { ...h.api, ...override } });
+  h.loadWebhook = (override = {}, facebook = async () => ({ received: 0 })) => load('src/app/api/webhooks/meta-leads/route.ts', { crypto: require('node:crypto'), 'next/server': next, '@/lib/server/meta-leads': { ...h.api, ...override }, '@/lib/server/facebook-inbox': { processFacebookWebhook: facebook } });
   h.sync = override => h.loadSync(override).GET(new Request('https://test/api/sync/meta-leads', { headers: { authorization: 'Bearer cron' } }));
   h.logs = logs;
   return h;
@@ -239,4 +239,30 @@ test('A manual-recovery event cannot starve subsequent leads in the same native 
   assert.equal(result.failed, 1); assert.equal(result.processed, 1);
   assert.equal(result.failures.META_MANUAL_RECONCILIATION_REQUIRED, 1);
   assert.ok(!JSON.stringify(result).includes('101'));
+});
+
+test('Shared Page callback authenticates before Facebook processing and preserves lead delivery', async () => {
+  const h = harness(); let facebookCalls = 0, leadCalls = 0;
+  const handler = h.loadWebhook({ processMetaLeadById: async () => { leadCalls++; return { duplicate: false }; } }, async () => { facebookCalls++; throw Error('database unavailable'); });
+  const body = JSON.stringify({ object: 'page', entry: [{ id: '900', changes: [{ field: 'leadgen', value: { leadgen_id: '101' } }, { field: 'feed', value: { item: 'comment' } }] }] });
+  const request = signature => new Request('https://test/api/webhooks/meta-leads', { method: 'POST', headers: { 'x-hub-signature-256': signature }, body });
+  assert.equal((await handler.POST(request('sha256=invalid'))).status, 401);
+  assert.equal(facebookCalls, 0); assert.equal(leadCalls, 0);
+  const signature = 'sha256=' + require('node:crypto').createHmac('sha256', h.env.META_APP_SECRET).update(body).digest('hex');
+  const response = await handler.POST(request(signature));
+  const result = await response.json();
+  assert.equal(leadCalls, 1); assert.equal(facebookCalls, 1);
+  assert.equal(response.status, 503); assert.equal(result.processed, 1);
+  assert.equal(result.failures.FACEBOOK_INBOX_UNAVAILABLE, 1);
+  assert.ok(!JSON.stringify(result).includes('database unavailable'));
+});
+
+test('Facebook still ingests a mixed delivery when a lead needs recovery', async () => {
+  const h = harness(); let facebookCalls = 0;
+  const handler = h.loadWebhook({ processMetaLeadById: async () => { throw new h.api.MetaLeadError('META_MANUAL_RECONCILIATION_REQUIRED'); } }, async () => { facebookCalls++; return { received: 1 }; });
+  const body = JSON.stringify({ object: 'page', entry: [{ id: '900', changes: [{ field: 'leadgen', value: { leadgen_id: '101' } }] }] });
+  const signature = 'sha256=' + require('node:crypto').createHmac('sha256', h.env.META_APP_SECRET).update(body).digest('hex');
+  const response = await handler.POST(new Request('https://test/api/webhooks/meta-leads', { method: 'POST', headers: { 'x-hub-signature-256': signature }, body }));
+  assert.equal(facebookCalls, 1); assert.equal((await response.json()).facebookReceived, 1);
+  assert.equal(response.status, 503);
 });

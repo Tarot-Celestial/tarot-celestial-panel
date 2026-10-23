@@ -112,6 +112,8 @@ function inboxHarness({ participants = [own, person], messages = [], storedRecip
   const mod = load('src/lib/server/instagram-inbox.ts', {
     '@/lib/supabase-admin': { supabaseAdmin: () => db },
     './instagram-message-identity': helper,
+    './social-inbox-activity':{recordSocialActivity:async()=>{},socialSyncState:async()=>({cursor:{}}),socialThreadUnread:async()=>new Map()},
+    './instagram-sync':{persistInstagramThreads:async()=>[],ownInstagramActor:(a,p)=>p?.id===a.accountId},
     './instagram-graph': {
       InstagramError, graphId, replyWindowOpen, instagramConnection: async () => account,
       instagramGraph: async (selected, resource, params, body) => {
@@ -129,18 +131,6 @@ function inboxHarness({ participants = [own, person], messages = [], storedRecip
   });
   return { mod, calls, writes, updates, rpcCalls, id: row.id, currentRow: () => row };
 }
-
-test('real inbox ingestion selects the external customer, persists that id and uses it when sending', async () => {
-  const h = inboxHarness({ messages: [{ id: 'inbound-1', from: person, to: { data: [own] }, message: 'Synthetic inbound', created_time: new Date().toISOString() }] });
-  const result = await h.mod.instagramInbox('message', null);
-  assert.equal(result.threads[0].username, person.username);
-  assert.equal(h.writes[0].rows[0].recipient_id, customer);
-  assert.equal(h.writes[0].rows[0].account_id, account.accountId);
-  await h.mod.instagramSend('synthetic-worker', { threadId: h.id, text: 'Synthetic test reply', replyMode: 'private', requestId: '00000000-0000-4000-8000-000000000002' });
-  const sent = h.calls.find(call => call.body);
-  assert.equal(sent.body.recipient.id, customer);
-  assert.equal(sent.body.recipient.id, h.writes[0].rows[0].recipient_id);
-});
 
 test('outgoing-only live messages do not open the reply window despite a stale cached recipient', async () => {
   const h = inboxHarness({ storedRecipient: otherCustomer, messages: [

@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { MetaLeadError, metaLeadErrorCode, processExpandedMetaLead, processMetaLeadById, type MetaLeadPayload } from "@/lib/server/meta-leads";
+import { processFacebookWebhook } from "@/lib/server/facebook-inbox";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -107,6 +108,14 @@ export async function POST(req: NextRequest) {
           failures[code] = (failures[code] || 0) + 1;
         }
       }
+      // Page feed/Messenger share this callback with leadgen. Retry failures
+      // without allowing either consumer to starve the other.
+      let facebookReceived = 0;
+      try {
+        facebookReceived = (await processFacebookWebhook(body)).received;
+      } catch {
+        failures.FACEBOOK_INBOX_UNAVAILABLE = 1;
+      }
       const failed = Object.values(failures).reduce((total, count) => total + count, 0);
       const ok = failed === 0 && unprocessed === 0;
       return NextResponse.json({
@@ -117,6 +126,7 @@ export async function POST(req: NextRequest) {
         failed,
         unprocessed,
         failures,
+        facebookReceived,
       }, { status: ok ? 200 : 503 });
     }
 

@@ -30,6 +30,7 @@ import {
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import styles from "./SocialChannelAdminPanel.module.css";
 import TarotVideoStudio from "./TarotVideoStudio";
+import SocialInboxWebhookSetup from "./SocialInboxWebhookSetup";
 
 const CentralInstagramPanel = nextDynamic(() => import("@/features/central/CentralInstagramPanel"), {
   ssr: false,
@@ -1568,6 +1569,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
         </div>}
       </section>}
 
+      {provider === "instagram" && section === "conexion" && <SocialInboxWebhookSetup api={api} />}
       {loading && <div className={styles.loading}><RefreshCw className={styles.spin} size={18} />Actualizando datos…</div>}
       {aiProgress && ["ai-week-schedule", "ai-flex-schedule", "ai-single", "ai-image", "ai-series-save", "ai-series-publish"].includes(busy) && <div className={styles.aiProgress}><Sparkles className={styles.spin} size={18} /><div><b>{aiProgressTotal > 0 ? `${aiProgressCurrent}/${aiProgressTotal}` : "Procesando"}</b><span>{aiProgress}</span></div></div>}
     </div>

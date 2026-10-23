@@ -1,111 +1,24 @@
-const { test } = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm'), ts = require('typescript');
-
-class InstagramError extends Error {
-  constructor(code, message, status = 503) { super(message); this.code = code; this.status = status; }
+const {test}=require('node:test');
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),ts=require('typescript');
+function load(file,mocks={},globals={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,Buffer,Date,Map,Set,process:{env:{}},...globals,require:n=>n==='server-only'?{}:n in mocks?mocks[n]:require(n)});return exports;}
+class InstagramError extends Error{constructor(code,message,status=503){super(message);this.code=code;this.status=status;}}
+const account={accountId:'account',username:'tarotcelestialof',token:'PRIVATE'},when='2026-10-22T12:00:00Z';
+const comment={id:'c1',text:'❤️❤️',timestamp:when,from:{id:'person',username:'client'}};
+function harness(responses={},initial={}){
+ const h={calls:[],writes:[],activity:[],cursor:initial,lease:true,errors:[]};
+ const identity=load('src/lib/server/instagram-message-identity.ts');
+ const graph={InstagramError,graphId:v=>typeof v==='string'&&!!v,instagramConnection:async()=>account,instagramGraph:async(a,p,q)=>{h.calls.push({p,q});const value=responses[p];if(value instanceof Error)throw value;return typeof value==='function'?value(q):value || {data:[]};}};
+ const social={acquireSocialSync:async()=>h.lease?{token:'lease',cursor:h.cursor}:null,finishSocialSync:async(p,a,t,c,e)=>{h.cursor=c;h.errors.push(e)},recordSocialActivity:async(p,a,items)=>h.activity.push(...items)};
+ const db={rpc:async(name,args)=>{assert.equal(name,'tc_instagram_upsert_threads');h.writes.push(...args.p_rows);return {data:args.p_rows.map(row=>({id:'row',...row}))};}};
+ h.mod=load('src/lib/server/instagram-sync.ts',{'@/lib/supabase-admin':{supabaseAdmin:()=>db},'./instagram-graph':graph,'./instagram-message-identity':identity,'./social-inbox-activity':social,'./instagram-webhook':load('src/lib/server/instagram-webhook.ts')});return h;
 }
+test('sync stores real emoji comments and unread event; own comments are not counted',async()=>{const h=harness({'account/media':{data:[{id:'p1',comments_count:2,permalink:'https://www.instagram.com/p/test/'}]},'p1/comments':{data:[comment,{...comment,id:'own',from:{id:'own-alias',username:account.username}}]}});await h.mod.ensureInstagramFresh();assert.equal(h.writes.length,1);assert.equal(h.writes[0].preview,'❤️❤️');assert.equal(h.writes[0].remote_created_at,'2026-10-22T12:00:00.000Z');assert.equal(h.activity.length,1);assert.equal(h.activity[0].remoteId,'c1');});
+test('account lease prevents every central polling Meta independently',async()=>{const h=harness();h.lease=false;await h.mod.ensureInstagramFresh();assert.equal(h.calls.length,0);});
+test('older media and >50 comments have durable continuation instead of 8-post limit',async()=>{const h=harness({'account/media':q=>q.after?{data:[{id:'old'}]}:{data:[{id:'new'}],paging:{next:'PRIVATE-URL',cursors:{after:'older-page'}}},'new/comments':q=>q.after?{data:[{...comment,id:'c2'}]}:{data:[comment],paging:{next:'PRIVATE-URL',cursors:{after:'comment-page-2'}}},'old/comments':{data:[{...comment,id:'old-comment'}]}});await h.mod.ensureInstagramFresh();assert.equal(h.cursor.media,'older-page');assert.ok(h.cursor.pendingPosts.some(p=>p.after==='comment-page-2'));await h.mod.ensureInstagramFresh();assert.ok(h.activity.some(e=>e.remoteId==='c2'));assert.ok(h.activity.some(e=>e.remoteId==='old-comment'));assert.ok(h.calls.every(call=>!call.p.includes('PRIVATE-URL')));});
+test('failed comments page retains retry cursor and reports safe error without losing saved threads',async()=>{const h=harness({'account/media':{data:[{id:'p1'}]},'p1/comments':new InstagramError('META_PERMISSION','PRIVATE ERROR')});await h.mod.ensureInstagramFresh();assert.equal(h.cursor.commentError,'META_PERMISSION');assert.equal(h.cursor.pendingPosts[0].id,'p1');assert.ok(!JSON.stringify(h.cursor).includes('PRIVATE ERROR'));});
+test('malformed lists and positive count without content are visible sync issues',async()=>{let h=harness({'account/media':{data:'PRIVATE'}});await h.mod.ensureInstagramFresh();assert.equal(h.cursor.commentError,'META_INVALID_RESPONSE');h=harness({'account/media':{data:[{id:'p1',comments_count:1}]},'p1/comments':{data:[]}});await h.mod.ensureInstagramFresh();assert.equal(h.cursor.commentError,'COMMENTS_NOT_RETURNED');assert.equal(h.activity.length,0);});
+test('messages prove customer identity from Meta and activity uses customer, not own alias',async()=>{const person={id:'222',username:'client'},own={id:'111',username:account.username};const h=harness({'account/conversations':{data:[{id:'conv',updated_time:when,participants:{data:[own,person]}}]},conv:{messages:{data:[{id:'m1'},{id:'m2'}]}},m1:{id:'m1',from:person,to:{data:[own]},created_time:when},m2:{id:'m2',from:own,to:{data:[person]},created_time:when}});await h.mod.ensureInstagramFresh();assert.equal(h.writes[0].recipient_id,'222');assert.equal(h.writes[0].conversation_id,'conv');assert.equal(h.activity.length,1);assert.equal(h.activity[0].threadRemoteId,'222');});
+test('webhook persists inbound threads without Graph and excludes echo/self/other account',async()=>{const h=harness();const timestamp=Date.now()-1000;const incoming={sender:{id:'person'},recipient:{id:'account'},timestamp,message:{mid:'m1',text:'hello'}};const body={object:'instagram',entry:[{id:'account',time:timestamp/1000,messaging:[incoming,{...incoming,message:{mid:'echo',is_echo:true}},{...incoming,sender:{id:'account'},message:{mid:'own'}}],changes:[{field:'comments',value:comment},{field:'comments',value:{...comment,id:'own-comment',from:{username:account.username}}}]},{id:'foreign',messaging:[incoming]}]};await h.mod.processInstagramWebhook(body,account);assert.equal(h.calls.length,0);assert.equal(h.writes.length,2);assert.equal(h.activity.length,2);assert.ok(h.writes.some(row=>row.remote_id==='peer:person'));});
+test('cached inbox reads every saved post without calling Graph and uses server unread',async()=>{const chain={};for(const key of['select','eq','is','order','limit','or'])chain[key]=()=>chain;chain.then=resolve=>Promise.resolve({data:[{id:'00000000-0000-4000-8000-000000000001',kind:'comment',remote_id:'old-comment',name:'Client',preview:'old post, new comment',remote_updated_at:when}]}).then(resolve);const mod=load('src/lib/server/instagram-inbox.ts',{'@/lib/supabase-admin':{supabaseAdmin:()=>({from:()=>chain})},'./instagram-graph':{instagramConnection:async()=>account,InstagramError},'./instagram-message-identity':{},'./instagram-sync':{},'./social-inbox-activity':{socialThreadUnread:async()=>new Map([['old-comment',2]]),socialSyncState:async()=>({cursor:{}})}});const result=await mod.instagramInbox('comment',null);assert.equal(result.threads.length,1);assert.equal(result.threads[0].unread,2);assert.equal(result.threads[0].preview,'old post, new comment');});
 
-const post = { id: 'post-1', permalink: 'https://www.instagram.com/p/example/', timestamp: '2026-10-19T12:00:00Z', comments_count: 1 };
-const comment = { id: 'comment-1', text: '❤️❤️', timestamp: '2026-10-19T18:30:00+0000', from: { id: 'person-1', username: 'test_commenter' } };
-
-function harness(responses) {
-  const calls = [], writes = [];
-  const account = { accountId: 'account-1', username: 'tarotcelestialof', token: 'NOT_A_REAL_TOKEN' };
-  const db = { from(table) {
-    assert.equal(table, 'tc_instagram_threads');
-    return { upsert(rows, options) {
-      writes.push({ rows, options });
-      return { select: async () => ({ data: rows.map((row, index) => ({ ...row, id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}` })), error: null }) };
-    } };
-  } };
-  const source = fs.readFileSync(path.join(__dirname, '../src/lib/server/instagram-inbox.ts'), 'utf8');
-  const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const exports = {};
-  vm.runInNewContext(code, { exports, Date, require(name) {
-    if (name === 'server-only') return {};
-    if (name === './instagram-message-identity') {
-      const helper = {};
-      const helperSource = fs.readFileSync(path.join(__dirname, '../src/lib/server/instagram-message-identity.ts'), 'utf8');
-      vm.runInNewContext(ts.transpileModule(helperSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { exports: helper, Set });
-      return helper;
-    }
-    if (name === '@/lib/supabase-admin') return { supabaseAdmin: () => db };
-    if (name === './instagram-graph') return {
-      InstagramError,
-      instagramConnection: async () => account,
-      instagramGraph: async (requestedAccount, resource, params) => {
-        assert.equal(requestedAccount, account); calls.push({ resource, params });
-        assert.ok(Object.hasOwn(responses, resource), `Unexpected Meta resource: ${resource}`);
-        const result = responses[resource];
-        if (result instanceof Error) throw result;
-        return result;
-      },
-    };
-    throw new Error(`Unexpected import: ${name}`);
-  } });
-  return { calls, writes, inbox: cursor => exports.instagramInbox('comment', cursor || null) };
-}
-
-test('real inbox ingestion persists and presents emoji-only comments with author, date and publication link', async () => {
-  const h = harness({ 'account-1/media': { data: [post] }, 'post-1/comments': { data: [comment] } });
-  const result = await h.inbox();
-  assert.equal(result.threads.length, 1); assert.equal(h.writes.length, 1);
-  const saved = h.writes[0].rows[0], shown = result.threads[0];
-  assert.equal(saved.account_id, 'account-1'); assert.equal(saved.remote_id, 'comment-1'); assert.equal(saved.recipient_id, 'person-1');
-  assert.equal(saved.preview, '❤️❤️'); assert.equal(saved.remote_created_at, '2026-10-19T18:30:00.000Z');
-  assert.equal(shown.preview, '❤️❤️'); assert.equal(shown.username, 'test_commenter'); assert.equal(shown.name, 'test_commenter');
-  assert.equal(shown.permalink, post.permalink); assert.equal(shown.updatedAt, saved.remote_created_at); assert.equal(shown.kind, 'comment');
-  assert.equal(h.writes[0].options.onConflict, 'account_id,kind,remote_id');
-  assert.ok(h.calls[0].params.fields.split(',').includes('comments_count'));
-  assert.equal(result.partialHint, null);
-});
-
-test('a positive comments_count with empty comments reports the discrepancy without inventing records or a cause', async () => {
-  const h = harness({ 'account-1/media': { data: [post] }, 'post-1/comments': { data: [] } });
-  const result = await h.inbox();
-  assert.equal(result.threads.length, 0); assert.equal(h.writes.length, 0);
-  assert.equal(result.partialHint, 'Instagram indica comentarios en algunas publicaciones, pero no los ha devuelto. Administración debe revisar la conexión de Meta.');
-  assert.equal(result.connection.ready, true);
-});
-
-test('zero or unavailable comment counts with empty data remain a valid empty result', async () => {
-  for (const comments_count of [0, undefined]) {
-    const h = harness({ 'account-1/media': { data: [{ ...post, comments_count }] }, 'post-1/comments': { data: [] } });
-    const result = await h.inbox();
-    assert.equal(result.threads.length, 0); assert.equal(result.partialHint, null); assert.equal(h.writes.length, 0);
-  }
-});
-
-test('missing or malformed media data rejects safely instead of returning a fake empty inbox', async () => {
-  for (const response of [{}, { data: null }, { data: {} }, { data: 'PRIVATE_REMOTE_CONTENT' }]) {
-    const h = harness({ 'account-1/media': response });
-    await assert.rejects(h.inbox(), error => error.code === 'META_INVALID_RESPONSE' && !error.message.includes('PRIVATE_REMOTE_CONTENT'));
-    assert.equal(h.calls.length, 1); assert.equal(h.writes.length, 0);
-  }
-});
-
-test('missing or malformed comment data rejects safely instead of claiming there are no comments', async () => {
-  for (const response of [{}, { data: null }, { data: {} }, { data: 'PRIVATE_REMOTE_CONTENT' }]) {
-    const h = harness({ 'account-1/media': { data: [post] }, 'post-1/comments': response });
-    await assert.rejects(h.inbox(), error => error.code === 'META_INVALID_RESPONSE' && !error.message.includes('PRIVATE_REMOTE_CONTENT'));
-    assert.equal(h.writes.length, 0);
-  }
-});
-
-test('genuine empty media pages preserve the continuation cursor and do not fabricate comments', async () => {
-  const h = harness({ 'account-1/media': { data: [], paging: { next: 'https://graph.instagram.com/next', cursors: { after: 'next-page' } } } });
-  const result = await h.inbox('prior-page');
-  assert.equal(result.threads.length, 0); assert.equal(result.nextCursor, 'next-page'); assert.equal(result.partialHint, null);
-  assert.equal(h.calls[0].params.after, 'prior-page'); assert.equal(h.writes.length, 0);
-});
-
-test('a missing-comment warning survives other publication pagination hints while valid comments remain usable', async () => {
-  const h = harness({
-    'account-1/media': { data: [post, { ...post, id: 'post-2', comments_count: 51 }] },
-    'post-1/comments': { data: [] },
-    'post-2/comments': { data: [comment], paging: { next: 'https://graph.instagram.com/next' } },
-  });
-  const result = await h.inbox();
-  assert.equal(result.threads.length, 1); assert.ok(result.partialHint.includes('Instagram indica comentarios'));
-});
+test('reading a comment cannot mark that author private messages as read',async()=>{const keys=[],row={id:'00000000-0000-4000-8000-000000000001',kind:'comment',remote_id:'comment-id',recipient_id:'customer-peer'};const chain={select:()=>chain,eq:()=>chain,maybeSingle:async()=>({data:row})};const mod=load('src/lib/server/instagram-inbox.ts',{'@/lib/supabase-admin':{supabaseAdmin:()=>({from:()=>chain})},'./instagram-graph':{instagramConnection:async()=>account,InstagramError,graphId:()=>true},'./instagram-message-identity':{},'./instagram-sync':{},'./social-inbox-activity':{markSocialThreadRead:async(u,p,a,k,t)=>{keys.push(...k);return {ok:true,unread:0}}}});await mod.instagramRead('user',{threadId:row.id,through:when});assert.deepEqual(keys,['comment-id']);});
