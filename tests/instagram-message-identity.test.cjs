@@ -236,3 +236,5 @@ test('an attachment without message text remains readable when identity and time
   assert.equal(result.canReply, true);
   assert.equal(result.replyHint, null);
 });
+
+test('server-verified own alias stays own even when Meta omits usernames',()=>{const verified='17841451159294130';const result=identity()({...account,verifiedAccountIds:[verified]},[{id:verified},{id:customer}],[]);assert.equal(result.recipientId,customer);assert.equal(result.isOwnActor({id:verified}),true);const unknown=identity()(account,[{id:verified},{id:customer}],[]);assert.equal(unknown.recipientId,null);});

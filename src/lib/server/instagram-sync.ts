@@ -6,7 +6,7 @@ import { acquireSocialSync, finishSocialSync, recordSocialActivity, type SocialI
 import { instagramInboundEvents } from './instagram-webhook';
 
 export const verifiedInstagramDate = (value: unknown) => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null;
-export const ownInstagramActor = (account: InstagramAccount, actor: any) => String(actor?.id || '') === account.accountId || (typeof actor?.username === 'string' && actor.username.toLowerCase() === account.username.toLowerCase());
+export const ownInstagramActor = (account: InstagramAccount, actor: any) => String(actor?.id || '') === account.accountId || (account.verifiedAccountIds || []).includes(String(actor?.id || '')) || (typeof actor?.username === 'string' && actor.username.toLowerCase() === account.username.toLowerCase());
 export async function persistInstagramThreads(account: InstagramAccount, rows: Array<Record<string, any>>, activity: SocialInboxEvent[] = []) {
   const saved: any[] = [];
   for (let offset=0;offset<rows.length;offset+=50) {
@@ -109,7 +109,7 @@ export async function ensureInstagramFresh(account?: InstagramAccount) {
   return cursor;
 }
 export async function processInstagramWebhook(body: unknown, account: InstagramAccount) {
-  const events=instagramInboundEvents(body,account.accountId,account.username);
+  const events=instagramInboundEvents(body,account.accountId,account.username,account.verifiedAccountIds);
   const rows=events.map(event=>({kind:event.kind,remote_id:event.kind==='message'?`peer:${event.threadRemoteId}`:event.remoteId,
     recipient_id:event.senderId || null,name:event.senderName,username:event.username,preview:event.text,
     remote_created_at:event.kind==='comment'?event.occurredAt:null,remote_updated_at:event.occurredAt}));

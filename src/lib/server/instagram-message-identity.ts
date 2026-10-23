@@ -4,8 +4,9 @@ const username = (value: unknown) => typeof value === 'string' ? value.trim().re
 
 // Instagram may return different IDs for the connected account and the same
 // account in messaging. Learn aliases only from Meta's own account username.
-export function resolveMessageIdentity(account: { accountId: string; username: string }, participants: Actor[], messages: any[]) {
-  const ownIds = new Set([account.accountId]);
+export function resolveMessageIdentity(account: { accountId: string; username: string; verifiedAccountIds?: string[] }, participants: Actor[], messages: any[]) {
+  // Extra own IDs come only from server-verified connection metadata.
+  const ownIds = new Set([account.accountId, ...(account.verifiedAccountIds || []).filter(value => /^\d{1,40}$/.test(value)).slice(0,10)]);
   const ownUsername = username(account.username);
   const actors: Actor[] = [...participants];
   for (const message of messages) {

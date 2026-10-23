@@ -22,7 +22,7 @@ export async function instagramIdentity(req: Request) {
 export async function instagramConnection() {
   const db = supabaseAdmin();
   const { data, error } = await db.from(SOCIAL_CONNECTIONS_TABLE)
-    .select('account_id,username,access_token_ciphertext,token_expires_at').eq('provider', 'instagram').maybeSingle();
+    .select('account_id,username,access_token_ciphertext,token_expires_at,metadata').eq('provider', 'instagram').maybeSingle();
   if (error) throw error;
   if (!data?.account_id) throw new InstagramError('NOT_CONNECTED', 'Conecta @tarotcelestialof desde Administración → Redes sociales.');
   if (String(data.username || '').toLowerCase() !== 'tarotcelestialof') {
@@ -33,7 +33,10 @@ export async function instagramConnection() {
   }
   const token = decryptSecret(data.access_token_ciphertext);
   if (!token) throw new InstagramError('TOKEN_MISSING', 'Vuelve a conectar Instagram desde Administración.');
-  return { accountId: String(data.account_id), username: String(data.username), token };
+  const verified = data.metadata?.instagram_verified_account_ids;
+  const verifiedAccountIds = Array.isArray(verified) ? [...new Set(verified.filter((value: unknown): value is string => typeof value === 'string' && /^\d{1,40}$/.test(value)))].slice(0, 10) : [];
+  const account: {accountId:string;username:string;token:string;verifiedAccountIds?:string[]} = { accountId: String(data.account_id), username: String(data.username), token, verifiedAccountIds };
+  return account;
 }
 
 export type InstagramAccount = Awaited<ReturnType<typeof instagramConnection>>;
