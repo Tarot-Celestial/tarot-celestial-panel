@@ -33,6 +33,8 @@ export default function SocialInboxWebhookSetup({ api }: { api: Api }) {
   const [busy, setBusy] = useState<Provider | null>(null);
   const [results, setResults] = useState<Partial<Record<Provider, string[]>>>({});
   const [errors, setErrors] = useState<Partial<Record<Provider, string>>>({});
+  const [postId, setPostId] = useState("");
+  const [postResult, setPostResult] = useState("");
   const active = useRef(false);
   const mounted = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -57,6 +59,26 @@ export default function SocialInboxWebhookSetup({ api }: { api: Api }) {
     } finally { active.current = false; if (mounted.current) setBusy(null); }
   }
 
+  async function importPost() {
+    if (active.current) return;
+    const id = postId.trim();
+    if (!/^\d{1,40}(?:_\d{1,40})?$/.test(id)) {
+      setErrors(previous => ({ ...previous, facebook: "Introduce el ID de la publicación de Facebook." }));
+      return;
+    }
+    active.current = true;
+    setBusy("facebook");
+    setPostResult("");
+    setErrors(previous => ({ ...previous, facebook: "" }));
+    try {
+      const data = await api("/api/central/facebook?action=sync-post", { method: "POST", body: JSON.stringify({ postId: id }) });
+      if (data?.ok !== true || !Number.isSafeInteger(data.processed)) throw new Error("No se pudo confirmar la importación. Vuelve a comprobar la bandeja.");
+      if (mounted.current) setPostResult(`${data.processed} comentarios revisados. ${data.continuationQueued ? "El historial restante seguirá importándose automáticamente." : "La publicación queda en seguimiento automático."} Puedes verlos en Centrales → Facebook.`);
+    } catch (error) {
+      if (mounted.current) setErrors(previous => ({ ...previous, facebook: error instanceof Error ? error.message : "No se pudo importar la publicación." }));
+    } finally { active.current = false; if (mounted.current) setBusy(null); }
+  }
+
   return <section className={styles.card}>
     <h3>Sincronización de las bandejas de Centrales</h3>
     <p>Comprueba los permisos y activa la recepción de mensajes y comentarios. Los formularios de captación mantienen su conexión.</p>
@@ -67,6 +89,15 @@ export default function SocialInboxWebhookSetup({ api }: { api: Api }) {
         <button type="button" className={styles.secondary} disabled={!!busy} onClick={() => void run(provider)}>Comprobar {provider === "instagram" ? "Instagram" : "Facebook"}</button>
         <button type="button" className={styles.primary} disabled={!!busy} onClick={() => void run(provider, true)}>Activar recepción de {provider === "instagram" ? "Instagram" : "Facebook"}</button>
       </div>
+      {provider === "facebook" && <div className={styles.formStack}>
+        <label htmlFor="facebook-post-import">Recuperar comentarios de una publicación o anuncio</label>
+        <p>Introduce el ID de la publicación de Facebook. Se comprobará que pertenece a tu página y continuará en seguimiento aunque no aparezca entre las publicaciones recientes.</p>
+        <div className={styles.actions}>
+          <input id="facebook-post-import" aria-label="ID de la publicación de Facebook" value={postId} onChange={event => setPostId(event.target.value)} maxLength={81} placeholder="ID de Facebook, por ejemplo página_publicación" disabled={!!busy} />
+          <button type="button" className={styles.secondary} disabled={!!busy || !postId.trim()} onClick={() => void importPost()}>Importar comentarios</button>
+        </div>
+        {postResult && <p role="status">{postResult}</p>}
+      </div>}
       <div aria-live="polite">
         {errors[provider] && <p role="alert" className={`${styles.notice} ${styles.noticeError}`}>{errors[provider]}</p>}
         {results[provider] && <ul>{results[provider]!.map((line, index) => <li key={index}>{line}</li>)}</ul>}

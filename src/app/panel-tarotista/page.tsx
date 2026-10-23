@@ -6,7 +6,7 @@ import AppHeader from "@/components/AppHeader";
 import PanelTheme from "@/components/ui/PanelTheme";
 import OperationalInbox from "@/components/central/OperationalInbox";
 import { supabaseBrowser } from "@/lib/supabase-browser";
-import { loadPanelIdentity, panelPathForRole, redirectToLogin } from "@/lib/panel-access";
+import { loadPanelIdentity, panelPathForRole, panelSessionRejected, redirectToLogin } from "@/lib/panel-access";
 import { useAttendance } from "@/hooks/useAttendance";
 import StaffDirectChatPanel from "@/components/chat/StaffDirectChatPanel";
 import TarotistaInvoiceDashboard from "@/components/tarotista/TarotistaInvoiceDashboard";
@@ -244,6 +244,8 @@ type ChatMessage = {
 export default function Tarotista() {
   const attendance = useAttendance();
   const [ok, setOk] = useState(false);
+  const [accessError, setAccessError] = useState<string | null>(null);
+  const [accessAttempt, setAccessAttempt] = useState(0);
   const [tab, setTab] = useState<TabKey>("resumen");
 
   const [month, setMonth] = useState(monthKeyNow());
@@ -524,8 +526,8 @@ export default function Tarotista() {
     });
 
   useEffect(() => {
-    const { data: sub } = sb.auth.onAuthStateChange((_event, session) => {
-      if (!session) window.location.href = "/login";
+    const { data: sub } = sb.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT" && !session) window.location.href = "/login";
     });
     return () => sub.subscription.unsubscribe();
   }, []);
@@ -538,6 +540,7 @@ export default function Tarotista() {
 
   useEffect(() => {
     let active = true;
+    setAccessError(null);
     (async () => {
       try {
         const me = await loadPanelIdentity(sb);
@@ -550,11 +553,15 @@ export default function Tarotista() {
         setOk(true);
       } catch (error) {
         if (!active) return;
-        redirectToLogin(error instanceof Error ? error.message : "session");
+        if (panelSessionRejected(error)) {
+          redirectToLogin(error instanceof Error ? error.message : "session");
+          return;
+        }
+        setAccessError(error instanceof Error ? error.message : "No se pudo verificar el acceso. Vuelve a intentarlo.");
       }
     })();
     return () => { active = false; };
-  }, []);
+  }, [accessAttempt]);
 
   async function loadAttendanceMe(silent = false) {
     if (attLoading && !silent) return;
@@ -1502,6 +1509,15 @@ export default function Tarotista() {
       setMsg(`❌ ${e?.message || "Error"}`);
     }
   }
+
+  if (!ok) return (
+    <div style={{ padding: 40, minHeight: "100vh", display: "grid", placeItems: "center", color: "rgba(255,255,255,.92)" }}>
+      {accessError ? <div role="alert" style={{ maxWidth: 520, textAlign: "center" }}>
+        <p>{accessError}</p>
+        <button type="button" onClick={() => setAccessAttempt(attempt => attempt + 1)} style={{ marginTop: 16, padding: "12px 20px", borderRadius: 12, background: "#e5c276", color: "#23172f" }}>Reintentar acceso</button>
+      </div> : "Verificando acceso…"}
+    </div>
+  );
 
   return (
     <PanelTheme rank={s?.tarotista_rango}>

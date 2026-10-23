@@ -66,8 +66,10 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
   const [clockNow, setClockNow] = useState<Date | null>(null);
 
   useEffect(() => {
-    const { data: sub } = sb.auth.onAuthStateChange((_event, session) => {
-      if (!session) window.location.href = "/login";
+    const { data: sub } = sb.auth.onAuthStateChange((event, session) => {
+      // Initial/recovery notifications can temporarily have no session. The
+      // page guard verifies access; only an actual sign-out redirects here.
+      if (event === "SIGNED_OUT" && !session) window.location.href = "/login";
     });
 
     (async () => {

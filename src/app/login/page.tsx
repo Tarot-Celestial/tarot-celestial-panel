@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { FormEvent, useMemo, useState } from "react";
-import { supabaseBrowserStorageKey } from "@/lib/supabase-browser";
+import { supabaseBrowser } from "@/lib/supabase-browser";
 import { panelPathForRole } from "@/lib/panel-access";
 
 function withTimeout<T>(operation: PromiseLike<T>, timeoutMs: number): Promise<T> {
@@ -57,23 +57,31 @@ export default function LoginPage() {
         ok?: boolean;
         error?: string;
         role?: string;
-        session?: Record<string, unknown>;
+        session?: { access_token?: string; refresh_token?: string };
       } | null;
       if (!response.ok || !result?.ok || !result.session) {
         throw new Error(String(result?.error || "No se pudo validar el acceso"));
       }
 
-      // Supabase lee esta sesión al cargar el panel de destino. La clave es la
-      // misma que usa el cliente oficial con persistSession.
-      window.localStorage.setItem(
-        supabaseBrowserStorageKey(),
-        JSON.stringify(result.session)
-      );
-
       const role = String(result.role || "").toLowerCase();
       if (!(["admin", "central", "tarotista"] as string[]).includes(role)) {
         throw new Error("Tu usuario no tiene un rol de panel válido");
       }
+      if (!result.session.access_token || !result.session.refresh_token) throw new Error("No se pudo guardar la sesión. Vuelve a intentarlo.");
+      // The SDK serializes this with initialization/refresh and notifies other
+      // tabs. Writing localStorage directly bypassed that session lock.
+      // The verification fetch has its own abort deadline. Keep this SDK
+      // operation awaited until settled so a late result cannot replace a retry.
+      const saved = await supabaseBrowser().auth.setSession({
+        access_token: result.session.access_token,
+        refresh_token: result.session.refresh_token,
+      });
+      if (saved.error || !saved.data.session) throw new Error("No se pudo confirmar la sesión en este navegador. Revisa la conexión y vuelve a intentarlo.");
+      // Legacy role cache was shared between different staff accounts.
+      try {
+        window.sessionStorage.removeItem("tc_admin_role");
+        window.sessionStorage.removeItem("tc_admin_role_ts");
+      } catch {}
       window.location.replace(panelPathForRole(role));
     } catch (e: any) {
       const message = String(e?.message || "Error de login");

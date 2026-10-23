@@ -29,7 +29,7 @@ import nextDynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import AttendanceIncidentCenter from "@/components/attendance/AttendanceIncidentCenter";
 import { supabaseBrowser } from "@/lib/supabase-browser";
-import { loadPanelIdentity, panelPathForRole, redirectToLogin } from "@/lib/panel-access";
+import { loadPanelIdentity, panelPathForRole, panelSessionRejected, redirectToLogin } from "@/lib/panel-access";
 import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/tc-events";
 import { useAttendance } from "@/hooks/useAttendance";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
@@ -264,6 +264,8 @@ function toRecentNotification(item: CentralNotification): RecentNotification {
 
 function CentralPage() {
   const [ok, setOk] = useState(false);
+  const [accessError, setAccessError] = useState<string | null>(null);
+  const [accessAttempt, setAccessAttempt] = useState(0);
   const [tab, setTab] = useState<TabKey>("panel");
   const [summaryPet, setSummaryPet] = useState<PetId|null>(null);
   const [companionOpenRequest, setCompanionOpenRequest] = useState(0);
@@ -666,6 +668,7 @@ function CentralPage() {
 
   useEffect(() => {
     let active = true;
+    setAccessError(null);
     (async () => {
       try {
         const me = await loadPanelIdentity(sb);
@@ -677,11 +680,15 @@ function CentralPage() {
         setOk(true);
       } catch (error) {
         if (!active) return;
-        redirectToLogin(error instanceof Error ? error.message : "session");
+        if (panelSessionRejected(error)) {
+          redirectToLogin(error instanceof Error ? error.message : "session");
+          return;
+        }
+        setAccessError(error instanceof Error ? error.message : "No se pudo verificar el acceso. Vuelve a intentarlo.");
       }
     })();
     return () => { active = false; };
-  }, []);
+  }, [accessAttempt]);
 
   useEffect(() => {
     if (!ok) return;
@@ -1297,7 +1304,14 @@ function CentralPage() {
     [notificationCount, captacionAttention, whatsappAttention, socialAttention.instagram, socialAttention.facebook]
   );
 
-  if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
+  if (!ok) return (
+    <div style={{ padding: 40, minHeight: "100vh", display: "grid", placeItems: "center", color: "rgba(255,255,255,.92)" }}>
+      {accessError ? <div role="alert" style={{ maxWidth: 520, textAlign: "center" }}>
+        <p>{accessError}</p>
+        <button type="button" onClick={() => setAccessAttempt(attempt => attempt + 1)} style={{ marginTop: 16, padding: "12px 20px", borderRadius: 12, background: "#e5c276", color: "#23172f" }}>Reintentar acceso</button>
+      </div> : "Verificando acceso…"}
+    </div>
+  );
 
   return (
     <CentralThemeProvider workerId={themeWorkerId} rank={xpProgress?.tier?.key}>

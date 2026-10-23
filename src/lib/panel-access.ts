@@ -8,6 +8,13 @@ type PanelIdentity = {
   [key: string]: unknown;
 };
 
+export class PanelAccessError extends Error {
+  constructor(public code: string, message: string, public status = 503) { super(message); }
+}
+export function panelSessionRejected(error: unknown) {
+  return error instanceof PanelAccessError && ["NO_AUTH","INVALID_SESSION","NO_WORKER","WORKER_DISABLED","INVALID_ROLE"].includes(error.code);
+}
+
 function withTimeout<T>(operation: PromiseLike<T>, timeoutMs: number, message: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
@@ -31,7 +38,10 @@ export async function loadPanelIdentity(client: SupabaseClient): Promise<PanelId
     "La sesión tardó demasiado en responder"
   );
   const token = sessionResult.data.session?.access_token;
-  if (!token) throw new Error("NO_AUTH");
+  if (!token) {
+    if (sessionResult.error) throw new PanelAccessError("SESSION_SERVICE_UNAVAILABLE", "No se pudo comprobar la sesión. Reintenta en unos segundos.");
+    throw new PanelAccessError("NO_AUTH", "Inicia sesión para continuar.", 401);
+  }
 
   return loadPanelIdentityFromToken(token);
 }
@@ -47,7 +57,13 @@ export async function loadPanelIdentityFromToken(token: string): Promise<PanelId
     });
     const identity = (await response.json().catch(() => null)) as PanelIdentity | null;
     if (!response.ok || !identity?.ok) {
-      throw new Error(String(identity?.error || "INVALID_SESSION"));
+      const code = String(identity?.error || (response.status === 401 ? "INVALID_SESSION" : "ACCESS_SERVICE_UNAVAILABLE"));
+      const rejected = response.status === 401 || response.status === 403;
+      throw new PanelAccessError(
+        rejected ? code : "ACCESS_SERVICE_UNAVAILABLE",
+        rejected ? "No se ha autorizado el acceso a este panel." : "El servicio de acceso no responde ahora. Tu sesión se conserva; vuelve a intentarlo.",
+        response.status
+      );
     }
     return identity;
   } catch (error) {

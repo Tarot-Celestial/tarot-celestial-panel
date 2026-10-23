@@ -25,6 +25,7 @@ function fixture() {
     get text() { return text(tree.toJSON()); },
     payload(value) { payload = value; }, failure(value) { failure = value; }, block(value) { blocked = value; },
     async mount() { await act(() => { tree = renderer.create(React.createElement(exports.default, { api })); }); },
+    async typePost(value) { await act(() => { tree.root.findByProps({id:'facebook-post-import'}).props.onChange({target:{value}}); }); },
     async click(label, twice = false) { await act(() => {
       const button = tree.root.findAllByType('button').find(node => text(node) === label);
       assert.ok(button); assert.equal(button.props.disabled, false);
@@ -83,5 +84,23 @@ test('one provider failure preserves the other result and only selected safe dia
   f.failure('No se pudo comprobar Instagram.'); await f.click('Comprobar Instagram');
   assert.doesNotMatch(f.text, /Suscripción de mensajes y comentarios verificada/);
   assert.match(f.text, /Facebook necesita reconectarse/); assert.match(f.text, /No se pudo comprobar Instagram/);
+  await f.close();
+});
+
+test('targeted Facebook post import uses an explicit button, one request and a truthful continuation receipt', async () => {
+  const f=fixture(); f.payload({ok:true,processed:12,continuationQueued:true}); let release;
+  f.block(new Promise(resolve=>{release=resolve;})); await f.mount(); await f.typePost(' 123_456 ');
+  await f.click('Importar comentarios',true); assert.equal(f.calls.length,1);
+  assert.equal(f.calls[0].url,'/api/central/facebook?action=sync-post'); assert.equal(f.calls[0].init.method,'POST');
+  assert.deepEqual(JSON.parse(f.calls[0].init.body),{postId:'123_456'});
+  release();await f.settle();assert.match(f.text,/12 comentarios revisados/);assert.match(f.text,/historial restante seguirá importándose/);
+  assert.doesNotMatch(f.text,/12 comentarios nuevos/);await f.close();
+});
+
+test('post import rejects URLs and clears previous success on an unsuccessful receipt', async () => {
+  const f=fixture();await f.mount();await f.typePost('https://facebook.com/post');await f.click('Importar comentarios');
+  assert.equal(f.calls.length,0);assert.match(f.text,/Introduce el ID/);
+  f.payload({ok:true,processed:1,continuationQueued:false});await f.typePost('123_456');await f.click('Importar comentarios');assert.match(f.text,/1 comentarios revisados/);
+  f.payload({ok:true});await f.click('Importar comentarios');assert.match(f.text,/No se pudo confirmar la importación/);assert.doesNotMatch(f.text,/1 comentarios revisados/);
   await f.close();
 });

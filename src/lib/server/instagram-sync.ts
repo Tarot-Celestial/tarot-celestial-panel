@@ -59,7 +59,7 @@ async function syncMessages(account: InstagramAccount, cursor: SyncCursor, deadl
   const params={platform:'instagram',fields:'id,updated_time,participants',limit:'25'};
   const newest=await instagramGraph(account, account.accountId+'/conversations',params,undefined,deadline);
   const pages=[newest];
-  if((cursor.pendingConversations?.length || 0)<3 && cursorToken(cursor.conversations)) {
+  if((cursor.pendingConversations?.filter(row=>row.historyUnavailable!==true).length || 0)<3 && cursorToken(cursor.conversations)) {
     const older=await instagramGraph(account,account.accountId+'/conversations',{...params,after:cursor.conversations!},undefined,deadline);
     pages.push(older);cursor.conversations=next(older);
   } else if(!cursor.conversations)cursor.conversations=next(newest);
@@ -81,7 +81,18 @@ async function syncMessages(account: InstagramAccount, cursor: SyncCursor, deadl
   // Verify actual inbound IDs. Conversation update timestamps alone are not messages.
   for (const row of queue.slice(0,3)) {
     if (Date.now()>deadline-5000) break;
-    const list=await instagramGraph(account,row.conversation_id,{fields:'messages'},undefined,deadline);
+    let list: Record<string,any>;
+    try {
+      list=await instagramGraph(account,row.conversation_id,{fields:'messages'},undefined,deadline);
+    } catch(error) {
+      if(!(error instanceof InstagramError) || !['META_OBJECT_UNAVAILABLE','META_MESSAGE_UNAVAILABLE'].includes(error.code))throw error;
+      // Meta may list a conversation whose history is no longer readable. Keep
+      // it for a later retry, but let other customers reach the unread ledger.
+      queue.push({...queue.shift()!,historyUnavailable:true});
+      cursor.pendingConversations=queue;
+      cursor.messageError='MESSAGE_HISTORY_PARTIAL';
+      continue;
+    }
     if(!Array.isArray(list.messages?.data)) throw new InstagramError('META_INVALID_RESPONSE','Instagram no devolvió los mensajes.');
     const details=await Promise.all(list.messages.data.slice(0,20).filter((item:any)=>graphId(item.id)).map(async(item:any)=> {
       try {return await instagramGraph(account,item.id,{fields:'id,created_time,from,to,message'},undefined,deadline);}
@@ -102,7 +113,7 @@ export async function ensureInstagramFresh(account?: InstagramAccount) {
   try {
     for (const [kind,run] of [['comment',syncComments],['message',syncMessages]] as const) {
       cursor[`${kind}Error`]=null;
-      try { await run(connected,cursor,deadline); }
+      try { await run(connected,cursor,deadline); firstError ||= cursor[`${kind}Error`] || null; }
       catch(error) { const code=error instanceof InstagramError?error.code:'SERVICE_UNAVAILABLE';cursor[`${kind}Error`]=code;firstError ||= code; }
     }
   } finally { await finishSocialSync('instagram',connected.accountId,lease.token,cursor,firstError); }

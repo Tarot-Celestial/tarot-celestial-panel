@@ -34,9 +34,10 @@ export async function instagramInbox(kind: 'message' | 'comment', cursor: string
   const all=(result.data || []) as ThreadRow[],rows=all.slice(0,50);
   const unread=await socialThreadUnread('instagram',account.accountId,rows.map(row=>row.kind==='message'?row.recipient_id || row.remote_id:row.remote_id));
   const state=await socialSyncState('instagram',account.accountId),code=state.cursor[kind+'Error'];
-  const hint=code==='COMMENTS_NOT_RETURNED'?'Instagram indica comentarios, pero no los devuelve. Administración debe revisar la conexión.':code?'No se pudo completar la sincronización con Instagram. Se conservan los elementos recibidos; revisa la conexión y actualiza.':null;
+  const partialHistory=code==='MESSAGE_HISTORY_PARTIAL';
+  const hint=partialHistory?'Instagram no permite consultar parte del historial. Las demás conversaciones siguen sincronizándose y el historial pendiente se volverá a comprobar.':code==='COMMENTS_NOT_RETURNED'?'Instagram indica comentarios, pero no los devuelve. Administración debe revisar la conexión.':code?'No se pudo completar la sincronización con Instagram. Se conservan los elementos recibidos; revisa la conexión y actualiza.':null;
   const last=rows[rows.length-1];
-  return {ok:true,connection:{username:account.username,connected:true,ready:!hint,message:hint},threads:rows.map(row=>({...present(row),unread:unread.get(row.kind==='message'?row.recipient_id || row.remote_id:row.remote_id)||0})),nextCursor:all.length>50&&last?Buffer.from(JSON.stringify({before:last.remote_updated_at,id:last.id})).toString('base64url'):null,partialHint:hint};
+  return {ok:true,connection:{username:account.username,connected:true,ready:!hint||partialHistory,message:hint},threads:rows.map(row=>({...present(row),unread:unread.get(row.kind==='message'?row.recipient_id || row.remote_id:row.remote_id)||0})),nextCursor:all.length>50&&last?Buffer.from(JSON.stringify({before:last.remote_updated_at,id:last.id})).toString('base64url'):null,partialHint:hint};
 }
 
 async function threadForAccount(id: string, account: InstagramAccount): Promise<ThreadRow> {

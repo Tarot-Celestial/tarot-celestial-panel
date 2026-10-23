@@ -8,6 +8,12 @@ export function validFacebookSignature(raw: string, signature: string | null, se
 }
 export type FacebookEvent = { kind: 'message' | 'comment'; remoteId: string; threadRemoteId: string; occurredAt: string; text: string; senderName: string; senderId: string; postId?: string; deleted?: boolean };
 const id = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9_:.=-]{1,500}$/.test(v);
+// Graph accepts the bare comment ID. Feed edit/remove may omit post_id, so use
+// that same identity for storage and unread activity regardless of delivery shape.
+// Only numeric comment IDs are normalized; Messenger IDs are never rewritten.
+export function facebookCommentId(value: string) {
+  return /^\d+_\d+$/.test(value) ? value.split('_')[1] : value;
+}
 function time(value: unknown, milliseconds = false) {
   const parsed = typeof value === 'number' ? value * (milliseconds ? 1 : 1000) : typeof value === 'string' ? Date.parse(value) : NaN;
   return Number.isFinite(parsed) && parsed > 0 && parsed <= Date.now() + 60000 ? new Date(parsed).toISOString() : null;
@@ -34,9 +40,11 @@ export function facebookWebhookEvents(body: any, pageId: string): FacebookEvent[
       if (senderId === pageId && value.verb !== 'remove') continue;
       const occurredAt = time(value.created_time) || time(entry.time);
       if (!occurredAt) continue;
-      events.set(`comment:${value.comment_id}`, { kind: 'comment', remoteId: value.comment_id, threadRemoteId: value.comment_id,
-        occurredAt, text: String(value.message || '').slice(0, 10000), senderName: String(value.from?.name || value.sender_name || 'Comentario de Facebook'),
-        senderId: id(senderId) ? senderId : '', postId: id(value.post_id) ? value.post_id : undefined, deleted: value.verb === 'remove' });
+      const postId = id(value.post_id) ? value.post_id : undefined;
+      const commentId = facebookCommentId(value.comment_id);
+      events.set(`comment:${commentId}`, { kind: 'comment', remoteId: commentId, threadRemoteId: commentId,
+        occurredAt, text: String(value.message || '').slice(0, 10000), senderName: String(value.from?.name || value.sender_name || 'Contacto de Facebook'),
+        senderId: id(senderId) ? senderId : '', postId, deleted: value.verb === 'remove' });
     }
   }
   return [...events.values()];

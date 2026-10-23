@@ -2,7 +2,7 @@ import 'server-only';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { facebookConnection, facebookGraph, FacebookError, facebookId, facebookDate, facebookReplyWindow, verifyFacebookAccount, type FacebookAccount } from './facebook-graph';
 import { recordSocialActivity, removeSocialActivity, socialThreadUnread, markSocialThreadRead, acquireSocialSync, finishSocialSync, socialSyncState } from './social-inbox-activity';
-import { facebookWebhookEvents } from './facebook-webhook';
+import { facebookCommentId, facebookWebhookEvents } from './facebook-webhook';
 import type { InstagramMessage, InstagramThread } from '@/lib/instagram-inbox';
 
 const THREADS = 'tc_facebook_threads';
@@ -10,7 +10,8 @@ const SENDS = 'tc_facebook_sends';
 type Kind = 'message' | 'comment';
 type ThreadRow = { id: string; account_id: string; kind: Kind; remote_id: string; recipient_id: string | null; conversation_id: string | null; post_id: string | null; name: string; preview: string; remote_created_at: string | null; remote_updated_at: string; permalink: string | null; last_reply_at: string | null; private_reply_sent: boolean; is_deleted: boolean };
 type Incoming = { kind: Kind; remoteId: string; threadRemoteId: string; occurredAt: string };
-type SyncCursor = { posts?: string | null; conversations?: string | null; pendingPosts?: Array<{ id: string; permalink?: string; after?: string | null }>; commentError?: string | null; messageError?: string | null; commentsCompleteAt?: string; accountVerified?: boolean };
+type TrackedPost = { id: string; permalink?: string; after?: string | null; registeredBy: string; registeredAt: string; lastCheckedAt?: string; complete?: boolean; error?: string | null };
+type SyncCursor = { posts?: string | null; conversations?: string | null; pendingPosts?: Array<{ id: string; permalink?: string; after?: string | null }>; trackedPosts?: TrackedPost[]; trackedPostIndex?: number; commentError?: string | null; messageError?: string | null; commentsCompleteAt?: string; accountVerified?: boolean };
 const cursorToken = (value: unknown) => typeof value === 'string' && /^[A-Za-z0-9_=+/-]{1,2048}$/.test(value) ? value : null;
 const next = (value: any) => value?.paging?.next ? cursorToken(value.paging?.cursors?.after) : null;
 const dataArray = (value: any): any[] => {
@@ -64,7 +65,25 @@ async function syncMessages(account: FacebookAccount, cursor: SyncCursor, deadli
   cursor.conversations = next(result);
 }
 
-async function syncComments(account: FacebookAccount, cursor: SyncCursor, deadline: number) {
+async function syncCommentPage(account: FacebookAccount, post: { id: string; permalink?: string; after?: string | null }, deadline: number) {
+  const result = await facebookGraph(account, `${post.id}/comments`, { fields: 'id,message,created_time,from,permalink_url', filter: 'stream', order: 'reverse_chronological', limit: '50', ...(cursorToken(post.after) ? { after: post.after! } : {}) }, undefined, deadline);
+  const rows: Array<Partial<ThreadRow>> = [], activity: Incoming[] = [];
+  for (const comment of dataArray(result)) {
+    const when = facebookDate(comment.created_time);
+    if (!facebookId(comment.id) || !when || comment.from?.id === account.accountId) continue;
+    const commentId = facebookCommentId(comment.id);
+    rows.push({ kind: 'comment', remote_id: commentId, recipient_id: facebookId(comment.from?.id) ? comment.from.id : null, post_id: post.id,
+      name: comment.from?.name || 'Contacto de Facebook', preview: String(comment.message || ''), remote_created_at: when, remote_updated_at: when,
+      permalink: comment.permalink_url || post.permalink || null });
+    activity.push({ kind: 'comment', remoteId: commentId, threadRemoteId: commentId, occurredAt: when });
+  }
+  await persist(account, rows, activity);
+  const after = next(result);
+  if (result.paging?.next && (!after || after === post.after)) throw new FacebookError('META_INVALID_CURSOR', 'Facebook no devolvió una continuación válida. Se conservan los comentarios recibidos.');
+  return { processed: rows.length, after };
+}
+
+async function syncPublishedComments(account: FacebookAccount, cursor: SyncCursor, deadline: number) {
   // Every cycle checks the newest posts and advances a bounded older-post sweep.
   // Webhooks ingest comments on any post immediately, independent of this sweep.
   const newest = await facebookGraph(account, `${account.accountId}/posts`, { fields: 'id,permalink_url', limit: '4' }, undefined, deadline);
@@ -81,21 +100,96 @@ async function syncComments(account: FacebookAccount, cursor: SyncCursor, deadli
     if (seen.has(key)) continue;
     seen.add(key);
     if (Date.now() > deadline - 1500) { pending.push(post); continue; }
-    const result = await facebookGraph(account, `${post.id}/comments`, { fields: 'id,message,created_time,from,permalink_url', filter: 'stream', order: 'reverse_chronological', limit: '50', ...(cursorToken(post.after) ? { after: post.after! } : {}) }, undefined, deadline);
-    const rows: Array<Partial<ThreadRow>> = [], activity: Incoming[] = [];
-    for (const comment of dataArray(result)) {
-      const when = facebookDate(comment.created_time);
-      if (!facebookId(comment.id) || !when || comment.from?.id === account.accountId) continue;
-      rows.push({ kind: 'comment', remote_id: comment.id, recipient_id: facebookId(comment.from?.id) ? comment.from.id : null, post_id: post.id,
-        name: comment.from?.name || 'Comentario de Facebook', preview: String(comment.message || ''), remote_created_at: when, remote_updated_at: when,
-        permalink: comment.permalink_url || post.permalink || null });
-      activity.push({ kind: 'comment', remoteId: comment.id, threadRemoteId: comment.id, occurredAt: when });
+    try {
+      const result = await syncCommentPage(account, post, deadline);
+      if (result.after) pending.push({ ...post, after: result.after });
+    } catch (error) {
+      const remaining = posts.slice(posts.indexOf(post));
+      cursor.pendingPosts = [...remaining, ...pending].slice(0, 32);
+      throw error;
     }
-    await persist(account, rows, activity);
-    if (next(result)) pending.push({ ...post, after: next(result) });
   }
   cursor.pendingPosts = pending.slice(0, 32);
   if (!cursor.posts && !cursor.pendingPosts.length) cursor.commentsCompleteAt = new Date().toISOString();
+}
+
+const trackedPosts = (cursor: SyncCursor) => (Array.isArray(cursor.trackedPosts) ? cursor.trackedPosts : []).filter(post => /^\d+(?:_\d+)?$/.test(post?.id || '')).slice(0, 20);
+
+async function syncTrackedPost(account: FacebookAccount, post: TrackedPost, deadline: number, continueHistory = true) {
+  const pendingAfter = cursorToken(post.after);
+  let processed = 0;
+  try {
+    // Check new comments even while an older page is waiting. A completed sweep
+    // may start again; deduplication preserves staff review state throughout.
+    const newest = await syncCommentPage(account, { ...post, after: null }, deadline);
+    processed += newest.processed;
+    if (!pendingAfter) { post.after = newest.after; post.complete = !newest.after; }
+    if (pendingAfter && continueHistory && Date.now() < deadline - 1500) {
+      const older = await syncCommentPage(account, { ...post, after: pendingAfter }, deadline);
+      processed += older.processed;
+      post.after = older.after;
+      post.complete = !older.after;
+    }
+    post.error = null;
+    return processed;
+  } catch (error) {
+    post.error = error instanceof FacebookError ? error.code : 'SERVICE_UNAVAILABLE';
+    throw error;
+  } finally { post.lastCheckedAt = new Date().toISOString(); }
+}
+
+async function syncTrackedComments(account: FacebookAccount, cursor: SyncCursor, deadline: number) {
+  const tracked = trackedPosts(cursor);
+  cursor.trackedPosts = tracked;
+  if (!tracked.length) return;
+  const index = Math.max(0, Number.isSafeInteger(cursor.trackedPostIndex) ? cursor.trackedPostIndex! : 0) % tracked.length;
+  cursor.trackedPostIndex = (index + 1) % tracked.length;
+  await syncTrackedPost(account, tracked[index], deadline);
+}
+
+async function syncComments(account: FacebookAccount, cursor: SyncCursor, deadline: number) {
+  // An ad post can be readable even when it is absent from the published feed.
+  const results = await Promise.allSettled([syncPublishedComments(account, cursor, deadline), syncTrackedComments(account, cursor, deadline)]);
+  const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+  if (failure) throw failure.reason;
+}
+
+export async function facebookSyncPost(userId: string, input: any) {
+  const postId = typeof input?.postId === 'string' ? input.postId.trim() : '';
+  if (!/^\d{1,40}(?:_\d{1,40})?$/.test(postId)) throw new FacebookError('INVALID_POST', 'Introduce el ID de la publicación de Facebook, no el identificador de la bandeja de anuncios.', 400);
+  const db = supabaseAdmin();
+  const worker = await db.from('workers').select('id').eq('user_id', userId).eq('role', 'admin').eq('is_active', true).limit(1);
+  if (worker.error) throw worker.error;
+  if (!worker.data?.length) throw new FacebookError('FORBIDDEN', 'Solo administración puede importar una publicación.', 403);
+  const account = facebookConnection();
+  await verifyFacebookAccount(account);
+  const source = await facebookGraph(account, postId, { fields: 'id,from,permalink_url' });
+  if (String(source.from?.id || '') !== account.accountId || !/^\d{1,40}(?:_\d{1,40})?$/.test(String(source.id || ''))) {
+    throw new FacebookError('POST_OWNER_UNVERIFIED', 'Facebook no confirmó que esta publicación pertenezca a la página conectada. No se ha importado.', 409);
+  }
+  const lease = await acquireSocialSync('facebook', account.accountId, { force: true });
+  if (!lease) throw new FacebookError('SYNC_BUSY', 'Facebook ya se está sincronizando. Espera unos segundos y vuelve a importar.', 409);
+  const cursor: SyncCursor = lease.cursor;
+  let errorCode: string | null = null;
+  try {
+    const tracked = trackedPosts(cursor);
+    let post = tracked.find(item => item.id === source.id);
+    if (!post) {
+      if (tracked.length >= 20) throw new FacebookError('TRACKED_POST_LIMIT', 'Ya se siguen veinte publicaciones específicas. Administración debe revisar la lista antes de añadir otra.', 409);
+      post = { id: source.id, registeredBy: userId, registeredAt: new Date().toISOString(), after: null, complete: false };
+      tracked.push(post);
+    }
+    if (typeof source.permalink_url === 'string') post.permalink = source.permalink_url;
+    cursor.trackedPosts = tracked;
+    cursor.accountVerified = true;
+    const processed = await syncTrackedPost(account, post, Date.now() + 25000);
+    return { ok: true, postId: post.id, processed, complete: post.complete === true, continuationQueued: !!post.after, tracked: true };
+  } catch (error) {
+    errorCode = error instanceof FacebookError ? error.code : 'SERVICE_UNAVAILABLE';
+    throw error;
+  } finally {
+    await finishSocialSync('facebook', account.accountId, lease.token, cursor, errorCode);
+  }
 }
 
 export async function ensureFacebookFresh(account = facebookConnection()) {
