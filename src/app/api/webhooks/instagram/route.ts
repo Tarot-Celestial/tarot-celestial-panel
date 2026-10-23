@@ -23,10 +23,12 @@ export async function POST(req: Request) {
     let body;
     try { body = JSON.parse(raw || '{}'); } catch { return json({ ok: false }, 400); }
     const db = supabaseAdmin();
-    const connection = await db.from(SOCIAL_CONNECTIONS_TABLE).select('account_id,username').eq('provider', 'instagram').maybeSingle();
+    const connection = await db.from(SOCIAL_CONNECTIONS_TABLE).select('account_id,username,metadata').eq('provider', 'instagram').maybeSingle();
     if (connection.error || !connection.data?.account_id) return json({ ok: false }, 503);
-    await processInstagramWebhook(body, {accountId:String(connection.data.account_id),username:String(connection.data.username || ''),token:''});
-    const events = instagramWebhookEvents(body, String(connection.data.account_id));
+    const verified=connection.data.metadata?.instagram_verified_account_ids;
+    const verifiedAccountIds=Array.isArray(verified)?verified.filter((value:unknown):value is string=>typeof value==='string'&&/^\d{1,40}$/.test(value)).slice(0,10):[];
+    await processInstagramWebhook(body, {accountId:String(connection.data.account_id),username:String(connection.data.username || ''),token:'',verifiedAccountIds});
+    const events = instagramWebhookEvents(body, String(connection.data.account_id), verifiedAccountIds);
     if (events.length) {
       const saved = await db.from('tc_instagram_webhook_events').upsert(events, { onConflict: 'event_key', ignoreDuplicates: true });
       if (saved.error) return json({ ok: false }, 503);
