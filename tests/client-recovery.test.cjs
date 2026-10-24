@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const ts=require('typescript'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 function load(file,mocks={}){
  const exports={};const code=ts.transpileModule(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS}}).outputText;
- vm.runInNewContext(code,{exports,require:n=>{if(n in mocks)return mocks[n];throw new Error(n)},process:{env:{NEXT_PUBLIC_SUPABASE_URL:'http://localhost',NEXT_PUBLIC_SUPABASE_ANON_KEY:'isolated'}},console,Date,Buffer});return exports;
+ vm.runInNewContext(code,{exports,require:n=>{if(n in mocks)return mocks[n];if(n.startsWith('@/'))return load('src/'+n.slice(2)+'.ts',mocks);throw new Error(n)},process:{env:{NEXT_PUBLIC_SUPABASE_URL:'http://localhost',NEXT_PUBLIC_SUPABASE_ANON_KEY:'isolated'}},console,Date,Buffer});return exports;
 }
 for(const [file,method] of [['src/lib/admin/require-admin.ts','uidAndEmailFromBearer'],['src/lib/server/auth-cliente.ts','authUserFromBearer']]){
  for(const status of [400,401,403])test(`${method}: expired/invalid auth ${status} returns no identity`,async()=>{

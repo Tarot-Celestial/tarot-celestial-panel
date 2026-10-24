@@ -60,7 +60,8 @@ test('missing or malformed counts and mismatched workers fail closed instead of 
 
 function fixture({ copies = 1 } = {}) {
   const events = new Map(), timers = new Map(), calls = [];
-  let latest, tree, authCallback, sequence = 0, responseMission = snapshot(), failure = false, waitForResponse;
+  let latest, tree, sequence = 0, responseMission = snapshot(), failure = false, waitForResponse, workerId = 'worker-isa';
+  const authCallbacks = new Set();
   const states = [];
   const on = (name, fn) => { if (!events.has(name)) events.set(name, new Set()); events.get(name).add(fn); };
   const off = (name, fn) => { const listeners = events.get(name); listeners?.delete(fn); if (!listeners?.size) events.delete(name); };
@@ -73,7 +74,7 @@ function fixture({ copies = 1 } = {}) {
     setTimeout(fn, delay) { timers.set(++sequence, { fn, delay, interval: false }); return sequence; }, clearTimeout(id) { timers.delete(id); },
     setInterval(fn, delay) { timers.set(++sequence, { fn, delay, interval: true }); return sequence; }, clearInterval(id) { timers.delete(id); },
   };
-  const auth = { getSession: async () => ({ data: { session } }), onAuthStateChange(fn) { authCallback = fn; return { data: { subscription: { unsubscribe() {} } } }; } };
+  const auth = { getSession: async () => ({ data: { session } }), onAuthStateChange(fn) { authCallbacks.add(fn); return { data: { subscription: { unsubscribe() { authCallbacks.delete(fn); } } } }; } };
   const fetch = async (_url, init) => {
     calls.push(init);
     const body = JSON.parse(JSON.stringify(responseMission)), failed = failure, blocked = waitForResponse;
@@ -82,17 +83,24 @@ function fixture({ copies = 1 } = {}) {
   };
   const { useRecoveryMission } = evaluate('src/features/central/assistant/useRecoveryMission.ts', {
     '@/lib/recovery-mission': shared, '@/lib/supabase-browser': { supabaseBrowser: () => ({ auth }) },
+    '@/lib/recovery-mission-read': evaluate('src/lib/recovery-mission-read.ts', {}, { fetch }),
   }, { window, document, fetch });
-  function Component({ index }) { states[index] = useRecoveryMission({ workerId: 'worker-isa' }); if (index === 0) latest = states[index]; return null; }
+  function Component({ index }) { states[index] = useRecoveryMission(index === 0 ? { workerId } : {}); if (index === 0) latest = states[index]; return null; }
+  const components = () => React.createElement(React.Fragment, null, Array.from({ length: copies }, (_, index) => React.createElement(Component, { index, key: index })));
   const act = async fn => renderer.act(async () => { fn(); await new Promise(resolve => setImmediate(resolve)); });
   return {
     calls, timers, events, states, get state() { return latest; },
-    async mount() { await act(() => { tree = renderer.create(React.createElement(React.Fragment, null, Array.from({ length: copies }, (_, index) => React.createElement(Component, { index, key: index })))); }); },
+    async mount() { await act(() => { tree = renderer.create(components()); }); },
     async unmount() { await act(() => tree.unmount()); },
     async event(name) { await act(() => emit(name)); },
     async tick() { await act(() => { for (const timer of [...timers.values()]) if (timer.interval) timer.fn(); }); },
     async prepare() { await act(() => { void latest.prepare(); }); },
-    async signOut() { await act(() => { session = null; authCallback('SIGNED_OUT', null); }); },
+    async prepareAll() { await act(() => { states.forEach(state => { void state.prepare(); }); }); },
+    async signOut() { await act(() => { session = null; authCallbacks.forEach(fn => fn('SIGNED_OUT', null)); }); },
+    async switchAccount() { await act(() => {
+      session = { access_token: 'maria-token', user: { id: 'user-maria' } }; workerId = 'worker-maria';
+      authCallbacks.forEach(fn => fn('SIGNED_IN', session)); tree.update(components());
+    }); },
     async settle() { await act(() => {}); },
     setMission(value) { responseMission = value; }, fail(value) { failure = value; }, block(promise) { waitForResponse = promise; },
   };
@@ -121,7 +129,7 @@ test('the shared management event refreshes both the mission panel and companion
     assert.deepEqual(f.states.map(state => state.mission.managed), [0, 0]);
     f.setMission(snapshot({ managed: 2 })); await f.event(shared.RECOVERY_MISSION_REFRESH);
     assert.deepEqual(f.states.map(state => state.mission.managed), [2, 2]);
-    assert.equal(f.calls.length, 4);
+    assert.equal(f.calls.length, 2, 'the panel and companion share each in-flight read');
   } finally { await f.unmount(); }
 });
 
@@ -133,6 +141,31 @@ test('preparing reserves server-returned contacts and never credits imaginary ac
   assert.equal(f.state.mission.assigned_client_ids.length, 2);
   assert.equal(f.state.mission.managed, 0); assert.equal(f.state.mission.awarded_xp, 0);
   await f.unmount();
+});
+
+test('a session switch never exposes an older user response in either mission surface', async () => {
+  const f = fixture({ copies: 2 }); await f.mount();
+  try {
+    let release; f.block(new Promise(resolve => { release = resolve; })); await f.tick();
+    f.block(null); f.setMission(snapshot({ worker_id: 'worker-maria', managed: 11 }));
+    await f.switchAccount();
+    // The anonymous-identity panel schedules its new read after the auth event.
+    for (const [id, timer] of [...f.timers]) if (!timer.interval && timer.delay === 0) { f.timers.delete(id); timer.fn(); }
+    await f.settle(); release(); await f.settle();
+    assert.deepEqual(f.states.map(state => state.mission?.worker_id), ['worker-maria', 'worker-maria']);
+    assert.deepEqual(f.states.map(state => state.mission?.managed), [11, 11]);
+    assert.ok(f.calls.some(call => call.headers.Authorization === 'Bearer maria-token'));
+  } finally { await f.unmount(); }
+});
+
+test('explicit prepare mutations remain independent even when mission GETs are shared', async () => {
+  const f = fixture({ copies: 2 }); await f.mount();
+  try {
+    await f.prepareAll();
+    assert.equal(f.calls.filter(call => call.method === 'POST').length, 2);
+    assert.equal(f.states[0].mission.worker_id, 'worker-isa');
+    assert.equal(f.states[1].mission.worker_id, 'worker-isa');
+  } finally { await f.unmount(); }
 });
 
 test('disconnecting clears pace indicators until the mission can be verified again', async () => {

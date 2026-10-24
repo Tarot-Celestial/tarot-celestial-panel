@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import { parseRecoveryMission, RECOVERY_MISSION_REFRESH, type RecoveryMissionSnapshot } from '@/lib/recovery-mission';
+import { readRecoveryMission } from '@/lib/recovery-mission-read';
 
 type State = { mission: RecoveryMissionSnapshot | null; error: string; loading: boolean; preparing: boolean };
 const empty: State = { mission: null, error: '', loading: true, preparing: false };
@@ -42,14 +43,17 @@ export function useRecoveryMission({ enabled = true, workerId }: { enabled?: boo
         const currentController = controller;
         const timeout = window.setTimeout(() => currentController.abort(), 12_000);
         try {
-          const response = await fetch('/api/central/recovery-mission', {
-            method: prepareMission ? 'POST' : 'GET', cache: 'no-store', signal: currentController.signal,
-            headers: { Authorization: `Bearer ${data.session.access_token}`, 'Content-Type': 'application/json' },
-            body: prepareMission ? JSON.stringify({ action: 'prepare' }) : undefined,
-          });
-          const payload = await response.json();
+          const result = prepareMission ? await (async () => {
+            const response = await fetch('/api/central/recovery-mission', {
+              method: 'POST', cache: 'no-store', signal: currentController.signal,
+              headers: { Authorization: `Bearer ${data.session.access_token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'prepare' }),
+            });
+            return { ok: response.ok, payload: await response.json() };
+          })() : await readRecoveryMission(data.session.access_token, currentController.signal);
+          const { payload } = result;
           if (!valid(version)) return;
-          if (!response.ok || !payload.ok) throw new Error(payload.error || 'No se pudo consultar la misión. Reintenta para ver los datos reales.');
+          if (!result.ok || !payload.ok) throw new Error(payload.error || 'No se pudo consultar la misión. Reintenta para ver los datos reales.');
           const mission = parseRecoveryMission(payload.mission, workerId);
           setState({ mission, error: '', loading: false, preparing: false });
           if (prepareMission) {
