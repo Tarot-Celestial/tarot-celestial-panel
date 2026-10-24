@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { NextResponse } from "next/server";
+import { authFailureStatus } from "@/lib/server/auth-failure";
 
 export class CampaignError extends Error { constructor(message: string, public status = 400) { super(message); } }
 export async function campaignIdentity(req: Request, role: "admin" | "client") {
@@ -8,8 +9,12 @@ export async function campaignIdentity(req: Request, role: "admin" | "client") {
   if (!token) throw new CampaignError("Inicia sesión para continuar.", 401);
   const db = supabaseAdmin();
   // Verify the token with Auth; decoded JWT payloads alone are not authorization.
-  const { data, error } = await db.auth.getUser(token);
-  if (error || !data.user) throw new CampaignError("La sesión no es válida.", 401);
+  const { data, error } = await db.auth.getUser(token).catch((error: unknown) => ({ data: { user: null }, error }));
+  if (error) {
+    const status = authFailureStatus(error);
+    throw new CampaignError(status === 401 ? "La sesión no es válida." : "El servicio está temporalmente ocupado. Inténtalo de nuevo en unos instantes.", status);
+  }
+  if (!data.user) throw new CampaignError("La sesión no es válida.", 401);
   const bannedUntil = (data.user as any).banned_until;
   if (bannedUntil && Date.parse(bannedUntil) > Date.now()) throw new CampaignError("La cuenta no está disponible.", 403);
   const uid = data.user.id;
@@ -20,7 +25,8 @@ export async function campaignIdentity(req: Request, role: "admin" | "client") {
     return { db, uid, clientId: "" };
   }
   const result = await db.from("crm_clientes").select("id").eq("auth_user_id", uid).single();
-  if (result.error || !result.data) throw new CampaignError("No hay una ficha de cliente vinculada a esta cuenta.", 403);
+  if (result.error && result.error.code !== "PGRST116") throw result.error;
+  if (!result.data) throw new CampaignError("No hay una ficha de cliente vinculada a esta cuenta.", 403);
   return { db, uid, clientId: String(result.data.id) };
 }
 export function campaignResponseError(error: any) {

@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { authFailureStatus } from "@/lib/server/auth-failure";
 
 export class RouletteAccessError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -9,8 +10,12 @@ export async function verifiedRouletteIdentity(req: Request) {
   const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { data, error } = await admin.auth.getUser(token);
-  if (error || !data.user) throw new RouletteAccessError(401, "Tu sesión ha caducado. Vuelve a entrar.");
+  const { data, error } = await admin.auth.getUser(token).catch((error: unknown) => ({ data: { user: null }, error }));
+  if (error) {
+    const status = authFailureStatus(error);
+    throw new RouletteAccessError(status, status === 401 ? "Tu sesión ha caducado. Vuelve a entrar." : "El servicio está temporalmente ocupado. Inténtalo de nuevo en unos instantes.");
+  }
+  if (!data.user) throw new RouletteAccessError(401, "Tu sesión ha caducado. Vuelve a entrar.");
   return { admin, user: data.user };
 }
 export async function rouletteClient(req: Request) {
