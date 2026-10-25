@@ -5,17 +5,19 @@ import type { PromotionPackageSnapshot } from "@/lib/server/client-promotions";
 export function buildPromotionPurchaseSnapshot(snapshot: PromotionPackageSnapshot) {
   // Match the EUR card settlement contract before creating a payable order.
   if (snapshot.currency !== "EUR" || !Number.isFinite(snapshot.price) || snapshot.price <= 0 ||
-      ![1, 2, 3].includes(snapshot.roulette_level || 0) || snapshot.roulette_spins !== 1 ||
-      ![snapshot.paid_minutes, snapshot.free_minutes, snapshot.coins, snapshot.oracle_credits].every(value => Number.isSafeInteger(value) && value >= 0) ||
+      ![snapshot.paid_minutes, snapshot.free_minutes, snapshot.oracle_credits].every(value => Number.isSafeInteger(value) && value >= 0) ||
       snapshot.paid_minutes + snapshot.free_minutes <= 0) {
     throw new Error("Esta promoción necesita tramitarse con tu central.");
   }
   return {
     pack_id: `promo:${snapshot.package_id}`, pack_name: snapshot.package_name,
     total_minutes: snapshot.paid_minutes + snapshot.free_minutes,
-    normal: snapshot.paid_minutes, free: snapshot.free_minutes, points: snapshot.coins,
-    oracle_credits: snapshot.oracle_credits, roulette_level: snapshot.roulette_level,
-    roulette_spins: snapshot.roulette_spins, promotion_snapshot: snapshot,
+    normal: snapshot.paid_minutes, free: snapshot.free_minutes, points: 0,
+    oracle_credits: snapshot.oracle_credits, roulette_level: null,
+    roulette_spins: 0, promotion_snapshot: { ...snapshot, coins: 0, roulette_level: null,
+      roulette_spins: 0, roulette_assignment: null, special_roulette_granted: false,
+      reward_policy_version: 1, pricing_mode: "promotion", purchase_classification: "promo", rewards_eligible: false },
+    reward_policy_version: 1, pricing_mode: "promotion", purchase_classification: "promo", rewards_eligible: false,
     created_by_role: "cliente", notas: "Compra de promoción desde el panel cliente · PayPal · EUR",
   };
 }
@@ -37,6 +39,8 @@ export function buildClientPurchaseSnapshot(pack: ClienteMinutePack) {
     pack_id: pack.id, pack_name: pack.nombre, total_minutes: pack.totalMinutes,
     ...splitPurchasedPackMinutes(pack.totalMinutes), points: pack.rewardCoins || 0,
     oracle_credits: pack.oracleCredits || 0, roulette_level: level, roulette_spins: pack.rouletteSpins,
+    reward_policy_version: 1, pricing_mode: "regular", purchase_classification: "nada", rewards_eligible: true,
+    package_level: pack.rouletteLevel,
     created_by_role: "cliente", notas: "Compra desde el panel cliente · PayPal · EUR",
   };
 }

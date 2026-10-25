@@ -51,6 +51,8 @@ export async function applyConfiguredMinutePurchase(
       points: pack.rewardCoins || 0,
       oracle_credits: pack.oracleCredits || 0,
       roulette_level: rouletteLevel, roulette_spins: rouletteSpins,
+      reward_policy_version: 1, pricing_mode: "regular", purchase_classification: "nada", rewards_eligible: true,
+      package_level: pack.rouletteLevel,
       notas: params.notas || "Compra automatizada desde panel cliente · " + pack.nombre },
   });
   if (transactionError) throw transactionError;
@@ -100,9 +102,15 @@ export async function applyConfiguredMinutePurchase(
 
   await syncClientMonthTag(admin, params.clienteId);
 
-  const rouletteBenefit = rouletteLevel && rouletteSpins > 0
-    ? ` y ${rouletteSpins} giro${rouletteSpins === 1 ? "" : "s"} Ultra Sorpresas · Nivel ${rouletteLevel}`
-    : "";
+  const persistedSpinLevels = (grantedSpins || []).reduce((levels: Record<string, number>, spin: any) => {
+    const level = String(spin.nivel);
+    levels[level] = (levels[level] || 0) + 1;
+    return levels;
+  }, {} as Record<string, number>);
+  const spinDescription = Object.entries(persistedSpinLevels).map(([level, count]) =>
+    `${count} giro${count === 1 ? "" : "s"} · Nivel ${level}`,
+  ).join(", ");
+  const rouletteBenefit = spinDescription ? ` y ${spinDescription}` : "";
 
   await createClientNotification(admin, {
     cliente_id: params.clienteId,
@@ -113,8 +121,9 @@ export async function applyConfiguredMinutePurchase(
       pack_id: pack.id,
       pack_name: pack.nombre,
       total_minutes: totalMinutes + rankFreeMinutes,
-      roulette_level: rouletteLevel,
-      roulette_spins: rouletteSpins,
+      roulette_level: Object.keys(persistedSpinLevels).length === 1 ? Number(Object.keys(persistedSpinLevels)[0]) : null,
+      roulette_spins: (grantedSpins || []).length,
+      roulette_spins_by_level: persistedSpinLevels,
       oracle_credits: oracleGanado,
       coins: puntosGanados,
       payment_intent: params.paymentIntent || null,

@@ -245,6 +245,7 @@
 .promoPrice strong { color:#ffe7a8; font:700 31px/1 Georgia,"Times New Roman",serif; }
 .promoBenefits { display:grid; gap:6px; min-height:56px; }
 .promoBenefits span { color:rgba(255,248,223,.75); font-size:11px; }
+.promoBenefits .promoRewardPolicy { padding:9px 11px; border:1px solid rgba(245,207,107,.2); border-radius:10px; color:#ffe5ad; background:rgba(245,207,107,.055); line-height:1.45; }
 .promoBuy { min-height:46px; border:1px solid rgba(255,233,158,.58); border-radius:14px; color:#160f04; background:linear-gradient(135deg,#ffe49a,#d09b34 56%,#9d6812); box-shadow:inset 0 1px rgba(255,255,255,.38),0 10px 24px rgba(139,91,10,.20); font-weight:950; letter-spacing:.05em; cursor:pointer; }
 .promoBuy:hover { filter:brightness(1.05); transform:translateY(-1px); }
 .promoBuy:disabled { opacity:.55; cursor:wait; transform:none; }

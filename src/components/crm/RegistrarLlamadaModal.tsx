@@ -24,6 +24,24 @@ type TarotistaOpt = {
   state?: string | null;
 };
 
+type PayPalCollection = {
+  id: string;
+  amount: number;
+  currency: string;
+  pack_id: string;
+  pack_name: string;
+  completed_at: string;
+  pricing_mode: string;
+  order_id: string;
+};
+
+function collectionLabel(collection: PayPalCollection) {
+  const date = new Date(collection.completed_at);
+  const when = Number.isFinite(date.getTime()) ? date.toLocaleString("es-ES", { timeZone: "Europe/Madrid", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "Fecha por confirmar";
+  const amount = Number(collection.amount).toLocaleString("es-ES", { style: "currency", currency: collection.currency || "EUR" });
+  return `${when} · ${amount} · ${collection.pack_name || "Cobro PayPal"} · ${collection.order_id || collection.id}`;
+}
+
 type GameSelectOption = {
   value: string;
   label: string;
@@ -278,6 +296,8 @@ function isUuid(value: unknown) {
 
 function friendlySubmitError(error: unknown) {
   const message = String(error || "").trim();
+  if (message === "PAYPAL_COLLECTION_SELECTION_REQUIRED") return "Hay un cobro PayPal pendiente de registrar. Vuelve a Importe cobrado y selecciona el cobro exacto o confirma que se trata de un pago externo distinto.";
+  if (["PAYPAL_COLLECTION_ALREADY_REGISTERED", "PAYPAL_COLLECTION_ALREADY_RECORDED", "PAYPAL_COLLECTION_ALREADY_USED"].includes(message)) return "Este cobro PayPal ya está registrado. No vuelvas a crear la compra; usa su saldo pendiente para registrar la llamada.";
   if (message === "OPERATION_CONFLICT") return "Esta operación ya se guardó con otros datos. Cierra el formulario y actualiza la ficha antes de continuar.";
   if (message === "RECOVERY_REQUIRES_PURCHASE" || message === "PAYMENT_REQUIRED") return "Recuperado requiere una compra confirmada posterior al contacto. Para una compra ya registrada, confírmala desde Recuperar clientes.";
   if (message === "CONTACT_FIRST") return "Marca primero «Fue contactada» en Recuperar clientes. La compra debe ser posterior a ese contacto.";
@@ -375,6 +395,14 @@ export default function RegistrarLlamadaModal({
   const [importe, setImporte] = useState("");
   const [clasificacion, setClasificacion] = useState<(typeof CLASIF_OPTIONS)[number]["value"]>("nada");
   const [captureXp, setCaptureXp] = useState<CaptureXpPreview | null>(null);
+  const [collections, setCollections] = useState<PayPalCollection[]>([]);
+  const [collectionsStatus, setCollectionsStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [collectionChoice, setCollectionChoice] = useState("");
+  const [collectionsRetry, setCollectionsRetry] = useState(0);
+  const needsPayPalSource = clienteCompra === "si" && formaPago === "PAYPAL";
+  const selectedCollection = needsPayPalSource ? collections.find(collection => collection.id === collectionChoice) || null : null;
+  const isManualCollection = selectedCollection?.pricing_mode === "manual_amount" || selectedCollection?.pack_id === "crm_manual_amount";
+  const paypalSourceValid = !needsPayPalSource || (collectionsStatus === "ready" && (collectionChoice === "external" || Boolean(selectedCollection)));
 
   useEffect(() => {
     if (!open) return;
@@ -403,6 +431,9 @@ export default function RegistrarLlamadaModal({
     setImporte("");
     setClasificacion("nada");
     setCaptureXp(null);
+    setCollectionChoice("");
+    setCollections([]);
+    setCollectionsStatus("idle");
     let cancelled = false;
     void (async () => {
       try {
@@ -431,6 +462,32 @@ export default function RegistrarLlamadaModal({
     })();
     return () => { cancelled = true; };
   }, [open, cliente?.id]);
+
+  useEffect(() => {
+    setCollectionChoice("");
+    setCollections([]);
+    if (!open || !needsPayPalSource || !isUuid(cliente?.id)) {
+      setCollectionsStatus("idle");
+      return;
+    }
+    let cancelled = false;
+    setCollectionsStatus("loading");
+    void (async () => {
+      try {
+        const token = await getTokenRef.current();
+        if (!token) throw new Error("Sin sesión");
+        const response = await fetch(`/api/crm/rendimiento/registrar?mode=collections&cliente_id=${encodeURIComponent(String(cliente?.id))}`, {
+          headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
+        });
+        const json = await response.json();
+        if (!response.ok || !json.ok || !Array.isArray(json.collections)) throw new Error("Sin cobros");
+        if (!cancelled) { setCollections(json.collections); setCollectionsStatus("ready"); }
+      } catch {
+        if (!cancelled) setCollectionsStatus("error");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, cliente?.id, needsPayPalSource, collectionsRetry]);
 
   const steps = useMemo(() => {
     const list: { key: string; title: string; subtitle: string }[] = [
@@ -469,7 +526,7 @@ export default function RegistrarLlamadaModal({
         }
         list.push({ key: "pago", title: "Forma de pago", subtitle: "Elige cómo se ha cobrado esta compra." });
         list.push({ key: "importe", title: "Importe cobrado", subtitle: "Indica el importe final de la operación." });
-        list.push({ key: "clasificacion", title: "Clasificación", subtitle: "Marca si fue promo, captado, recuperado, Super Promo Ruleta o nada." });
+        list.push({ key: "clasificacion", title: "Clasificación", subtitle: "Selecciona la tarifa de esta compra. Promo no entrega Coins ni giros; Nada corresponde a tarifa normal." });
       }
     }
 
@@ -561,7 +618,7 @@ export default function RegistrarLlamadaModal({
       case "pago":
         return Boolean(formaPago);
       case "importe":
-        return toNum(importe) > 0;
+        return toNum(importe) > 0 && paypalSourceValid;
       case "clasificacion":
         return Boolean(clasificacion);
       default:
@@ -600,6 +657,10 @@ export default function RegistrarLlamadaModal({
       setMsg(`⚠️ ${balanceValidationError}`);
       return;
     }
+    if (!paypalSourceValid) {
+      setMsg("Selecciona el cobro PayPal confirmado o indica que es un pago externo en el paso Importe cobrado.");
+      return;
+    }
     try {
       submitInFlightRef.current = true;
       setLoading(true);
@@ -627,6 +688,8 @@ export default function RegistrarLlamadaModal({
         tarotista_manual_call: tarotistaId === CALL_MANUAL_VALUE ? tarotistaCallManual.trim() : null,
         collaborator_source: isMarioCall ? CALL_MARIO_VALUE : null,
         forma_pago: clienteCompra === "si" ? formaPago || null : null,
+        paypal_collection_order_id: selectedCollection?.id || null,
+        paypal_collection_source: needsPayPalSource ? selectedCollection ? "crm_collection" : collectionChoice === "external" ? "external" : null : null,
         importe: clienteCompra === "si" ? toNum(importe) : 0,
         clasificacion,
       };
@@ -889,17 +952,39 @@ export default function RegistrarLlamadaModal({
 
             {current?.key === "importe" && (
               <div style={{ marginTop: 18 }}>
-                <div className="tc-sub">Importe (€)</div>
-                <input className={`${styles.gameInput} tc-input`} value={importe} onChange={(e) => { setImporte(e.target.value); }} placeholder="22" style={{ width: "100%", marginTop: 6 }} />
+                {needsPayPalSource ? <div className={styles.confirmedPayments}>
+                  <label htmlFor="registered-paypal-collection"><strong>¿Qué cobro PayPal vas a registrar?</strong></label>
+                  <p>Elige el enlace que ya se ha pagado. Así se conserva su tarifa y se evita registrar el mismo cobro dos veces.</p>
+                  {collectionsStatus === "loading" ? <p role="status">Consultando cobros confirmados…</p> : collectionsStatus === "error" ? <>
+                    <p role="alert">No se pudieron consultar los cobros. Reintenta antes de continuar.</p>
+                    <button type="button" onClick={() => setCollectionsRetry(value => value + 1)}>Reintentar cobros</button>
+                  </> : collectionsStatus === "ready" ? <>
+                    <select id="registered-paypal-collection" className={`${styles.gameInput} ${styles.gameSelect} tc-input`} value={collectionChoice} onChange={(event) => {
+                      const choice = event.target.value;
+                      const collection = collections.find(item => item.id === choice);
+                      setCollectionChoice(choice);
+                      setImporte(collection ? String(collection.amount) : "");
+                    }}>
+                      <option value="">Selecciona el origen del pago</option>
+                      {collections.map(collection => <option key={collection.id} value={collection.id}>{collectionLabel(collection)}</option>)}
+                      <option value="external">Pago PayPal externo · no creado desde Realizar pago</option>
+                    </select>
+                    {!collections.length ? <small>No hay cobros de Realizar pago confirmados y pendientes de registrar para esta clienta.</small> : null}
+                    {selectedCollection ? <small>{isManualCollection ? "Importe manual: sin Coins ni giros, sea cual sea la clasificación." : "Paquete de tarifa normal. La clasificación Promo no concede Coins ni giros."}</small> : collectionChoice === "external" ? <small>Registra únicamente un pago recibido fuera del cobrador del panel.</small> : null}
+                  </> : null}
+                </div> : null}
+                <label className="tc-sub" htmlFor="registered-call-amount">Importe (€)</label>
+                <input id="registered-call-amount" inputMode="decimal" readOnly={Boolean(selectedCollection)} className={`${styles.gameInput} tc-input`} value={importe} onChange={(e) => { setImporte(e.target.value); }} placeholder="22" style={{ width: "100%", marginTop: 6 }} />
               </div>
             )}
 
             {current?.key === "clasificacion" && (
               <div className={styles.classificationGrid}>
+                {isManualCollection ? <p className={styles.message}>Este cobro se creó con importe manual: no entrega Coins ni giros de ruleta con ninguna clasificación.</p> : null}
                 {CLASIF_OPTIONS.map((opt) => (
-                  <button key={opt.value} type="button" className={`${styles.choiceButton} ${styles[`classification_${opt.value}`]} ${clasificacion === opt.value ? styles.choiceSelected : ""}`} onClick={() => setClasificacion(opt.value)}>
+                  <button key={opt.value} type="button" aria-pressed={clasificacion === opt.value} className={`${styles.choiceButton} ${styles[`classification_${opt.value}`]} ${clasificacion === opt.value ? styles.choiceSelected : ""}`} onClick={() => setClasificacion(opt.value)}>
                     <span className={styles.classificationIcon} aria-hidden="true">{opt.value === "captado" ? "★" : opt.value === "promo" ? "✦" : opt.value === "recuperado" ? "↗" : opt.value === "super_promo_ruleta" ? "🎡" : "•"}</span>
-                    <span><b>{opt.label}</b>{opt.value === "captado" ? <small>{captureXp?.eligible ? `${captureXp.owner_name || "La captadora histórica"} recibirá +${captureXp.xp.toLocaleString("es-ES")} XP` : captureXp?.already_awarded ? "XP de captación ya concedido" : "Se validará la primera gestora"}</small> : opt.value === "recuperado" ? <small>Compra confirmada tras el contacto · +75 XP una sola vez · Cuenta para las 5 recuperaciones de tu turno</small> : opt.value === "super_promo_ruleta" ? <small>+1 giro exclusivo · Super Ruleta Nivel Especial</small> : null}</span>
+                    <span><b>{opt.label}</b>{opt.value === "nada" ? <small>{isManualCollection ? "Cobro manual · Sin Coins ni giros" : "Tarifa normal · Coins y ruleta según el importe y el rango"}</small> : opt.value === "promo" ? <small>Precio promocional · Sin Coins ni giros de ruleta</small> : opt.value === "captado" ? <small>{captureXp?.eligible ? `${captureXp.owner_name || "La captadora histórica"} recibirá +${captureXp.xp.toLocaleString("es-ES")} XP` : captureXp?.already_awarded ? "XP de captación ya concedido" : "Se validará la primera gestora"} · {isManualCollection ? "Sin Coins ni giros" : "Beneficios de tarifa normal"}</small> : opt.value === "recuperado" ? <small>Compra confirmada tras el contacto · +75 XP una sola vez · Cuenta para las 5 recuperaciones de tu turno · {isManualCollection ? "Sin Coins ni giros" : "Beneficios de tarifa normal"}</small> : opt.value === "super_promo_ruleta" ? <small>{isManualCollection ? "Este cobro manual no permite conceder giros" : "+1 giro exclusivo · Super Ruleta Nivel Especial"}</small> : null}</span>
                     {opt.value === "captado" && captureXp?.eligible ? <strong>+{captureXp.xp.toLocaleString("es-ES")} XP</strong> : null}
                   </button>
                 ))}
@@ -918,7 +1003,7 @@ export default function RegistrarLlamadaModal({
                       <span>Quedan de esta compra: {remainingFree} FREE + {remainingNormal} normales.</span>
                       {liveBalance && <strong>Saldo previsto al guardar: {freePend + remainingFree} FREE + {normalesPend + remainingNormal} normales.</strong>}
                     </>}
-                    <small>Los bonos de rango se suman aparte y quedan detallados en la nota final.</small>
+                    <small>{isManualCollection ? "Cobro manual: no se añaden Coins ni giros de ruleta." : clasificacion === "promo" ? "Compra promocional: no se añaden Coins ni giros de ruleta." : "Los bonos de rango se suman aparte y quedan detallados en la nota final."}</small>
                   </> : <>
                     {balanceValidationError ? <strong role="alert">{balanceValidationError} No se descontarán minutos hasta corregir los bloques.</strong> : <>
                       <span>Se descuentan {minutosConsumidos} min de esta llamada.</span>
@@ -962,8 +1047,9 @@ export default function RegistrarLlamadaModal({
                   <div className="tc-sub" style={{ marginTop: 8 }}>
                     Clasificación: {CLASIF_OPTIONS.find((x) => x.value === clasificacion)?.label || "Nada"}
                   </div>
+                  {selectedCollection ? <div className="tc-sub" style={{ marginTop: 8 }}>Cobro PayPal: {collectionLabel(selectedCollection)}</div> : needsPayPalSource && collectionChoice === "external" ? <div className="tc-sub" style={{ marginTop: 8 }}>Origen: pago PayPal externo</div> : null}
                 </div>
-                {clasificacion === "super_promo_ruleta" ? (
+                {clasificacion === "super_promo_ruleta" && !isManualCollection ? (
                   <div className={styles.superPromoAchievement}>
                     <span className={styles.superPromoAchievementIcon} aria-hidden="true">🎡</span>
                     <div>

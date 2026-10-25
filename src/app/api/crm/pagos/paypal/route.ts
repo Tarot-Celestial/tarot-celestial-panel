@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { rouletteStaff } from "@/lib/server/ruleta-access";
 import { CLIENTE_MINUTE_PACKS, getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
-import { pointsFromAmount, splitMinutes } from "@/lib/server/cliente-platform";
+import { splitMinutes } from "@/lib/server/cliente-platform";
 import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
 import { PAYPAL_TABLE, PayPalError, paypalConfig, paypalRequest, approvalUrl, reconcilePayPal, testPayPalConnection, cancelPayPalLink } from "@/lib/server/paypal-crm";
 export const runtime = "nodejs";
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const publicPack = (p: typeof CLIENTE_MINUTE_PACKS[number]) => ({ id: p.id, nombre: p.nombre, descripcion: p.descripcion,
-  amount: p.priceUsd, total_minutes: p.totalMinutes, roulette_level: rouletteLevelForPurchaseAmount(p.priceUsd), roulette_spins: p.rouletteSpins,
+  amount: p.priceUsd, total_minutes: p.totalMinutes, package_level: p.rouletteLevel, roulette_level: rouletteLevelForPurchaseAmount(p.priceUsd), roulette_spins: p.rouletteSpins,
   coins: p.rewardCoins || 0, oracle_credits: p.oracleCredits || 0, highlight: !!p.highlight });
 function publicAttempt(a: any) { return { id: a.id, pack_id: a.pack_id, amount: Number(a.amount), currency: a.currency, status: a.status,
   remote_status: a.remote_status, payment_id: a.order_id, checkout_url: a.approval_url, last_error: a.last_error, pack_name: a.pack_name }; }
@@ -76,10 +76,12 @@ export async function POST(req: Request) {
     if (!attempt) {
       const token = randomUUID();
       const minutes = splitMinutes(pack?.totalMinutes || 0);
-      const level = rouletteLevelForPurchaseAmount(amount);
-      const payload = { pack_id: pack?.id, pack_name: pack?.nombre, free: minutes.free, normal: minutes.normal,
-        points: pack ? pack.rewardCoins || 0 : pointsFromAmount(amount), oracle_credits: pack?.oracleCredits || 0,
-        roulette_level: level, ...(pack ? { roulette_spins: level ? pack.rouletteSpins : 0 } : {}),
+      const level = pack ? rouletteLevelForPurchaseAmount(amount) : null;
+      const payload = { pack_id: pack?.id || "crm_manual_amount", pack_name: pack?.nombre || "Importe personalizado", free: minutes.free, normal: minutes.normal,
+        points: pack?.rewardCoins || 0, oracle_credits: pack?.oracleCredits || 0,
+        roulette_level: level, roulette_spins: pack && level ? pack.rouletteSpins : 0,
+        reward_policy_version: 1, pricing_mode: pack ? "regular" : "manual_amount",
+        purchase_classification: pack ? "nada" : "promo", rewards_eligible: Boolean(pack), package_level: pack?.rouletteLevel || null,
         created_by_role: worker.role, notas: `PayPal · CRM · ${String(body.notes || "").slice(0, 500)}` };
       const createPayload = { intent: "CAPTURE", purchase_units: [{ reference_id: id, custom_id: id, invoice_id: `TC-${id}`,
         description: `Tarot Celestial · ${pack?.nombre || "Importe personalizado"}`,

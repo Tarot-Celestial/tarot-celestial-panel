@@ -1,4 +1,3 @@
-import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
 import { rankState } from "@/lib/server/rank-benefits";
 import {
   createClientNotification,
@@ -28,6 +27,10 @@ export type PromotionPackageSnapshot = {
   oracle_credits: number;
   extra_benefit: string | null;
   is_recommended: boolean;
+  reward_policy_version?: 1;
+  pricing_mode?: "promotion";
+  purchase_classification?: "promo";
+  rewards_eligible?: false;
 };
 
 function asIso(value: unknown) {
@@ -122,13 +125,6 @@ export async function loadActivePromotion(admin: any) {
 
 export function promotionPackageSnapshot(promotion: any, pack: any): PromotionPackageSnapshot {
   const price = Number(pack.price || 0);
-  const rouletteSpins = Math.max(0, Math.floor(Number(pack.roulette_spins || 0)));
-  const configuredLevel = Number(pack.roulette_level || 0);
-  // Niveles 1-3 SIEMPRE se deducen del importe. El Nivel 4 es la única excepción:
-  // solo existe cuando una promoción lo concede explícitamente desde Administración.
-  const rouletteLevel = rouletteSpins > 0
-    ? (configuredLevel === 4 ? 4 : rouletteLevelForPurchaseAmount(price))
-    : null;
 
   return {
     kind: "promotion_minute_pack",
@@ -143,92 +139,18 @@ export function promotionPackageSnapshot(promotion: any, pack: any): PromotionPa
     price,
     regular_price: pack.regular_price == null ? null : Number(pack.regular_price),
     currency: String(pack.currency || "EUR").toUpperCase() === "USD" ? "USD" : "EUR",
-    roulette_level: rouletteLevel,
-    roulette_spins: rouletteLevel ? rouletteSpins : 0,
-    roulette_assignment: rouletteLevel === 4 ? "special_promotion" : rouletteLevel ? "amount" : null,
-    special_roulette_granted: rouletteLevel === 4 && rouletteSpins > 0,
-    coins: Math.max(0, Math.floor(Number(pack.coins || 0))),
+    // Promotional packages never include Coins or roulette, even if their old
+    // editable marketing/configuration fields still advertise those rewards.
+    roulette_level: null,
+    roulette_spins: 0,
+    roulette_assignment: null,
+    special_roulette_granted: false,
+    coins: 0,
+    reward_policy_version: 1, pricing_mode: "promotion", purchase_classification: "promo", rewards_eligible: false,
     oracle_credits: Math.max(0, Math.floor(Number(pack.oracle_credits || 0))),
     extra_benefit: pack.extra_benefit ? String(pack.extra_benefit) : null,
     is_recommended: Boolean(pack.is_recommended),
   };
-}
-
-async function ensurePromotionRouletteGrant(
-  admin: any,
-  params: {
-    attemptId: string;
-    clienteId: string;
-    paymentId: string;
-    totalMinutes: number;
-    snapshot: PromotionPackageSnapshot;
-  },
-) {
-  const expectedLevel = Number(params.snapshot.roulette_level || 0);
-  const expectedSpins = Math.max(0, Math.floor(Number(params.snapshot.roulette_spins || 0)));
-  if (![1, 2, 3, 4].includes(expectedLevel) || expectedSpins <= 0 || !params.paymentId) return [];
-
-  const { data: byPurchase, error: purchaseError } = await admin
-    .from("cliente_ruleta_giros")
-    .select("id,nivel,estado,payment_key,purchase_id")
-    .eq("cliente_id", params.clienteId)
-    .eq("purchase_id", params.paymentId)
-    .order("created_at", { ascending: true });
-  if (purchaseError) throw purchaseError;
-
-  const rows = [...(byPurchase || [])];
-  if (rows.length < expectedSpins) {
-    const { data: byReference, error: referenceError } = await admin
-      .from("cliente_ruleta_giros")
-      .select("id,nivel,estado,payment_key,purchase_id")
-      .eq("cliente_id", params.clienteId)
-      .or(`payment_key.ilike.%${params.attemptId}%,payment_key.ilike.%${params.paymentId}%`)
-      .order("created_at", { ascending: true });
-    if (referenceError) throw referenceError;
-    const seen = new Set(rows.map((row: any) => String(row.id)));
-    for (const row of byReference || []) {
-      if (!seen.has(String(row.id))) { rows.push(row); seen.add(String(row.id)); }
-    }
-  }
-
-  const pendingWrong = rows.filter((row: any) => row.estado === "pending" && Number(row.nivel) !== expectedLevel);
-  if (pendingWrong.length) {
-    const { error: repairError } = await admin
-      .from("cliente_ruleta_giros")
-      .update({ nivel: expectedLevel })
-      .in("id", pendingWrong.map((row: any) => row.id));
-    if (repairError) throw repairError;
-    for (const row of pendingWrong) row.nivel = expectedLevel;
-  }
-
-  const usedWrong = rows.filter((row: any) => row.estado === "used" && Number(row.nivel) !== expectedLevel);
-  if (usedWrong.length) {
-    console.error("[client-promotions/roulette-used-level-mismatch]", {
-      attemptId: params.attemptId, paymentId: params.paymentId, expectedLevel, spinIds: usedWrong.map((row: any) => row.id),
-    });
-  }
-
-  const missing = Math.max(0, expectedSpins - rows.length);
-  if (missing > 0) {
-    const start = rows.length;
-    const inserts = Array.from({ length: missing }, (_, index) => ({
-      cliente_id: params.clienteId,
-      payment_key: `promo_attempt:${params.attemptId}:spin:${start + index + 1}`,
-      source: expectedLevel === 4 ? "promotion_super_roulette" : "promotion_pack",
-      nivel: expectedLevel,
-      purchase_minutes: Math.max(0, Math.floor(Number(params.totalMinutes || 0))),
-      purchase_id: params.paymentId,
-      estado: "pending",
-    }));
-    const { data: created, error: createError } = await admin
-      .from("cliente_ruleta_giros")
-      .upsert(inserts, { onConflict: "payment_key", ignoreDuplicates: true })
-      .select("id,nivel,estado,payment_key,purchase_id");
-    if (createError) throw createError;
-    rows.push(...(created || []));
-  }
-
-  return rows;
 }
 
 export async function applyPromotionMinutePurchase(
@@ -247,23 +169,16 @@ export async function applyPromotionMinutePurchase(
   if (Math.abs(Number(params.amount) - Number(originalSnap.price)) > 0.001) throw new Error("PROMOTION_AMOUNT_MISMATCH");
   if (params.currency !== originalSnap.currency) throw new Error("PROMOTION_CURRENCY_MISMATCH");
 
-  const configuredLevel = Number(originalSnap.roulette_level || 0);
-  const automaticLevel = rouletteLevelForPurchaseAmount(params.amount);
-  const effectiveLevel = originalSnap.roulette_spins > 0
-    ? (configuredLevel === 4 ? 4 : automaticLevel)
-    : null;
-  const normalizedSpins = effectiveLevel ? Math.max(0, Math.floor(Number(originalSnap.roulette_spins || 0))) : 0;
   const snap: PromotionPackageSnapshot = {
     ...originalSnap,
     snapshot_version: 3,
-    roulette_level: effectiveLevel,
-    roulette_spins: normalizedSpins,
-    roulette_assignment: effectiveLevel === 4 ? "special_promotion" : effectiveLevel ? "amount" : null,
-    special_roulette_granted: effectiveLevel === 4 && normalizedSpins > 0,
+    coins: 0, roulette_level: null, roulette_spins: 0,
+    roulette_assignment: null, special_roulette_granted: false,
+    reward_policy_version: 1, pricing_mode: "promotion", purchase_classification: "promo", rewards_eligible: false,
   };
 
-  // Corrige también intentos creados antes de desplegar esta versión para que la RPC
-  // lea la misma verdad: importe -> nivel automático (salvo Nivel Especial explícito).
+  // Only outstanding attempts receive the new policy. Historical completed
+  // purchases and already granted rewards are never rewritten or revoked.
   try {
     await admin.from("cliente_payment_attempts").update({
       promotion_snapshot: snap,
@@ -279,17 +194,12 @@ export async function applyPromotionMinutePurchase(
   if (transactionError) throw transactionError;
 
   const payment = transaction?.payment;
-  // El pack conserva las Coins prometidas por la promoción. Los beneficios adicionales
-  // de rango se acreditan y auditan por separado en Supabase.
-  snap.coins = Math.max(0, Math.floor(Number(originalSnap.coins || 0)));
   const paymentId = String(payment?.id || "");
-  const grantedSpins = paymentId ? await ensurePromotionRouletteGrant(admin, {
-    attemptId: params.attemptId,
-    clienteId: params.clienteId,
-    paymentId,
-    totalMinutes,
-    snapshot: snap,
-  }) : [];
+  // Never supplement the atomic purchase with a second application-side grant.
+  // Reading persisted spins keeps retries/history truthful without new rewards.
+  const { data: grantedSpins } = paymentId ? await admin.from("cliente_ruleta_giros")
+    .select("id,nivel,estado,payment_key,purchase_id").eq("purchase_id", paymentId)
+    .eq("cliente_id", params.clienteId) : { data: [] };
   const { data: appliedBenefitEvents } = paymentId
     ? await admin.from("tc_client_benefit_events").select("benefit_key,minutes").eq("payment_id", paymentId)
     : { data: [] };

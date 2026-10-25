@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { buildInternationalPhone, getCountryByLabelOrCode } from "@/lib/countries";
+import { groupPurchasePacks } from "@/lib/purchase-presentation";
 import styles from "./MollieCrmPaymentModal.module.css";
 
 type ClientRef = {
@@ -33,6 +34,7 @@ type Pack = {
   descripcion: string;
   amount: number;
   total_minutes: number;
+  package_level?: number | null;
   roulette_level: number;
   roulette_spins: number;
   coins: number;
@@ -143,6 +145,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
   );
 
   const selectedPack = useMemo(() => packs.find((pack) => pack.id === packId) || null, [packs, packId]);
+  const packGroups = useMemo(() => groupPurchasePacks(packs), [packs]);
   const requestedAmount = mode === "pack"
     ? Number(selectedPack?.amount || 0)
     : Number(String(manualAmount || "").replace(",", ".")) || 0;
@@ -431,18 +434,28 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
         {!payment ? (
           <>
             <div className={styles.modeSwitch}>
-              <button type="button" data-active={mode === "pack"} onClick={() => setMode("pack")}><Sparkles /> Pack</button>
-              <button type="button" data-active={mode === "manual"} onClick={() => setMode("manual")}><Banknote /> Importe manual</button>
+              <button type="button" data-active={mode === "pack"} aria-pressed={mode === "pack"} onClick={() => setMode("pack")}><Sparkles /> Pack</button>
+              <button type="button" data-active={mode === "manual"} aria-pressed={mode === "manual"} onClick={() => setMode("manual")}><Banknote /> Importe manual</button>
             </div>
 
             {mode === "pack" ? (
-              <div className={styles.packGrid}>
-                {packs.map((pack) => (
-                  <button key={pack.id} type="button" className={styles.pack} data-selected={packId === pack.id} disabled={loading} onClick={() => setPackId(pack.id)}>
-                    <span>{pack.nombre}</span>
-                    <strong>{money(pack.amount)}</strong>
-                    <small>{pack.total_minutes} min · {pack.roulette_spins} giro{pack.roulette_spins === 1 ? "" : "s"} N{pack.roulette_level}{pack.coins ? ` · +${pack.coins} Coins` : ""}{pack.oracle_credits ? ` · +${pack.oracle_credits} Oráculo` : ""}</small>
-                  </button>
+              <div className={styles.packLevels}>
+                {packGroups.map((group) => (
+                  <section key={group.level ?? "other"} className={styles.packLevel} data-level={group.level} aria-labelledby={`paypal-pack-level-${group.level ?? "other"}`}>
+                    <header className={styles.packLevelHeader}>
+                      <h3 id={`paypal-pack-level-${group.level ?? "other"}`}>{group.title}</h3>
+                      <span>{group.minutesLabel}{group.minutesLabel ? " · " : ""}Tarifa normal</span>
+                    </header>
+                    <div className={styles.packGrid}>
+                      {group.packs.map((pack) => (
+                        <button key={pack.id} type="button" className={styles.pack} data-selected={packId === pack.id} aria-pressed={packId === pack.id} disabled={loading} onClick={() => setPackId(pack.id)}>
+                          <span>{pack.nombre}</span>
+                          <strong>{money(pack.amount)}</strong>
+                          <small>{pack.total_minutes} min{pack.roulette_spins > 0 && pack.roulette_level ? ` · ${pack.roulette_spins} giro${pack.roulette_spins === 1 ? "" : "s"} N${pack.roulette_level}` : ""}{pack.coins ? ` · +${pack.coins} Coins` : ""}{pack.oracle_credits ? ` · +${pack.oracle_credits} Oráculo` : ""}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
                 ))}
               </div>
             ) : (
@@ -451,7 +464,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
                   <span>Importe a cobrar</span>
                   <div className={styles.moneyInput}><input inputMode="decimal" value={manualAmount} onChange={(e) => setManualAmount(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="Ej. 27,50" /><b>€</b></div>
                 </label>
-                <p>El importe personalizado se registra como cobro manual de CRM. No añade minutos de un pack; conserva la lógica de Coins y Ruleta del cobro manual.</p>
+                <p><strong>Sin Coins ni giros de ruleta.</strong> El importe manual sirve para promociones o acuerdos personalizados. No añade automáticamente los minutos de un pack.</p>
               </div>
             )}
 

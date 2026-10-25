@@ -6,8 +6,7 @@ import { getMolliePayment, getMolliePaymentLinkPayments } from "@/lib/server/mol
 import { getOraclePack, grantOracleCredits } from "@/lib/server/oracle-premium";
 import { getOracleQuestionPack, grantOracleQuestions } from "@/lib/server/oracle-questions";
 import { applyPromotionMinutePurchase, type PromotionPackageSnapshot } from "@/lib/server/client-promotions";
-import { pointsFromAmount, splitMinutes } from "@/lib/server/cliente-platform";
-import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
+import { splitMinutes } from "@/lib/server/cliente-platform";
 
 
 
@@ -203,8 +202,8 @@ export async function processMolliePayment(paymentId: string) {
           metodo: "mollie_crm_manual",
           free: 0,
           normal: 0,
-          points: pointsFromAmount(paymentAmount),
-          roulette_level: rouletteLevelForPurchaseAmount(paymentAmount),
+          points: 0, roulette_level: null, roulette_spins: 0,
+          pack_id: "crm_manual_amount", reward_policy_version: 1, pricing_mode: "manual_amount", purchase_classification: "promo", rewards_eligible: false,
           notas: String(metadata.notes || "Cobro personalizado iniciado desde CRM"),
           created_by_user_id: metadata.initiated_by_worker_id || null,
           created_by_role: metadata.initiated_by_role || "central",

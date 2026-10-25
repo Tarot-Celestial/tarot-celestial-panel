@@ -2,6 +2,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { loadActivePromotion, promotionPackageSnapshot } from "@/lib/server/client-promotions";
+import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
+import { paypalConfig } from "@/lib/server/paypal-crm";
+import { CLIENTE_MINUTE_PACKS } from "@/lib/server/cliente-minute-packs";
 
 export const runtime = "nodejs";
 
@@ -129,72 +132,6 @@ async function registerCallAtomic(admin: any, payload: any, userId: string) {
   return { ...result, rpcName };
 }
 
-async function ensureSuperPromoSpin(
-  admin: any,
-  params: { clienteId: string; rendimientoId: string; purchaseMinutes?: number | null },
-) {
-  const paymentKey = `rendimiento:${params.rendimientoId}`;
-
-  const { data: existing, error: existingError } = await admin
-    .from("cliente_ruleta_giros")
-    .select("id,cliente_id,payment_key,source,nivel,estado,created_at")
-    .eq("payment_key", paymentKey)
-    .maybeSingle();
-  if (existingError) throw existingError;
-
-  // La compra normal puede haber generado ya N1/N2/N3 mediante trigger.
-  // Al pulsar SUPER PROMO RULETA ese MISMO giro se transforma en Nivel 4:
-  // nunca dejamos un giro normal + otro especial para la misma llamada.
-  if (existing) {
-    if (String(existing.estado || "") !== "pending") return existing;
-    if (Number(existing.nivel) === 4 && String(existing.source || "") === "super_promo_ruleta") return existing;
-
-    const { data: updated, error: updateError } = await admin
-      .from("cliente_ruleta_giros")
-      .update({ nivel: 4, source: "super_promo_ruleta" })
-      .eq("id", existing.id)
-      .eq("estado", "pending")
-      .select("id,cliente_id,payment_key,source,nivel,estado,created_at")
-      .maybeSingle();
-    if (updateError) throw updateError;
-    return updated || existing;
-  }
-
-  // Importes fuera de las franjas normales no generan giro automático.
-  // La clasificación especial sí debe conceder exactamente uno.
-  const insertPayload: any = {
-    cliente_id: params.clienteId,
-    payment_key: paymentKey,
-    source: "super_promo_ruleta",
-    nivel: 4,
-    estado: "pending",
-  };
-  const minutes = Number(params.purchaseMinutes || 0);
-  if (Number.isFinite(minutes) && minutes > 0) insertPayload.purchase_minutes = Math.floor(minutes);
-
-  const { data: created, error: createError } = await admin
-    .from("cliente_ruleta_giros")
-    .insert(insertPayload)
-    .select("id,cliente_id,payment_key,source,nivel,estado,created_at")
-    .single();
-
-  if (!createError) return created;
-
-  // Si dos peticiones concurrentes llegan a la vez, payment_key es único.
-  // Recuperamos el registro existente en vez de conceder un segundo giro.
-  if (String(createError.code || "") === "23505") {
-    const { data: raced, error: racedError } = await admin
-      .from("cliente_ruleta_giros")
-      .select("id,cliente_id,payment_key,source,nivel,estado,created_at")
-      .eq("payment_key", paymentKey)
-      .maybeSingle();
-    if (racedError) throw racedError;
-    if (raced) return raced;
-  }
-
-  throw createError;
-}
-
 function clientIdentificationError() {
   return NextResponse.json(
     { ok: false, error: "CLIENTE_UUID_INVALID" },
@@ -211,23 +148,28 @@ function codigoText(mins: number, code: string | null) {
   return `${mins} ${String(code).toLowerCase()}`;
 }
 
-function pointsFromAmount(amount: number) {
-  return Math.max(0, Math.floor(Number(amount || 0) * 10));
-}
-
-async function resolveManualPurchaseBenefits(admin: any, amount: number) {
+async function resolveManualPurchaseBenefits(admin: any, amount: number, classification: string) {
+  const promotional = classification === "promo";
+  const standardPack = promotional ? null : CLIENTE_MINUTE_PACKS.find(pack => Math.abs(pack.priceUsd - amount) < 0.001);
   const fallback = {
-    source: "legacy_amount" as const,
-    coins: pointsFromAmount(amount),
-    oracle_credits: 0,
-    roulette_level: null as number | null,
-    roulette_spins: 0,
+    source: promotional ? "classified_promotion" : "regular_tariff",
+    // The rank x purchase-level matrix in Supabase is the only Coins authority.
+    coins: 0,
+    oracle_credits: standardPack?.oracleCredits || 0,
+    roulette_level: promotional ? null : rouletteLevelForPurchaseAmount(amount),
+    roulette_spins: promotional || !rouletteLevelForPurchaseAmount(amount) ? 0 : amount === 99 ? 2 : 1,
+    reward_policy_version: 1,
+    pricing_mode: promotional ? "promotion" : classification === "super_promo_ruleta" ? "super_promo" : "regular",
+    purchase_classification: classification,
+    rewards_eligible: !promotional,
     promotion_id: null as string | null,
     promotion_name: null as string | null,
-    package_id: null as string | null,
-    package_name: null as string | null,
+    package_id: standardPack?.id || null,
+    package_name: standardPack?.nombre || null,
   };
 
+  // An active promotion with the same amount never changes a regular purchase.
+  if (!promotional) return fallback;
   try {
     const promotion = await loadActivePromotion(admin);
     if (!promotion) return fallback;
@@ -242,18 +184,19 @@ async function resolveManualPurchaseBenefits(admin: any, amount: number) {
 
     const snap = promotionPackageSnapshot(promotion, exact[0]);
     return {
-      source: "active_promotion" as const,
-      coins: Math.max(0, Math.floor(Number(snap.coins || 0))),
+      ...fallback,
+      source: "active_promotion",
+      coins: 0,
       oracle_credits: Math.max(0, Math.floor(Number(snap.oracle_credits || 0))),
-      roulette_level: snap.roulette_level ? Number(snap.roulette_level) : null,
-      roulette_spins: Math.max(0, Math.floor(Number(snap.roulette_spins || 0))),
+      roulette_level: null,
+      roulette_spins: 0,
       promotion_id: String(snap.promotion_id),
       promotion_name: String(snap.promotion_name),
       package_id: String(snap.package_id),
       package_name: String(snap.package_name),
     };
   } catch (error) {
-    console.error("[CRM registrar llamada] no se pudo resolver beneficios activos; se conserva la regla base", error);
+    console.error("[CRM registrar llamada] no se pudo resolver el Oráculo de la promoción; sin Coins ni giros", error);
     return fallback;
   }
 }
@@ -299,6 +242,18 @@ export async function GET(req: Request) {
     if (!isUuid(clienteId)) return clientIdentificationError();
 
     const admin = adminClient();
+    if (new URL(req.url).searchParams.get("mode") === "collections") {
+      const { data, error } = await admin.from("crm_paypal_orders")
+        .select("id,amount,currency,pack_id,pack_name,completed_at,order_id")
+        .eq("cliente_id", clienteId).eq("environment", paypalConfig().environment)
+        .eq("checkout_kind", "crm_collection").eq("status", "completed").eq("currency", "EUR")
+        .not("capture_id", "is", null).is("payment_id", null)
+        .order("completed_at", { ascending: false }).limit(100);
+      if (error) throw error;
+      return NextResponse.json({ ok: true, collections: (data || []).map((row: any) => ({
+        ...row, amount: Number(row.amount), pricing_mode: row.pack_id === "crm_manual_amount" ? "manual_amount" : "regular",
+      })) }, { headers: { "Cache-Control": "private, no-store", "Vary": "Authorization" } });
+    }
     if (new URL(req.url).searchParams.get("mode") === "balance") {
       const { data, error } = await admin.from("crm_clientes")
         .select("minutos_free_pendientes,minutos_normales_pendientes,updated_at").eq("id", clienteId).maybeSingle();
@@ -383,6 +338,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "EXISTING_PAYMENT_CALL_ONLY" }, { status: 400 });
     }
     const operationId = String(body?.operation_id || "").trim();
+    const paypalCollectionOrderId = String(body?.paypal_collection_order_id || "").trim();
+    const paypalCollectionSource = String(body?.paypal_collection_source || "").trim();
+    if ((paypalCollectionOrderId && !isUuid(paypalCollectionOrderId)) ||
+        !["", "crm_collection", "external"].includes(paypalCollectionSource) ||
+        (paypalCollectionSource === "crm_collection" && !paypalCollectionOrderId) ||
+        (paypalCollectionSource !== "crm_collection" && paypalCollectionOrderId)) {
+      return NextResponse.json({ ok: false, error: "PAYPAL_COLLECTION_SELECTION_INVALID" }, { status: 400 });
+    }
     const usoTipo = String(body?.uso_tipo || "").trim();
     const codigo1 = cleanText(body?.codigo_1);
     const codigo2 = cleanText(body?.codigo_2);
@@ -399,6 +362,9 @@ export async function POST(req: Request) {
     const tarotistaManualCall = cleanText(body?.tarotista_manual_call);
     const collaboratorSource = cleanText(body?.collaborator_source);
     const formaPago = cleanText(body?.forma_pago);
+    if (paypalCollectionSource && (!clienteCompra || String(formaPago || "").toUpperCase() !== "PAYPAL")) {
+      return NextResponse.json({ ok: false, error: "PAYPAL_COLLECTION_SELECTION_INVALID" }, { status: 400 });
+    }
     const importe = toNum(body?.importe);
     const clasificacion = String(body?.clasificacion || "nada").trim();
     const clasificacionesValidas = new Set(["nada", "promo", "captado", "recuperado", "super_promo_ruleta"]);
@@ -449,32 +415,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "OPERATION_ID_INVALID" }, { status: 400 });
     }
 
-    if (clienteCompra && clasificacion !== "recuperado") {
-      const operationReference = `registrar_llamada:${operationId}`;
-      const { data: existingPayment, error: existingPaymentError } = await admin
-        .from("crm_cliente_pagos")
-        .select("id, cliente_id, importe, estado, referencia_externa, source_rendimiento_id")
-        .eq("referencia_externa", operationReference)
-        .maybeSingle();
-      if (existingPaymentError) throw existingPaymentError;
-      if (existingPayment) {
-        let specialSpin: any = null;
-        const linkedRendimientoId = String(existingPayment.source_rendimiento_id || "");
-        if (clasificacion === "super_promo_ruleta" && isUuid(linkedRendimientoId)) {
-          specialSpin = await ensureSuperPromoSpin(admin, {
-            clienteId,
-            rendimientoId: linkedRendimientoId,
-          });
-        }
-        return NextResponse.json({
-          ok: true,
-          duplicate_prevented: true,
-          payment: existingPayment,
-          special_spin: specialSpin,
-          message: "✅ La operación ya estaba registrada; no se creó un cobro duplicado" + (specialSpin ? " · Super Promo Ruleta: +1 giro Nivel Especial confirmado." : ""),
-        });
-      }
-    }
+    // Replays must pass the atomic server validator too: changing a request's
+    // classification must never turn an old regular/manual payment into a prize.
 
     let billingCollaboratorId: string | null = null;
     let sourceTagId: string | null = null;
@@ -589,12 +531,15 @@ export async function POST(req: Request) {
     })();
 
     const purchaseBenefits = clienteCompra
-      ? await resolveManualPurchaseBenefits(admin, importe)
+      ? await resolveManualPurchaseBenefits(admin, importe, clasificacion)
       : null;
 
     const atomicPayload = {
       existing_payment_id: existingPaymentId || null,
-      separate_payment_confirmed: body?.separate_payment_confirmed === true,
+      paypal_collection_order_id: paypalCollectionOrderId || null,
+      paypal_collection_source: paypalCollectionSource || null,
+      expected_paypal_environment: normalizedPaymentMethod === "paypal_manual" ? paypalConfig().environment : null,
+      separate_payment_confirmed: paypalCollectionSource === "external" || body?.separate_payment_confirmed === true,
       operation_id: operationId || null,
       cliente_id: clienteId,
       cliente_nombre: clienteNombre,
@@ -623,6 +568,11 @@ export async function POST(req: Request) {
       forma_pago: normalizedPaymentMethod,
       importe,
       promo,
+      super_promo_ruleta: superPromoRuleta,
+      reward_policy_version: 1,
+      pricing_mode: promo ? "promotion" : superPromoRuleta ? "super_promo" : "regular",
+      purchase_classification: clasificacion,
+      rewards_eligible: clienteCompra && !promo,
       // La atribución se decide después mediante register_client_capture_contact.
       // Evita que la función histórica conceda XP solo por marcar la opción visual.
       captado: false,
@@ -689,6 +639,11 @@ export async function POST(req: Request) {
         "PAYMENT_REQUIRED",
         "NOT_ELIGIBLE",
         "PAYPAL_PAYMENT_ALREADY_CONFIRMED",
+        "PAYPAL_COLLECTION_SELECTION_REQUIRED",
+        "PAYPAL_COLLECTION_SELECTION_INVALID",
+        "PAYPAL_COLLECTION_ALREADY_USED",
+        "PAYPAL_COLLECTION_ALREADY_REGISTERED",
+        "PAYPAL_COLLECTION_INVALID",
         "PAYMENT_ALREADY_LINKED",
         "PAYMENT_OPERATION_CONFLICT",
         "EXISTING_PAYMENT_INVALID",
@@ -724,30 +679,10 @@ export async function POST(req: Request) {
     const inserted = result?.rendimiento ? [result.rendimiento] : [];
     const economicPayment = result?.payment || null;
     let captureAssignment: any = null;
-    let specialSpin: any = null;
     const registeredCallId = String(result?.rendimiento?.id || "");
 
-    // SUPER PROMO RULETA: cuando la compra se guarda correctamente, la misma
-    // operación acredita exactamente 1 giro pendiente de Nivel Especial (4).
-    // Si el importe había creado N1/N2/N3, ese giro se CONVIERTE en N4; no se duplica.
-    if (registeredCallId && superPromoRuleta) {
-      try {
-        specialSpin = await ensureSuperPromoSpin(admin, {
-          clienteId,
-          rendimientoId: registeredCallId,
-          purchaseMinutes: tiempo,
-        });
-      } catch (grantError: any) {
-        console.error("[CRM registrar llamada] no se pudo acreditar Super Promo Ruleta", {
-          code: grantError?.code || null,
-          message: grantError?.message || null,
-          cliente_id: clienteId,
-          rendimiento_id: registeredCallId,
-        });
-        throw grantError;
-      }
-      if (result?.rendimiento) result.rendimiento.super_promo_ruleta = true;
-    }
+    // Super Promo is awarded by the same atomic purchase transaction. Never
+    // create or transform a spin from this callback or from a replayed request.
 
     // Toda gestión válida participa en la atribución histórica. La RPC decide la
     // primera gestora real y solo confirma la captación cuando existe una compra.
@@ -822,9 +757,18 @@ export async function POST(req: Request) {
     try { await syncClienteMonthTag(admin, clienteId); }
     catch (error) { if (!existingPaymentId && !recuperado) throw error; console.error("[CRM] Llamada guardada; etiquetas pendientes", error); }
 
-    const { data: awardedSpin } = clienteCompra && result?.rendimiento?.id
-      ? await admin.from("cliente_ruleta_giros").select("id,nivel,estado,source").eq("payment_key", "rendimiento:" + result.rendimiento.id).maybeSingle()
-      : { data: null };
+    const [{ data: awardedSpins, error: spinsReadError }, { data: benefitEvents, error: benefitsReadError }] = economicPayment?.id
+      ? await Promise.all([
+        admin.from("cliente_ruleta_giros").select("id,nivel,estado,source").eq("purchase_id", economicPayment.id),
+        admin.from("tc_client_benefit_events").select("coins,oracle_credits").eq("payment_id", economicPayment.id),
+      ]) : [{ data: [], error: null }, { data: [], error: null }];
+    const specialSpin = !spinsReadError ? (awardedSpins || []).find((spin: any) => Number(spin.nivel) === 4) || null : null;
+    const spinLevels = (awardedSpins || []).reduce((levels: Record<string, number>, spin: any) => {
+      const level = String(spin.nivel); levels[level] = (levels[level] || 0) + 1; return levels;
+    }, {} as Record<string, number>);
+    const awardedSpinText = !spinsReadError ? Object.entries(spinLevels).map(([level, count]) =>
+      `+${count} giro${count === 1 ? "" : "s"} ${level === "4" ? "Nivel Especial" : `Nivel ${level}`}`,
+    ).join(" · ") : "";
     return NextResponse.json({
       ok: true,
       data: inserted,
@@ -844,13 +788,17 @@ export async function POST(req: Request) {
       recovery: result?.recovery || null,
       capture_assignment: captureAssignment,
       special_spin: specialSpin,
+      reward_policy: result?.reward_policy || null,
+      rewards: spinsReadError || benefitsReadError ? null : {
+        coins: (benefitEvents || []).reduce((sum: number, event: any) => sum + Number(event.coins || 0), 0),
+        oracle_credits: (benefitEvents || []).reduce((sum: number, event: any) => sum + Number(event.oracle_credits || 0), 0),
+        spins: awardedSpins || [],
+      },
       created_at: result?.payment?.created_at || result?.rendimiento?.fecha_hora || new Date().toISOString(),
       business: String(cliente?.origen || "celestial"),
       message: (collaboratorDisplayName
         ? "✅ Llamada registrada y vinculada a CALL MARIO"
-        : "✅ Llamada registrada correctamente") + (superPromoRuleta
-          ? " · Super Promo Ruleta: +1 giro exclusivo Nivel Especial disponible para el cliente."
-          : awardedSpin ? " · +1 giro Nivel " + awardedSpin.nivel + " disponible para el cliente." : ""),
+        : "✅ Llamada registrada correctamente") + (awardedSpinText ? ` · ${awardedSpinText} confirmados para el cliente.` : ""),
     });
   } catch (e: any) {
     console.error("🔥 ERROR GENERAL:", e);

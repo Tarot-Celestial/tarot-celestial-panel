@@ -10,6 +10,7 @@ import ClientNavIcon from "@/components/cliente/ClientNavIcon";
 import RouletteRewardArt from "@/components/cliente/RouletteRewardArt";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import type { RouletteLevel, RouletteSummary } from "@/lib/ruleta";
+import { promotionDisplayCopy } from "@/lib/purchase-presentation";
 import styles from "./PricesOffers.module.css";
 
 const sb = supabaseClienteBrowser();
@@ -262,13 +263,16 @@ export default function PreciosOfertasPage() {
             <div className={styles.promoHeader}>
               <div>
                 <span>🔥 PROMOCIÓN DE HOY</span>
-                <h2>{promotion.name}</h2>
-                <p>{promotion.subtitle || promotion.description || "Una ventaja especial disponible ahora en tu panel."}</p>
+                <h2>{promotionDisplayCopy(promotion.name) || "Promoción de hoy"}</h2>
+                <p>{promotionDisplayCopy(promotion.subtitle || promotion.description) || "Una ventaja especial disponible ahora en tu panel."}</p>
               </div>
               <div className={styles.promoLive}><span /> ACTIVA AHORA</div>
             </div>
             <div className={styles.promoGrid}>
-              {promotion.packages.map((pack) => (
+              {promotion.packages.map((pack) => {
+                const description = promotionDisplayCopy(pack.description);
+                const extraBenefit = promotionDisplayCopy(pack.extra_benefit);
+                return (
                 <article
                   key={pack.id}
                   className={`${styles.promoCard} ${pack.is_recommended ? styles.promoFeatured : ""}`}
@@ -276,23 +280,21 @@ export default function PreciosOfertasPage() {
                 >
                   {pack.is_recommended ? <div className={styles.promoRecommended}>MÁS ELEGIDO</div> : null}
                   <div className={styles.promoPackTop}><Gift /><span>{pack.paid_minutes} MIN {pack.free_minutes ? `+ ${pack.free_minutes} GRATIS` : ""}</span></div>
-                  <h3>{pack.name}</h3>
-                  {pack.description ? <p>{pack.description}</p> : null}
+                  <h3>{promotionDisplayCopy(pack.name) || `${pack.paid_minutes + pack.free_minutes} minutos de consulta`}</h3>
+                  {description ? <p>{description}</p> : null}
                   <div className={styles.promoMinutes}><strong>{pack.paid_minutes}</strong><span>minutos</span>{pack.free_minutes ? <><b>+</b><strong>{pack.free_minutes}</strong><span>GRATIS</span></> : null}</div>
                   <div className={styles.promoPrice}>{pack.regular_price && Number(pack.regular_price) > Number(pack.price) ? <del>{formatPromoMoney(pack.regular_price, pack.currency)}</del> : null}<strong>{formatPromoMoney(pack.price, pack.currency)}</strong></div>
                   <div className={styles.promoBenefits}>
-                    {pack.coins > 0 ? <span>🪙 +{pack.coins} Coins</span> : null}
-                    {pack.roulette_spins > 0 && pack.roulette_level ? <span>{Number(pack.roulette_level) === 4 ? `🎰 +${pack.roulette_spins} giro${pack.roulette_spins === 1 ? "" : "s"} SUPER RULETA · Nivel Especial` : `🎡 +${pack.roulette_spins} giro${pack.roulette_spins === 1 ? "" : "s"} Nivel ${pack.roulette_level}`}</span> : null}
+                    <span className={styles.promoRewardPolicy}>Precio promocional · Sin Coins ni giros de ruleta</span>
                     {pack.oracle_credits > 0 ? <span>🔮 +{pack.oracle_credits} tirada{pack.oracle_credits === 1 ? "" : "s"} del Oráculo</span> : null}
-                    {pack.extra_benefit ? <span>✦ {pack.extra_benefit}</span> : null}
-                    {pack.rankBenefits?.enabled ? <span><strong>Por tu rango:</strong> {rankBenefitSummary(pack.rankBenefits)}</span> : null}
-                    {pack.rankBenefitsStatus === "unavailable" ? <span><strong>Beneficios de rango:</strong> no disponibles temporalmente. El pack y su precio siguen disponibles.</span> : null}
-                    {pack.rankBenefitsStatus === "unmapped_package" ? <span><strong>Beneficios de rango:</strong> esta promoción aún no tiene nivel asignado.</span> : null}
+                    {extraBenefit ? <span>✦ {extraBenefit}</span> : null}
+                    {pack.rankBenefits?.enabled && Number(pack.rankBenefits.oracle_credits || 0) > 0 ? <span><strong>Por tu rango:</strong> +{Number(pack.rankBenefits.oracle_credits)} Oráculo</span> : null}
                   </div>
                   <ClientPurchaseAction className={styles.promoBuy} checkoutEnabled><button type="button" className={styles.promoBuy} disabled={busy === `promo:${pack.id}` || states.promotion !== "ready"} onClick={() => checkoutMinutes(`promo:${pack.id}`)}>{busy === `promo:${pack.id}` ? "Conectando…" : "COMPRAR AHORA"}</button></ClientPurchaseAction>
                   {checkoutMessagePack === `promo:${pack.id}` && message ? <div className={styles.message} role="alert">{message}{pendingCheckoutUrl ? <Link href={pendingCheckoutUrl}>Revisar compra pendiente</Link> : null}</div> : null}
                 </article>
-              ))}
+                );
+              })}
             </div>
           </section>
         ) : null}
@@ -449,15 +451,4 @@ function MinuteCard({ pack, packageLevel, rankLabel, busy, unavailable, onBuy, f
   </article>;
 }
 
-function rankBenefitSummary(value: RankPackBenefit) {
-  const parts = [
-    Number(value.coins || 0) > 0 ? `+${Number(value.coins).toLocaleString("es-ES")} Coins` : null,
-    Number(value.oracle_credits || 0) > 0 ? `+${Number(value.oracle_credits)} Oráculo` : null,
-    Number(value.roulette_level_1_spins || 0) > 0 ? `+${Number(value.roulette_level_1_spins)} giro N1` : null,
-    Number(value.roulette_level_2_spins || 0) > 0 ? `+${Number(value.roulette_level_2_spins)} giro N2` : null,
-    Number(value.roulette_level_3_spins || 0) > 0 ? `+${Number(value.roulette_level_3_spins)} giro N3` : null,
-    Number(value.roulette_special_spins || 0) > 0 ? `+${Number(value.roulette_special_spins)} giro Especial` : null,
-  ].filter(Boolean);
-  return parts.length ? parts.join(" · ") : "Sin recompensa adicional configurada";
-}
 

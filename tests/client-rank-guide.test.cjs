@@ -4,7 +4,7 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),ts=r
 function load(file,mocks={},globals={}){
  const code=ts.transpileModule(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
  const exports={};
- vm.runInNewContext(code,{exports,require:n=>n in mocks?mocks[n]:require(n),console,Request,Response,URL,AbortController,Date,setTimeout,clearTimeout,...globals});
+ vm.runInNewContext(code,{exports,require:n=>n in mocks?mocks[n]:n.startsWith('@/')?load('src/'+n.slice(2)+'.ts',mocks,globals):require(n),console,Request,Response,URL,AbortController,Date,setTimeout,clearTimeout,...globals});
  return exports;
 }
 const guide=load('src/lib/client-rank-guide.ts');

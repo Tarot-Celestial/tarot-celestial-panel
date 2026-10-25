@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
-import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
 
 export const runtime = "nodejs";
 
-// 🔥 CONFIGURACIÓN GLOBAL
-const PUNTOS_POR_EURO = 10;
 
 function getEnv(name: string) {
   const v = process.env[name];
@@ -20,11 +17,6 @@ function adminClient() {
     getEnv("SUPABASE_SERVICE_ROLE_KEY"),
     { auth: { persistSession: false } }
   );
-}
-
-// 🔥 AQUÍ ESTABA EL BUG
-function pointsFromAmount(amount: number) {
-  return Math.max(0, Math.floor(Number(amount || 0) * PUNTOS_POR_EURO));
 }
 
 async function uidFromBearer(req: Request) {
@@ -122,7 +114,8 @@ export async function POST(req: Request) {
       if (!referencia_externa) return NextResponse.json({ ok: false, error: "La referencia del cobro es obligatoria." }, { status: 400 });
       const { data: transaction, error } = await admin.rpc("cliente_confirmar_compra_ruleta_v2", {
         p: { cliente_id, payment_ref: referencia_externa, amount: importe, currency: moneda, metodo,
-          free: 0, normal: 0, points: pointsFromAmount(importe), roulette_level: rouletteLevelForPurchaseAmount(importe), notas,
+          free: 0, normal: 0, points: 0, roulette_level: null, roulette_spins: 0, notas,
+          pack_id: "crm_manual_amount", reward_policy_version: 1, pricing_mode: "manual_amount", purchase_classification: "promo", rewards_eligible: false,
           created_by_user_id: worker.id, created_by_role: worker.role },
       });
       if (error) throw error;

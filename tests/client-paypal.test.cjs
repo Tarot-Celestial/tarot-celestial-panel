@@ -387,26 +387,37 @@ test('Custom-domain card access is limited to client purchases and never broaden
 });
 
 
-test('Active promotions use the card link and preserve server-owned prices and benefits', async () => {
+test('Promotional card purchases retain minutes and Oracle but never award Coins or roulette', async () => {
   for (const [minutes, price, coins, level, oracle] of [[30,20,50,1,0],[60,30,150,2,0],[120,59,300,3,2]]) {
     const h=routeHarness();
     h.state.promotion={id:id(50),name:'Halloween',packages:[{id:id(51),name:'Promo '+minutes,paid_minutes:minutes,free_minutes:0,price,currency:'EUR',coins,roulette_level:level,roulette_spins:1,oracle_credits:oracle,is_active:true}]};
     const response=await h.post({packId:'promo:'+id(51),amount:0.01,normal:999,coins:9999});
     assert.equal(response.status,200);assert.equal(new URL((await response.json()).url).pathname,'/pago-tarjeta');
     const saved=h.rows.get(id(10));assert.equal(saved.amount,price);assert.equal(saved.purchase_payload.normal,minutes);assert.equal(saved.purchase_payload.free,0);
-    assert.equal(saved.purchase_payload.points,coins);assert.equal(saved.purchase_payload.oracle_credits,oracle);assert.equal(saved.purchase_payload.roulette_level,level);
+    assert.equal(saved.purchase_payload.points,0);assert.equal(saved.purchase_payload.oracle_credits,oracle);assert.equal(saved.purchase_payload.roulette_level,null);
+    assert.equal(saved.purchase_payload.roulette_spins,0);assert.equal(saved.purchase_payload.pricing_mode,'promotion');assert.equal(saved.purchase_payload.rewards_eligible,false);
+    assert.equal(saved.purchase_payload.promotion_snapshot.coins,0);assert.equal(saved.purchase_payload.promotion_snapshot.roulette_spins,0);
     assert.equal(saved.create_payload.purchase_units[0].amount.value,price.toFixed(2));
     h.state.promotion=null;
     assert.equal((await h.post({packId:'promo:'+id(51)})).status,200);assert.equal(h.remoteOrders.size,1);
     assert.equal((await h.post({packId:'pack_30',attemptId:id(12)})).status,200);
+    assert.equal(h.rows.get(id(12)).purchase_payload.pricing_mode,'regular');
+    assert.equal(h.rows.get(id(12)).purchase_payload.roulette_spins,1);
   }
 });
 test('Inactive, missing and unsupported promotions cannot create payable orders',async()=>{
-  for(const change of [null,{is_active:false},{currency:'USD'},{roulette_level:4},{paid_minutes:-1}]) {
+  for(const change of [null,{is_active:false},{currency:'USD'},{paid_minutes:-1}]) {
     const h=routeHarness();h.state.promotion=change===null?null:{id:id(50),packages:[{id:id(51),name:'Promo',paid_minutes:30,free_minutes:0,price:20,currency:'EUR',coins:50,roulette_level:1,roulette_spins:1,oracle_credits:0,...change}]};
     // Negative persisted minutes normalize to zero; the resulting empty pack is rejected.
     assert.equal((await h.post({packId:'promo:'+id(51)})).status,409);assert.equal(h.remoteOrders.size,0);assert.equal(h.rows.size,0);
   }
+});
+
+test('Old promotional reward configuration, including special roulette, cannot opt a new web purchase into rewards',async()=>{
+ const h=routeHarness();h.state.promotion={id:id(50),name:'Promo',packages:[{id:id(51),name:'Promo especial antigua',paid_minutes:50,free_minutes:30,price:39,currency:'EUR',coins:500,roulette_level:4,roulette_spins:7,oracle_credits:2,is_active:true}]};
+ const response=await h.post({packId:'promo:'+id(51),pricing_mode:'regular',rewards_eligible:true});assert.equal(response.status,200);
+ const snap=h.rows.get(id(10)).purchase_payload;assert.equal(snap.normal,50);assert.equal(snap.free,30);assert.equal(snap.oracle_credits,2);
+ assert.equal(snap.points,0);assert.equal(snap.roulette_spins,0);assert.equal(snap.rewards_eligible,false);
 });
 
 test('Separate intentional attempts for the same pack can coexist, while retrying each creates no duplicate', async()=>{

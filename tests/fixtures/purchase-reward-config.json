@@ -1,0 +1,322 @@
+{
+  "bands": [
+    {
+      "currency": "EUR",
+      "min_amount": "0.00",
+      "max_amount": "26.99",
+      "roulette_level": 1,
+      "spins": 1,
+      "is_active": true
+    },
+    {
+      "currency": "EUR",
+      "min_amount": "27.00",
+      "max_amount": "36.99",
+      "roulette_level": 2,
+      "spins": 1,
+      "is_active": true
+    },
+    {
+      "currency": "EUR",
+      "min_amount": "49.00",
+      "max_amount": "98.99",
+      "roulette_level": 3,
+      "spins": 1,
+      "is_active": true
+    },
+    {
+      "currency": "EUR",
+      "min_amount": "99.00",
+      "max_amount": "99.00",
+      "roulette_level": 3,
+      "spins": 2,
+      "is_active": true
+    },
+    {
+      "currency": "USD",
+      "min_amount": "0.00",
+      "max_amount": "26.99",
+      "roulette_level": 1,
+      "spins": 1,
+      "is_active": true
+    },
+    {
+      "currency": "USD",
+      "min_amount": "27.00",
+      "max_amount": "36.99",
+      "roulette_level": 2,
+      "spins": 1,
+      "is_active": true
+    },
+    {
+      "currency": "USD",
+      "min_amount": "49.00",
+      "max_amount": "98.99",
+      "roulette_level": 3,
+      "spins": 1,
+      "is_active": true
+    },
+    {
+      "currency": "USD",
+      "min_amount": "99.00",
+      "max_amount": "99.00",
+      "roulette_level": 3,
+      "spins": 2,
+      "is_active": true
+    }
+  ],
+  "packageLevels": [
+    {
+      "package_source": "promotion",
+      "package_key": "248faa2a-d863-4174-b068-9619c434fe29",
+      "package_label": "30+20  MINUTOS DE REGALO · 25.00 EUR",
+      "package_level": 2
+    },
+    {
+      "package_source": "promotion",
+      "package_key": "9dd2c1f4-90d4-4551-a106-de47478d413a",
+      "package_label": "70+30  MINUTOS DE REGALO · 35.00 EUR",
+      "package_level": 2
+    },
+    {
+      "package_source": "promotion",
+      "package_key": "b82cebcd-4087-4b61-91d6-137bc848ffc0",
+      "package_label": "20+10 MINUTOS DE REGALO · 20.00 EUR",
+      "package_level": 1
+    },
+    {
+      "package_source": "standard",
+      "package_key": "pack_10",
+      "package_label": "10 minutos",
+      "package_level": 1
+    },
+    {
+      "package_source": "standard",
+      "package_key": "pack_120",
+      "package_label": "120 minutos",
+      "package_level": 3
+    },
+    {
+      "package_source": "standard",
+      "package_key": "pack_180",
+      "package_label": "180 minutos",
+      "package_level": 3
+    },
+    {
+      "package_source": "standard",
+      "package_key": "pack_20",
+      "package_label": "20 minutos",
+      "package_level": 1
+    },
+    {
+      "package_source": "standard",
+      "package_key": "pack_30",
+      "package_label": "30 minutos",
+      "package_level": 1
+    },
+    {
+      "package_source": "standard",
+      "package_key": "pack_40",
+      "package_label": "40 minutos",
+      "package_level": 2
+    },
+    {
+      "package_source": "standard",
+      "package_key": "pack_50",
+      "package_label": "50 minutos",
+      "package_level": 2
+    },
+    {
+      "package_source": "standard",
+      "package_key": "pack_60",
+      "package_label": "60 minutos",
+      "package_level": 2
+    },
+    {
+      "package_source": "standard",
+      "package_key": "pack_80",
+      "package_label": "80 minutos",
+      "package_level": 3
+    }
+  ],
+  "rankConfig": [
+    {
+      "rank_key": "bronce",
+      "label": "Bronce",
+      "min_spend": "0.01",
+      "purchase_coins": 0,
+      "coins_enabled": false,
+      "roulette_level": 5,
+      "roulette_spins": 1,
+      "roulette_enabled": false,
+      "is_active": false
+    },
+    {
+      "rank_key": "plata",
+      "label": "Plata",
+      "min_spend": "100.00",
+      "purchase_coins": 0,
+      "coins_enabled": false,
+      "roulette_level": 5,
+      "roulette_spins": 1,
+      "roulette_enabled": false,
+      "is_active": false
+    },
+    {
+      "rank_key": "oro",
+      "label": "Oro",
+      "min_spend": "500.00",
+      "purchase_coins": 0,
+      "coins_enabled": false,
+      "roulette_level": 5,
+      "roulette_spins": 1,
+      "roulette_enabled": false,
+      "is_active": false
+    },
+    {
+      "rank_key": "diamante",
+      "label": "Diamante",
+      "min_spend": "1000.00",
+      "purchase_coins": 500,
+      "coins_enabled": false,
+      "roulette_level": 5,
+      "roulette_spins": 1,
+      "roulette_enabled": false,
+      "is_active": false
+    }
+  ],
+  "matrix": [
+    {
+      "rank_key": "bronce",
+      "package_level": 1,
+      "enabled": true,
+      "coins": 50,
+      "oracle_credits": 0,
+      "roulette_level_1_spins": 1,
+      "roulette_level_2_spins": 0,
+      "roulette_level_3_spins": 0,
+      "roulette_special_spins": 0
+    },
+    {
+      "rank_key": "bronce",
+      "package_level": 2,
+      "enabled": true,
+      "coins": 150,
+      "oracle_credits": 0,
+      "roulette_level_1_spins": 0,
+      "roulette_level_2_spins": 1,
+      "roulette_level_3_spins": 0,
+      "roulette_special_spins": 0
+    },
+    {
+      "rank_key": "bronce",
+      "package_level": 3,
+      "enabled": true,
+      "coins": 300,
+      "oracle_credits": 2,
+      "roulette_level_1_spins": 0,
+      "roulette_level_2_spins": 0,
+      "roulette_level_3_spins": 1,
+      "roulette_special_spins": 0
+    },
+    {
+      "rank_key": "diamante",
+      "package_level": 1,
+      "enabled": true,
+      "coins": 500,
+      "oracle_credits": 0,
+      "roulette_level_1_spins": 1,
+      "roulette_level_2_spins": 0,
+      "roulette_level_3_spins": 0,
+      "roulette_special_spins": 0
+    },
+    {
+      "rank_key": "diamante",
+      "package_level": 2,
+      "enabled": true,
+      "coins": 500,
+      "oracle_credits": 1,
+      "roulette_level_1_spins": 0,
+      "roulette_level_2_spins": 1,
+      "roulette_level_3_spins": 0,
+      "roulette_special_spins": 0
+    },
+    {
+      "rank_key": "diamante",
+      "package_level": 3,
+      "enabled": true,
+      "coins": 500,
+      "oracle_credits": 3,
+      "roulette_level_1_spins": 0,
+      "roulette_level_2_spins": 0,
+      "roulette_level_3_spins": 1,
+      "roulette_special_spins": 1
+    },
+    {
+      "rank_key": "oro",
+      "package_level": 1,
+      "enabled": true,
+      "coins": 50,
+      "oracle_credits": 0,
+      "roulette_level_1_spins": 1,
+      "roulette_level_2_spins": 0,
+      "roulette_level_3_spins": 0,
+      "roulette_special_spins": 0
+    },
+    {
+      "rank_key": "oro",
+      "package_level": 2,
+      "enabled": true,
+      "coins": 150,
+      "oracle_credits": 0,
+      "roulette_level_1_spins": 0,
+      "roulette_level_2_spins": 1,
+      "roulette_level_3_spins": 0,
+      "roulette_special_spins": 0
+    },
+    {
+      "rank_key": "oro",
+      "package_level": 3,
+      "enabled": true,
+      "coins": 300,
+      "oracle_credits": 2,
+      "roulette_level_1_spins": 0,
+      "roulette_level_2_spins": 0,
+      "roulette_level_3_spins": 1,
+      "roulette_special_spins": 0
+    },
+    {
+      "rank_key": "plata",
+      "package_level": 1,
+      "enabled": true,
+      "coins": 50,
+      "oracle_credits": 0,
+      "roulette_level_1_spins": 1,
+      "roulette_level_2_spins": 0,
+      "roulette_level_3_spins": 0,
+      "roulette_special_spins": 0
+    },
+    {
+      "rank_key": "plata",
+      "package_level": 2,
+      "enabled": true,
+      "coins": 150,
+      "oracle_credits": 0,
+      "roulette_level_1_spins": 0,
+      "roulette_level_2_spins": 1,
+      "roulette_level_3_spins": 0,
+      "roulette_special_spins": 0
+    },
+    {
+      "rank_key": "plata",
+      "package_level": 3,
+      "enabled": true,
+      "coins": 300,
+      "oracle_credits": 2,
+      "roulette_level_1_spins": 0,
+      "roulette_level_2_spins": 0,
+      "roulette_level_3_spins": 1,
+      "roulette_special_spins": 0
+    }
+  ]
+}

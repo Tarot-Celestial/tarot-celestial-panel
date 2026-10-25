@@ -20,7 +20,7 @@ function harness(){
    testPayPalConnection:async()=>{authChecks++;return {environment:'sandbox',message:'OAuth OK'};},
    cancelPayPalLink:async(_,a)=>{a.status='cancelled';a.remote_status='CANCELLED_BY_STAFF';return a;},
    paypalRequest:async()=>{remoteCreates++;return {id:'ORDER10',status:'CREATED'};},approvalUrl:()=> 'https://www.sandbox.paypal.com/checkoutnow?token=ORDER10',reconcilePayPal:async(_,a)=>a};
- const packs={CLIENTE_MINUTE_PACKS:[{id:'pack_20',nombre:'20 minutos',priceUsd:22,totalMinutes:20,rouletteSpins:1}],getConfiguredMinutePack:k=>packs.CLIENTE_MINUTE_PACKS.find(p=>p.id===k)};
+ const packs={CLIENTE_MINUTE_PACKS:[{id:'pack_20',nombre:'20 minutos',priceUsd:22,totalMinutes:20,rouletteLevel:1,rouletteSpins:1}],getConfiguredMinutePack:k=>packs.CLIENTE_MINUTE_PACKS.find(p=>p.id===k)};
  const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src/app/api/crm/pagos/paypal/route.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,URL,Date,console,require:n=>({
  'crypto':require('node:crypto'),'next/server':{NextResponse:{json:(x,o)=>new Response(JSON.stringify(x),o)}},
  '@/lib/server/ruleta-access':{rouletteStaff:async req=>{if(req.headers.get('authorization')!=='Bearer good')throw new PayPalError('Forbidden',401);return {admin,worker};}},
@@ -48,6 +48,12 @@ test('Request ID cannot be reused for another worker or amount',async()=>{
 test('Manual amount validation and zero pack minutes',async()=>{
  const h=harness();for(const amount of [0,-1,5001,'no',1.234])assert.equal((await h.post({pack_id:'crm_manual_amount',manual_amount:amount})).status,400);
  assert.equal((await h.post({pack_id:'crm_manual_amount',manual_amount:'27,50'})).status,200);assert.equal(h.rows.get(id(10)).amount,27.5);assert.equal(h.rows.get(id(10)).purchase_payload.free,0);
+});
+test('Manual amount stays ineligible even when it exactly matches a regular package price',async()=>{
+ const h=harness();const response=await h.post({pack_id:'crm_manual_amount',manual_amount:22,pricing_mode:'regular',points:999,roulette_spins:5});assert.equal(response.status,200);
+ const payload=h.rows.get(id(10)).purchase_payload;assert.equal(payload.pack_id,'crm_manual_amount');assert.equal(payload.pricing_mode,'manual_amount');
+ assert.equal(payload.rewards_eligible,false);assert.equal(payload.points,0);assert.equal(payload.roulette_spins,0);assert.equal(payload.roulette_level,null);
+ assert.equal(payload.normal,0);assert.equal(payload.free,0);
 });
 test('Creation failure preserves operation and payload for retry; old request never creates a duplicate',async()=>{
  const h=harness();const real=h.paypal.paypalRequest;h.paypal.paypalRequest=async()=>{throw Error('timeout');};assert.equal((await h.post()).status,500);
