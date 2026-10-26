@@ -28,7 +28,10 @@ import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/t
 
 
 
-import { BarChart3, BookOpen, CalendarDays, ChevronDown, CreditCard, Flame, KeyRound, LayoutDashboard, Megaphone, Phone, ReceiptText, ShieldCheck, Share2, Users, Trophy, Sparkles } from "lucide-react";
+import { LayoutDashboard } from "lucide-react";
+import AdminSidebar from "@/components/admin/AdminSidebar";
+import { ADMIN_TAB_KEYS, type AdminTabKey } from "@/components/admin/admin-navigation";
+import { useAdminNavigation } from "@/components/admin/useAdminNavigation";
 import adminStyles from "./AdminPremium.module.css";
 import invoiceStyles from "./InvoiceEditor.module.css";
 
@@ -49,6 +52,7 @@ const ReservasPanel = nextDynamic(() => import("@/components/reservas/ReservasPa
 const ReservasGlobalWatcher = nextDynamic(() => import("@/components/reservas/ReservasGlobalWatcher"), { ssr:false });
 const DiarioPanel = nextDynamic(() => import("@/components/diario/DiarioPanel"), { ssr:false });
 const PaymentMotivationWatcher = nextDynamic(() => import("@/components/motivation/PaymentMotivationWatcher"), { ssr:false });
+const AdminWhatsAppCampaignsPanel = nextDynamic(() => import("@/components/admin/AdminWhatsAppCampaignsPanel"), { ssr:false });
 const AdminChatPanel = nextDynamic(() => import("@/components/admin/AdminChatPanel"), { ssr:false });
 const RendimientoPanel = nextDynamic(() => import("@/components/rendimiento/RendimientoPanel"), { ssr:false });
 const CaptacionPanel = nextDynamic(() => import("@/components/captacion/CaptacionPanel"), { ssr:false });
@@ -76,37 +80,6 @@ const SocialNetworksAdminPanel = nextDynamic(() => import("@/components/admin/So
 const SocialChannelAdminPanel = nextDynamic(() => import("@/components/admin/SocialChannelAdminPanel"), { ssr:false });
 
 
-const ADMIN_NAV = [
-  { key: "atlas", icon: Sparkles, label: "Atlas", kicker: "Tu mano derecha", tone: "goldPurple" },
-  { key: "dashboard", icon: LayoutDashboard, label: "Dashboard", kicker: "Control ejecutivo", tone: "gold" },
-  { key: "panel", icon: Phone, label: "Panel", kicker: "Extensiones y llamadas", tone: "cyan" },
-  { key: "facturas", icon: CreditCard, label: "Facturación", kicker: "Ingresos y cierre", tone: "emerald" },
-  { key: "client-balances", icon: Sparkles, label: "Giros y saldos", kicker: "Giros, Coins y minutos", tone: "gold" },
-  { key: "welldone", icon: BarChart3, label: "WELLDONE", kicker: "Minutos y coste CALL", tone: "goldPurple" },
-  { key: "rank-benefits", icon: Sparkles, label: "Beneficios de rangos y paquetes", kicker: "Coins y accesos por rango", tone: "goldPurple" },
-  { key: "finance-center", icon: ReceiptText, label: "Factura de gastos, ingresos y ganancias", kicker: "Control económico y pendientes", tone: "goldPurple" },
-  { key: "editor", icon: BookOpen, label: "Editor", kicker: "Factura abierta", tone: "violet" },
-  { key: "estadisticas", icon: BarChart3, label: "Estadísticas", kicker: "Rendimiento global", tone: "blue" },
-  { key: "equipos-marcador", icon: Flame, label: "Equipos marcador", kicker: "Fuego vs Agua", tone: "goldPurple" },
-  { key: "asistencia", icon: ShieldCheck, label: "Asistencia", kicker: "Control operativo", tone: "mint" },
-  { key: "incidencias", icon: ShieldCheck, label: "Incidencias", kicker: "Jornada y recuperaciones", tone: "goldPurple" },
-  { key: "trabajadores", icon: KeyRound, label: "Trabajadores", kicker: "Roles y accesos", tone: "purple" },
-  { key: "clientes", icon: Users, label: "Clientes", kicker: "Vista premium", tone: "violet" },
-  { key: "pagos-web", icon: CreditCard, label: "Pagos web", kicker: "Mollie", tone: "gold" },
-  { key: "precios-hoy", icon: Sparkles, label: "Precios de hoy", kicker: "Promociones y packs", tone: "goldPurple" },
-  { key: "rangos-clientes", icon: Trophy, label: "Rangos de clientes", kicker: "Gestión y auditoría", tone: "goldPurple" },
-  { key: "sistema-xp", icon: Sparkles, label: "Sistema de XP", kicker: "Niveles y recompensas", tone: "goldPurple" },
-  { key: "bonos-tarotistas", icon: Trophy, label: "Bonos tarotistas", kicker: "Retos y premios económicos", tone: "goldPurple" },
-  { key: "crm", icon: LayoutDashboard, label: "CRM", kicker: "Fichas y cobros", tone: "magenta" },
-  { key: "sorteo", icon: Trophy, label: "Sorteo", kicker: "Selección de ganadores", tone: "goldPurple" },
-  { key: "chat", icon: LayoutDashboard, label: "Chat", kicker: "Consultas de pago", tone: "indigo" },
-  { key: "captacion", icon: Megaphone, label: "Captación", kicker: "Leads y seguimiento", tone: "orange" },
-  { key: "campanas-clientes", icon: Megaphone, label: "Campañas", kicker: "Promociones y notificaciones", tone: "goldPurple" },
-  { key: "redes-sociales", icon: Share2, label: "Redes sociales", kicker: "Instagram y TikTok", tone: "goldPurple" },
-  { key: "rendimiento", icon: BarChart3, label: "Rendimiento", kicker: "Llamadas registradas", tone: "blue" },
-  { key: "reservas", icon: CalendarDays, label: "Reservas", kicker: "Agenda interna", tone: "gold" },
-  { key: "diario", icon: CalendarDays, label: "Diario", kicker: "Compras del día", tone: "cyan" },
-] as const;
 
 function monthKeyNow() {
   const d = new Date();
@@ -183,43 +156,7 @@ async function safeJson(res: Response) {
   }
 }
 
-type TabKey =
-  | "atlas"
-  | "dashboard"
-  | "panel"
-  | "facturas"
-  | "client-balances"
-  | "welldone"
-  | "rank-benefits"
-  | "finance-center"
-  | "editor"
-  | "estadisticas"
-  | "equipos-marcador"
-  | "asistencia"
-  | "incidencias"
-  | "trabajadores"
-  | "clientes"
-  | "pagos-web"
-  | "precios-hoy"
-  | "rangos-clientes"
-  | "clientes-web"
-  | "ruletas-clientes"
-  | "rituales-clientes"
-  | "bonos-tarotistas"
-  | "rangos-tarotistas"
-  | "sistema-xp"
-  | "sistema-xp-niveles"
-  | "crm"
-  | "sorteo"
-  | "chat"
-  | "captacion"
-  | "campanas-clientes"
-  | "redes-sociales"
-  | "redes-sociales-instagram"
-  | "redes-sociales-tiktok"
-  | "rendimiento"
-  | "reservas"
-  | "diario";
+type TabKey = AdminTabKey;
 
 function ackLabel(v: any) {
   const s = String(v || "pending");
@@ -343,11 +280,7 @@ function AdminPage() {
   const atlasWatchAlerts = atlasUnreadWatches(atlasWatches.watches);
   const [atlasOpenView, setAtlasOpenView] = useState<'chat' | 'supervision'>('chat');
   const [backgroundReady, setBackgroundReady] = useState(false);
-  const [tab, setTab] = useState<TabKey>("dashboard");
-  const [ranksMenuOpen, setRanksMenuOpen] = useState(false);
-  const [xpMenuOpen, setXpMenuOpen] = useState(false);
-  const [bonusesMenuOpen, setBonusesMenuOpen] = useState(false);
-  const [socialMenuOpen, setSocialMenuOpen] = useState(false);
+  const { tab, setTab, setWhatsAppDirty } = useAdminNavigation();
 
   useEffect(() => {
     const onOpenCrmTab = () => setTab("crm" as any);
@@ -375,12 +308,8 @@ function AdminPage() {
       return;
     }
 
-    const allowedTabs = new Set<string>([...ADMIN_NAV.map((item) => item.key), "clientes-web", "ruletas-clientes", "rituales-clientes", "sistema-xp-niveles", "rangos-tarotistas", "redes-sociales-instagram", "redes-sociales-tiktok"]);
-    if (allowedTabs.has(requestedTab as any)) {
+    if (ADMIN_TAB_KEYS.has(requestedTab)) {
       setTab(requestedTab as TabKey);
-      if (requestedTab === "rangos-clientes" || requestedTab === "clientes-web" || requestedTab === "ruletas-clientes" || requestedTab === "rituales-clientes") setRanksMenuOpen(true);
-      if (requestedTab === "sistema-xp" || requestedTab === "sistema-xp-niveles") setXpMenuOpen(true);
-      if (requestedTab === "redes-sociales" || requestedTab === "redes-sociales-instagram" || requestedTab === "redes-sociales-tiktok") setSocialMenuOpen(true);
     }
   }, [searchParams]);
 
@@ -1846,115 +1775,7 @@ function AdminPage() {
       <PaymentMotivationWatcher mode="admin" />
 
       <div className={`tc-shell tc-shell-premium ${adminStyles.adminShell}`}>
-        <aside className={`tc-sidebar ${adminStyles.sidebar}`}>
-          <div className={`tc-sidebar-card ${adminStyles.sidebarCard}`}>
-            <div className={adminStyles.sidebarHudLine} aria-hidden="true" />
-            <div className={`tc-sidebar-title ${adminStyles.sidebarTitle}`}><span>Navegación admin</span><small>Centro de mando</small></div>
-            <div className="tc-sidebar-nav">
-              {ADMIN_NAV.map((item) => {
-                const Icon = item.icon;
-                const rankGroup = item.key === "rangos-clientes";
-                const xpGroup = item.key === "sistema-xp";
-                const bonusesGroup = item.key === "bonos-tarotistas";
-                const socialGroup = item.key === "redes-sociales";
-                const active = rankGroup
-                  ? (tab === "rangos-clientes" || tab === "clientes-web" || tab === "ruletas-clientes" || tab === "rituales-clientes")
-                  : xpGroup
-                    ? (tab === "sistema-xp" || tab === "sistema-xp-niveles")
-                    : bonusesGroup
-                      ? (tab === "bonos-tarotistas" || tab === "rangos-tarotistas")
-                      : socialGroup
-                        ? (tab === "redes-sociales" || tab === "redes-sociales-instagram" || tab === "redes-sociales-tiktok")
-                        : tab === item.key;
-                const groupOpen = rankGroup ? ranksMenuOpen : xpGroup ? xpMenuOpen : bonusesGroup ? bonusesMenuOpen : socialGroup ? socialMenuOpen : false;
-                return (
-                  <div key={item.key} style={{ display: "grid", gap: 6 }}>
-                    <button
-                      className={`tc-sidebtn ${adminStyles.navItem} ${active ? `tc-sidebtn-active ${adminStyles.navItemActive}` : ""}`}
-                      data-tone={item.tone}
-                      onClick={() => {
-                        setTab(item.key as TabKey);
-                        if (rankGroup) setRanksMenuOpen(true);
-                        if (xpGroup) setXpMenuOpen(true);
-                        if (bonusesGroup) setBonusesMenuOpen(true);
-                        if (socialGroup) setSocialMenuOpen(true);
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                        <div className={`tc-chip ${adminStyles.navIcon}`}><Icon size={17} /></div>
-                        <div style={{ minWidth: 0 }}>
-                          <div className="tc-sidebtn-main">{item.label}</div>
-                          <div className="tc-sidebtn-kicker">{item.kicker}</div>
-                        </div>
-                      </div>
-                      {rankGroup || xpGroup || bonusesGroup || socialGroup ? (
-                        <span
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            if (rankGroup) setRanksMenuOpen((value) => !value);
-                            if (xpGroup) setXpMenuOpen((value) => !value);
-                            if (bonusesGroup) setBonusesMenuOpen((value) => !value);
-                            if (socialGroup) setSocialMenuOpen((value) => !value);
-                          }}
-                          className={`${adminStyles.navChevron} ${groupOpen ? adminStyles.navChevronOpen : ""}`}
-                          aria-label={rankGroup ? "Desplegar Rangos de clientes" : xpGroup ? "Desplegar Sistema de XP" : bonusesGroup ? "Desplegar Bonos tarotistas" : "Desplegar Redes sociales"}
-                        >
-                          <ChevronDown size={15} />
-                        </span>
-                      ) : <span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />}
-                    </button>
-                    {rankGroup && ranksMenuOpen ? (
-                      <div className={adminStyles.submenu}>
-                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "rangos-clientes" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("rangos-clientes")}>
-                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Gestión de rangos</div><div className="tc-sidebtn-kicker">Automático y temporal</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
-                        </button>
-                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "clientes-web" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("clientes-web")}>
-                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Clientes web</div><div className="tc-sidebtn-kicker">Accesos y cuentas</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
-                        </button>
-                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "ruletas-clientes" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("ruletas-clientes")}>
-                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Ruletas clientes</div><div className="tc-sidebtn-kicker">Premios y probabilidades</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
-                        </button>
-                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "rituales-clientes" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("rituales-clientes")}>
-                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Rituales clientes</div><div className="tc-sidebtn-kicker">Progreso y experiencias</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
-                        </button>
-                      </div>
-                    ) : null}
-                    {xpGroup && xpMenuOpen ? (
-                      <div className={adminStyles.submenu}>
-                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "sistema-xp" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("sistema-xp")}>
-                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Configuración XP</div><div className="tc-sidebtn-kicker">Acciones y experiencia</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
-                        </button>
-                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "sistema-xp-niveles" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("sistema-xp-niveles")}>
-                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Sistema de niveles telefonista</div><div className="tc-sidebtn-kicker">Niveles y recompensas</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
-                        </button>
-                      </div>
-                    ) : null}
-                    {bonusesGroup && bonusesMenuOpen ? (
-                      <div className={adminStyles.submenu}>
-                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "bonos-tarotistas" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("bonos-tarotistas")}>
-                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Bonos y retos</div><div className="tc-sidebtn-kicker">Premios económicos</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
-                        </button>
-                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "rangos-tarotistas" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("rangos-tarotistas")}>
-                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Rangos tarotistas</div><div className="tc-sidebtn-kicker">C · B · A · S</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
-                        </button>
-                      </div>
-                    ) : null}
-                    {socialGroup && socialMenuOpen ? (
-                      <div className={adminStyles.submenu}>
-                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "redes-sociales-instagram" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("redes-sociales-instagram")}>
-                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Instagram</div><div className="tc-sidebtn-kicker">Posts · Reels · Stories</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
-                        </button>
-                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "redes-sociales-tiktok" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("redes-sociales-tiktok")}>
-                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">TikTok</div><div className="tc-sidebtn-kicker">Vídeos · Fotos · Programación</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </aside>
+        <AdminSidebar activeTab={tab} onTabChange={setTab} />
 
         <main className={`tc-main ${adminStyles.main}`}>
           <section className={`tc-admin-toolbar ${adminStyles.toolbar}`}>
@@ -3079,6 +2900,7 @@ function AdminPage() {
           )}
 
           {tab === "chat" && <AdminChatPanel />}
+          {tab === "whatsapp" && <AdminWhatsAppCampaignsPanel onDirtyChange={setWhatsAppDirty} />}
           {tab === "sorteo" && <RaffleWinnerAdmin />}
 
           {tab === "captacion" && (
