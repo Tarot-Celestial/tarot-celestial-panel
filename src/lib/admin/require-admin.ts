@@ -62,7 +62,9 @@ export async function requireAdmin(req: Request) {
   if (!me) return { ok: false as const, error: "NO_WORKER" as const };
   if (me.role !== "admin" || me.is_active === false) return { ok: false as const, error: "FORBIDDEN" as const };
 
-  return { ok: true as const, admin, me };
+  // Keep the verified Auth identity separate from a worker found by the legacy
+  // email fallback. Sensitive mutations must never act as a stale linked user.
+  return { ok: true as const, admin, me, authUserId: uid };
 }
 
 export function normalizeTeam(team: any): "fuego" | "agua" | null {

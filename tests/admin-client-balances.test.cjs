@@ -26,11 +26,11 @@ test('UI displays real balances and retries uncertain saves with the same operat
  await flush(()=>view.root.findAllByType('form')[0].props.onSubmit({preventDefault(){}}));
  await flush(()=>view.root.findAllByType('button').find(b=>text(b).includes('Ana Prueba')).props.onClick());
  assert.ok(text(view.toJSON()).includes('87'));assert.ok(text(view.toJSON()).includes('19'));
- await flush(()=>view.root.findByType('textarea').props.onChange({target:{value:'Reposición solicitada'}}));
- await flush(()=>view.root.findAllByType('form')[1].props.onSubmit({preventDefault(){}}));
- assert.equal(view.root.findByType('fieldset').props.disabled,true);
- fail=false;await flush(()=>view.root.findAllByType('form')[1].props.onSubmit({preventDefault(){}}));
- assert.equal(posts.length,2);assert.equal(posts[0].operation_id,posts[1].operation_id);assert.equal(view.root.findByType('fieldset').props.disabled,false);assert.ok(text(view.toJSON()).includes('Ajuste guardado'));
+ await flush(()=>view.root.findByProps({'aria-label':'Ajustar giros'}).findByType('textarea').props.onChange({target:{value:'Reposición solicitada'}}));
+ await flush(()=>view.root.findByProps({'aria-label':'Ajustar giros'}).props.onSubmit({preventDefault(){}}));
+ assert.equal(view.root.findByProps({'aria-label':'Ajustar giros'}).findByType('fieldset').props.disabled,true);
+ fail=false;await flush(()=>view.root.findByProps({'aria-label':'Ajustar giros'}).props.onSubmit({preventDefault(){}}));
+ assert.equal(posts.length,2);assert.equal(posts[0].operation_id,posts[1].operation_id);assert.equal(view.root.findByProps({'aria-label':'Ajustar giros'}).findByType('fieldset').props.disabled,false);assert.ok(text(view.toJSON()).includes('Ajuste guardado'));
  act(()=>view.unmount());
 });
 
