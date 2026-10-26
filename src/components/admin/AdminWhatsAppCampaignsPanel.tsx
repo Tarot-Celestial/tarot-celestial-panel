@@ -7,7 +7,30 @@ import { blankWhatsAppDraftSlots, parseWhatsAppContactLines, renderWhatsAppDraft
 import styles from "./AdminWhatsAppCampaignsPanel.module.css";
 
 async function request(body?: object | FormData, signal?: AbortSignal) {
-  const { data } = await supabaseBrowser().auth.getSession();
+  signal?.throwIfAborted();
+  const readSession = () => supabaseBrowser().auth.getSession();
+  // The screen's deadline also covers an SDK refresh waiting on its session lock.
+  // Stop waiting without logging out or attempting to cancel the shared SDK refresh.
+  const { data } = await new Promise<Awaited<ReturnType<typeof readSession>>>((resolve, reject) => {
+    let settled = false;
+    const finish = (complete: () => void) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      complete();
+    };
+    const onAbort = () => finish(() => reject(signal?.reason || new DOMException("La operación se canceló.", "AbortError")));
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) { onAbort(); return; }
+    try {
+      readSession().then(
+        result => finish(() => resolve(result)),
+        error => finish(() => reject(error)),
+      );
+    } catch (error) { finish(() => reject(error)); }
+  });
+  // An abort can arrive after session resolution but before this continuation.
+  signal?.throwIfAborted();
   if (!data.session) throw new Error("Inicia sesión con tu cuenta de administración.");
   const upload = body instanceof FormData;
   const response = await fetch(`/api/admin/whatsapp-campaign-drafts${upload ? "/image" : ""}`, {

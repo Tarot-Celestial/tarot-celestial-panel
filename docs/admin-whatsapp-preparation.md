@@ -31,6 +31,6 @@ El [aviso oficial de Twilio sobre destinos de Estados Unidos](https://www.twilio
 
 ## Validación y límites
 
-42 comprobaciones automatizadas cubren navegación existente, salida con cambios, autorización, aislamiento por administrador, versiones concurrentes, reintentos, importación, permisos de almacenamiento y validación de imágenes. La integración SQL usa PGlite con la migración completa; no reproduce dos conexiones PostgreSQL simultáneas. La maqueta visual usa datos simulados y no prueba autenticación real.
+48 comprobaciones automatizadas cubren navegación existente, salida con cambios, autorización, aislamiento por administrador, versiones concurrentes, reintentos, importación, permisos de almacenamiento y validación de imágenes. Incluyen seis pruebas del límite de espera de sesión: una sesión bloqueada se libera al cancelar, sus respuestas tardías no inician peticiones y se retiran los listeners. La integración SQL usa PGlite con la migración completa; no reproduce dos conexiones PostgreSQL simultáneas. La maqueta visual usa datos simulados y no prueba autenticación real.
 
 La migración añade dos tablas privadas, cinco funciones de servidor y un bucket de imágenes. No cambia CRM, saldos, giros, compras ni colas de Central. Para desactivar conservando borradores se pueden revocar los permisos EXECUTE de las nuevas funciones a service_role y retirar el acceso de navegación.
