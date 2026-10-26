@@ -12,6 +12,7 @@ let client: SupabaseClient | null = null;
 let clienteClient: SupabaseClient | null = null;
 
 const SESSION_REFRESH_MARGIN_MS = 60_000;
+const AUTH_REQUEST_TIMEOUT_MS = 10_000;
 
 function sessionNeedsRefresh(session: any): boolean {
   const expiresAt = Number(session?.expires_at || 0) * 1000;
@@ -29,27 +30,39 @@ function browserFetchForProject(projectUrl: string): typeof fetch {
     const request = input instanceof Request ? input : null;
     const target = new URL(request?.url || String(input));
     const method = String(init?.method || request?.method || "GET").toUpperCase();
-    if (typeof window === "undefined" || target.origin !== projectOrigin || target.pathname !== "/auth/v1/user" || method !== "GET") {
+    if (typeof window === "undefined" || target.origin !== projectOrigin || !target.pathname.startsWith("/auth/v1/")) {
       return fetch(input, init);
     }
 
     // setSession verifies the user through the SDK. Keep that verification on
     // the panel's origin; only this exact Auth read is delegated to the server.
+    const verifyUser = target.pathname === "/auth/v1/user" && method === "GET";
     const headers = new Headers(init?.headers || request?.headers);
     const controller = new AbortController();
     const upstreamSignal = init?.signal || request?.signal;
     const abort = () => controller.abort();
     if (upstreamSignal?.aborted) abort();
     else upstreamSignal?.addEventListener("abort", abort, { once: true });
-    const timer = setTimeout(abort, 10000);
+    // Initialization can refresh a stored session before setSession/getSession
+    // settle. Bound that network request too, not just user verification. A
+    // fetch abort remains retryable in Auth, so an outage never signs out the
+    // user. The SDK's 30s refresh retry window plus this 10s attempt deadline
+    // also bounds the complete refresh operation (under 40s).
+    const timer = setTimeout(abort, AUTH_REQUEST_TIMEOUT_MS);
     try {
-      return await fetch("/api/auth/user", {
+      const response = verifyUser ? await fetch("/api/auth/user", {
         method: "GET",
         headers: { Authorization: headers.get("authorization") || "" },
         credentials: "same-origin",
         cache: "no-store",
         signal: controller.signal,
-      });
+      }) : await fetch(input, { ...init, signal: controller.signal });
+      // Auth responses are small JSON documents. Keep cancellation active
+      // through the body, otherwise headers followed by a stalled body can
+      // still hold the SDK's initialization indefinitely. Return the original
+      // response with its headers/status unchanged for the SDK to interpret.
+      if (response.body) await response.clone().arrayBuffer();
+      return response;
     } finally {
       clearTimeout(timer);
       upstreamSignal?.removeEventListener("abort", abort);
