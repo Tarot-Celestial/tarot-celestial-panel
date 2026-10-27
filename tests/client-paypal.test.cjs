@@ -37,7 +37,7 @@ test('Nine purchased minute packs use the exact normal/FREE split, independent o
 function routeHarness() {
   const rows = new Map(), providerRequests = [], remoteOrders = new Map(), reads = [];
   const auth = { user: { id: id(1) }, cliente: { id: id(2) } };
-  const config = { environment: 'sandbox', origin: 'https://panel.test' };
+  const config = { account: 'legacy', environment: 'sandbox', origin: 'https://panel.test' };
   const state = { enabled: true, settingsError: false, failCreate: false, promotion: null };
   const promotions = load('src/lib/server/client-promotions.ts', { '@/lib/ruleta': roulette, '@/lib/server/rank-benefits': {}, '@/lib/server/cliente-platform': {} });
   const admin = { from(table) {
@@ -79,6 +79,8 @@ function routeHarness() {
   class RouletteAccessError extends Error { constructor(message, status = 401) { super(message); this.status = status; } }
   const paypal = {
     PAYPAL_TABLE: 'crm_paypal_orders', PayPalError, paypalConfig: () => config, clientPayPalOriginAllowed,
+    paypalPublicOrigin: () => config.origin, paypalAccountForNewClientPurchase: () => 'legacy',
+    paypalConfigForAttempt: attempt => { if (attempt.environment !== config.environment) throw new PayPalError('Wrong environment', 409); return config; },
     approvalUrl: order => 'https://www.sandbox.paypal.com/checkoutnow?token=' + order.id,
     paypalRequest: async (url, payload, requestId) => {
       providerRequests.push({ url, payload: clean(payload), requestId });
@@ -292,8 +294,10 @@ function cardRouteHarness(kind = 'client_purchase') {
     return query;
   } };
   class PayPalError extends Error { constructor(message, status = 502) { super(message); this.status = status; } }
-  const config = { origin: 'https://panel.test', environment: 'sandbox', client: 'fixture-public-id' };
+  const config = { account: 'legacy', origin: 'https://panel.test', environment: 'sandbox', client: 'fixture-public-id' };
   const helpers = { PAYPAL_TABLE: 'crm_paypal_orders', PayPalError, paypalConfig: () => config, clientPayPalOriginAllowed, paypalAdmin: () => admin,
+    paypalPublicOrigin: () => config.origin,
+    paypalConfigForAttempt: attempt => { if (attempt.environment !== config.environment) throw new PayPalError('Wrong environment', 409); return config; },
     reconcilePayPal: async (_admin, attempt, capture) => { calls.push({ action: 'reconcile', capture }); return attempt; },
     cancelPayPalLink: async (_admin, attempt, actor) => { calls.push({ action: 'cancel', actor }); Object.assign(attempt, { status: 'cancelled', remote_status: 'CANCELLED_BY_CLIENT' }); return attempt; },
     validateOrder: () => {}, paypalRequest: async url => url.includes('generate-token') ? { client_token: 'fixture-client-token' } : { id: 'ORDER10', status: 'CREATED' },

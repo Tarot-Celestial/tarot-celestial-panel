@@ -16,7 +16,9 @@ function harness(){
    }};return q;
  }};
  class PayPalError extends Error{constructor(m,status=502){super(m);this.status=status;}}
- const paypal={PAYPAL_TABLE:'crm_paypal_orders',PayPalError,paypalConfig:()=>({environment:'sandbox',origin:'https://panel.test'}),
+ const config={account:'legacy',environment:'sandbox',origin:'https://panel.test'};
+ const paypal={PAYPAL_TABLE:'crm_paypal_orders',PayPalError,paypalConfig:()=>config,
+   paypalConfigForAttempt:a=>{if(a.environment!==config.environment)throw new PayPalError('Wrong environment',409);return config;},
    testPayPalConnection:async()=>{authChecks++;return {environment:'sandbox',message:'OAuth OK'};},
    cancelPayPalLink:async(_,a)=>{a.status='cancelled';a.remote_status='CANCELLED_BY_STAFF';return a;},
    paypalRequest:async()=>{remoteCreates++;return {id:'ORDER10',status:'CREATED'};},approvalUrl:()=> 'https://www.sandbox.paypal.com/checkoutnow?token=ORDER10',reconcilePayPal:async(_,a)=>a};

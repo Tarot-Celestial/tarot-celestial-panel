@@ -4,7 +4,7 @@ import { rouletteStaff } from "@/lib/server/ruleta-access";
 import { CLIENTE_MINUTE_PACKS, getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
 import { splitMinutes } from "@/lib/server/cliente-platform";
 import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
-import { PAYPAL_TABLE, PayPalError, paypalConfig, paypalRequest, approvalUrl, reconcilePayPal, testPayPalConnection, cancelPayPalLink } from "@/lib/server/paypal-crm";
+import { PAYPAL_TABLE, PayPalError, paypalConfig, paypalConfigForAttempt, paypalRequest, approvalUrl, reconcilePayPal, testPayPalConnection, cancelPayPalLink } from "@/lib/server/paypal-crm";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
@@ -18,7 +18,7 @@ function fail(error: any) { return NextResponse.json({ ok: false, error: error i
 export async function GET(req: Request) {
   try {
     const { admin, worker } = await rouletteStaff(req);
-    const config = paypalConfig();
+    const config = paypalConfig("legacy");
     const params = new URL(req.url).searchParams;
     let query = admin.from(PAYPAL_TABLE).select("*").eq("environment", config.environment).eq("checkout_kind", "crm_collection");
     if (worker.role !== "admin") query = query.eq("worker_id", worker.id);
@@ -51,7 +51,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     // Staff-only OAuth check: no purchase, no WhatsApp, no database mutations.
     if (body.action === "test_connection") return NextResponse.json({ ok: true, ...await testPayPalConnection() }, { headers });
-    const config = paypalConfig();
+    const config = paypalConfig("legacy");
     if (body.action === "cancel") {
       if (!uuid.test(body.attempt_id || "")) throw new PayPalError("Cobro no válido.", 400);
       let query = admin.from(PAYPAL_TABLE).select("*").eq("id", body.attempt_id).eq("environment", config.environment).eq("checkout_kind", "crm_collection");
@@ -98,14 +98,15 @@ export async function POST(req: Request) {
       attempt = saved.data;
     }
     if (attempt.worker_id !== worker.id || attempt.cliente_id !== client.id || attempt.pack_id !== body.pack_id || Number(attempt.amount) !== amount || attempt.environment !== config.environment) throw new PayPalError("La operación pertenece a otro cobro. No se ha creado un pago nuevo.", 409);
+    const attemptConfig = paypalConfigForAttempt(attempt);
     if (!attempt.order_id) {
       // PayPal retains request IDs for six hours. Never create again after that window.
       if (Date.now() - Date.parse(attempt.created_at) > 5 * 60 * 60 * 1000) throw new PayPalError("Creación interrumpida antigua. Administración debe revisar PayPal antes de generar otro cobro.", 409);
-      const order = await paypalRequest("/v2/checkout/orders", attempt.create_payload, `create-${id}`);
+      const order = await paypalRequest("/v2/checkout/orders", attempt.create_payload, `create-${id}`, attemptConfig.account);
       if (!/^[A-Z0-9]+$/.test(order.id || "")) throw new PayPalError("PayPal devolvió una referencia inválida.");
       // Existing wallet attempts retain their original payload and approval link.
       const url = attempt.create_payload?.payment_source?.card
-        ? `${config.origin}/pago-tarjeta?ref=${attempt.public_token}` : approvalUrl(order);
+        ? `${config.origin}/pago-tarjeta?ref=${attempt.public_token}` : approvalUrl(order, attemptConfig.account);
       const saved = await admin.from(PAYPAL_TABLE).update({ order_id: order.id, approval_url: url, remote_status: order.status }).eq("id", id).is("order_id", null);
       if (saved.error) throw saved.error;
       const current = await admin.from(PAYPAL_TABLE).select("*").eq("id", id).single();

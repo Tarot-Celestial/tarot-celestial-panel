@@ -16,7 +16,7 @@ const cardPath = '/pago-tarjeta?ref=' + ref;
 const baseSession = { amount: 26, currency: 'EUR', description: '30 minutos', status: 'pending', remote_status: 'CREATED', can_pay: true,
   client_id: 'fixture-client', client_token: 'fixture-client-token', environment: 'sandbox', checkout_kind: 'client_purchase',
   attempt_id: attemptId, can_cancel: true, credited: false, purchase_summary: { packName: '30 minutos', totalMinutes: 30, normalMinutes: 20, freeMinutes: 10 } };
-const fakeSDK = `window.tcCardPayPal={CardFields(options){
+const fakeSDK = `window[document.currentScript.dataset.namespace]={CardFields(options){
  const field=()=>({render:async selector=>{document.querySelector(selector).textContent='Campo simulado de prueba';},close(){}});
  return {isEligible:()=>true,NameField:field,NumberField:field,ExpiryField:field,CVVField:field,
  getState:async()=>({isFormValid:true}),submit:async()=>{await options.createOrder();await options.onApprove();}};

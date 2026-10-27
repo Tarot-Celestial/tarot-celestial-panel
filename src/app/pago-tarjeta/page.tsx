@@ -98,6 +98,16 @@ export default function CardPayment() {
   useEffect(() => {
     alive.current = true;
     let stopped = false, script: HTMLScriptElement | null = null;
+    // A removed script can still finish loading. Give every effect its own SDK
+    // global so an earlier account/token can never replace the current SDK.
+    const sdkNamespace = `tcCardPayPal_${window.crypto.randomUUID().replace(/-/g, "")}`;
+    const sdkWindow = window as unknown as Record<string, PayPalSDK | undefined>;
+    let sdkDiscarded = false, finishSdkWait: (() => void) | undefined;
+    function discardSdk() {
+      sdkDiscarded = true;
+      script?.remove();
+      delete sdkWindow[sdkNamespace];
+    }
     const rendered: Field[] = [];
     ref.current = new URLSearchParams(window.location.search).get("ref") || "";
     async function initialize() {
@@ -106,20 +116,31 @@ export default function CardPayment() {
       if (stopped) return;
       setSession(data);
       if (!data.can_pay) { showResult(data); return; }
+      if (!data.client_id || !data.client_token) throw new Error("El formulario de tarjeta no está disponible. Contacta con tu central.");
       await new Promise<void>((resolve, reject) => {
         script = document.createElement("script");
         const params = new URLSearchParams({ "client-id": data.client_id!, components: "card-fields", currency: data.currency, intent: "capture" });
         script.src = `https://www.paypal.com/sdk/js?${params}`;
-        script.dataset.namespace = "tcCardPayPal";
+        script.dataset.namespace = sdkNamespace;
         script.dataset.clientToken = data.client_token!;
         script.async = true;
-        const timer = window.setTimeout(() => reject(new Error("PayPal no ha cargado. Revisa tu conexión y vuelve a abrir el enlace.")), 25000);
-        script.onload = () => { clearTimeout(timer); resolve(); };
-        script.onerror = () => { clearTimeout(timer); reject(new Error("No se pudo cargar el formulario seguro de PayPal.")); };
+        const timer = window.setTimeout(() => {
+          discardSdk();
+          reject(new Error("PayPal no ha cargado. Revisa tu conexión y vuelve a abrir el enlace."));
+        }, 25000);
+        finishSdkWait = () => { clearTimeout(timer); resolve(); };
+        script.onload = () => {
+          if (stopped || sdkDiscarded) delete sdkWindow[sdkNamespace];
+          finishSdkWait?.();
+        };
+        script.onerror = () => {
+          clearTimeout(timer); discardSdk();
+          reject(new Error("No se pudo cargar el formulario seguro de PayPal."));
+        };
         document.head.appendChild(script);
       });
       if (stopped) return;
-      const sdk = (window as unknown as { tcCardPayPal?: PayPalSDK }).tcCardPayPal;
+      const sdk = sdkWindow[sdkNamespace];
       if (!sdk?.CardFields) throw new Error("El formulario de tarjeta no está disponible. Contacta con tu central.");
       const card = sdk.CardFields({
         style: { input: { "font-size": "16px", "font-family": "Arial, sans-serif", color: "#211b30" }, ".invalid": { color: "#a32138" } },
@@ -140,8 +161,8 @@ export default function CardPayment() {
       for (const [field, selector] of entries) { rendered.push(field); await field.render(selector); if (stopped) { field.close?.(); return; } }
       setMessage(""); setPhase("ready");
     }
-    void initialize().catch((error: Error) => { if (!stopped) { setPhase("unavailable"); setMessage(error.message); } });
-    return () => { stopped = true; alive.current = false; fields.current = null; rendered.forEach(field => field.close?.()); script?.remove(); };
+    void initialize().catch((error: Error) => { discardSdk(); if (!stopped) { setPhase("unavailable"); setMessage(error.message); } });
+    return () => { stopped = true; alive.current = false; fields.current = null; rendered.forEach(field => field.close?.()); discardSdk(); finishSdkWait?.(); };
   }, []);
 
   async function pay(event: React.FormEvent) {
