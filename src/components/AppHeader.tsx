@@ -107,8 +107,8 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
       return;
     }
     setEstado("online");
-    setStartTime(attendance.lastEventAt ? new Date(attendance.lastEventAt).getTime() : Date.now());
-  }, [attendance.lastEventAt, attendance.online, attendance.status]);
+    setStartTime(attendance.sessionStartedAt ? new Date(attendance.sessionStartedAt).getTime() : attendance.lastEventAt ? new Date(attendance.lastEventAt).getTime() : Date.now());
+  }, [attendance.sessionStartedAt, attendance.lastEventAt, attendance.online, attendance.status]);
 
   async function loadNotifications() {
     if (!notifUserId) return;
@@ -246,6 +246,10 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
   async function cambiarEstado(nuevo: "online" | "offline" | "break") {
     try {
       setEstadoLoading(true);
+      if (role === 'admin' || role === 'central') {
+        await attendance.changeAttendance(nuevo === 'break' ? 'break_start' : nuevo);
+        return;
+      }
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
       if (!token) throw new Error("SESSION_REQUIRED");
@@ -288,7 +292,7 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ event_type: "offline" }),
+          body: JSON.stringify({ event_type: "offline", session_id: attendance.sessionId }),
         }).catch(() => null);
       }
       window.dispatchEvent(new CustomEvent("tc-attendance-changed"));

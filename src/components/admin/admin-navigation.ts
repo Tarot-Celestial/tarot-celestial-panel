@@ -21,6 +21,7 @@ export const ADMIN_NAV = [
   { key: "finance-center", icon: ReceiptText, label: "Factura de gastos, ingresos y ganancias", kicker: "Control económico y pendientes", tone: "goldPurple" },
   { key: "editor", icon: BookOpen, label: "Editor", kicker: "Factura abierta", tone: "violet" },
   { key: "estadisticas", icon: BarChart3, label: "Estadísticas", kicker: "Rendimiento global", tone: "blue" },
+  { key: "estadisticas-centrales", icon: Users, label: "Estadísticas de centrales", kicker: "Progreso, jornada y extras", tone: "goldPurple" },
   { key: "equipos-marcador", icon: Flame, label: "Equipos marcador", kicker: "Fuego vs Agua", tone: "goldPurple" },
   { key: "asistencia", icon: ShieldCheck, label: "Asistencia", kicker: "Control operativo", tone: "mint" },
   { key: "incidencias", icon: ShieldCheck, label: "Incidencias", kicker: "Jornada y recuperaciones", tone: "goldPurple" },
@@ -66,7 +67,7 @@ export const ADMIN_TAB_KEYS = new Set<string>(ADMIN_NAV.flatMap((item) => [
 ]));
 
 export const ADMIN_NAV_SECTIONS = [
-  { key: "resumen", title: "Resumen", keys: ["dashboard", "atlas", "estadisticas"] },
+  { key: "resumen", title: "Resumen", keys: ["dashboard", "atlas", "estadisticas", "estadisticas-centrales"] },
   { key: "operativa", title: "Operativa diaria", keys: ["panel", "reservas", "diario", "rendimiento"] },
   { key: "clientas", title: "Clientas y seguimiento", keys: ["clientes", "crm", "captacion", "rangos-clientes"] },
   { key: "comunicacion", title: "Comunicación", keys: ["whatsapp", "chat", "campanas-clientes", "redes-sociales"] },

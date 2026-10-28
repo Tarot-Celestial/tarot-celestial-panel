@@ -12,6 +12,7 @@ import {
 } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { usePathname } from "next/navigation";
+import { isPanelPath, PANEL_HEARTBEAT_MS } from '@/lib/attendance/panel-session';
 
 export type OpsCounters = {
   parking: number;
@@ -26,6 +27,16 @@ export type OpsAttendance = {
   lastEventAt: string | null;
   error: string | null;
   refreshedAt: string | null;
+  workerId: string | null;
+  sessionId: string | null;
+  sessionStartedAt: string | null;
+  lastActivityAt: string | null;
+  lastManualActivityAt: string | null;
+  expiresAt: string | null;
+  closeReason: string | null;
+  serverNow: string | null;
+  callActive: boolean;
+  callProtectionAvailable: boolean | null;
 };
 
 
@@ -63,7 +74,9 @@ export type OpsContextValue = {
   presences: OpsListState<OpsPresenceRow>;
   expected: OpsListState<OpsExpectedRow>;
   refreshCounters: () => void;
-  refreshAttendance: () => void;
+  refreshAttendance: () => Promise<void>;
+  changeAttendance: (eventType: 'online' | 'offline' | 'break_start') => Promise<void>;
+  keepAttendanceActive: () => Promise<void>;
   refreshPresences: () => void;
   refreshExpected: () => void;
 };
@@ -81,7 +94,22 @@ const DEFAULT_ATTENDANCE: OpsAttendance = {
   lastEventAt: null,
   error: null,
   refreshedAt: null,
+  workerId: null, sessionId: null, sessionStartedAt: null, lastActivityAt: null,
+  lastManualActivityAt: null, expiresAt: null, closeReason: null, serverNow: null,
+  callActive: false, callProtectionAvailable: null,
 };
+
+function attendancePayload(json: any): OpsAttendance {
+  return {
+    loading: false, online: !!json.online, status: String(json.status || 'offline'),
+    lastEventAt: json.last_event_at || null, error: null, refreshedAt: new Date().toISOString(),
+    workerId: json.worker?.id || null, sessionId: json.session_id || null,
+    sessionStartedAt: json.session_started_at || null, lastActivityAt: json.last_activity_at || null,
+    lastManualActivityAt: json.last_manual_activity_at || null, expiresAt: json.expires_at || null,
+    closeReason: json.close_reason || null, serverNow: json.server_now || null,
+    callActive: json.call_active === true, callProtectionAvailable: json.call_protection_available ?? null,
+  };
+}
 
 function defaultListState<T>(): OpsListState<T> {
   return {
@@ -129,11 +157,63 @@ export function OpsProvider({ children }: { children: ReactNode }) {
   const mountedRef = useRef(false);
   const parkingInFlightRef = useRef(false);
   const leadsInFlightRef = useRef(false);
-  const attendanceInFlightRef = useRef(false);
+  const attendanceInFlightRef = useRef<symbol | null>(null);
   const presencesInFlightRef = useRef(false);
   const expectedInFlightRef = useRef(false);
   const parkingDisabledUntilRef = useRef(0);
   const lastVisibleRefreshRef = useRef(0);
+  const attendanceRef = useRef(attendance);
+  attendanceRef.current = attendance;
+  const activityRef = useRef(0);
+  const clockOffsetRef = useRef(0);
+  const heartbeatInFlightRef = useRef<Promise<boolean> | null>(null);
+  const attendanceUserRef = useRef<string | null>(null);
+  const authEpochRef = useRef(0);
+  const transitionRef = useRef(0);
+  const stateRevisionRef = useRef(0);
+  const lastResponseAtRef = useRef(0);
+  const resetAttendanceUser = useCallback((userId: string | null) => {
+    if (attendanceUserRef.current === userId) return;
+    attendanceUserRef.current = userId;
+    authEpochRef.current++;
+    transitionRef.current++;
+    stateRevisionRef.current++;
+    lastResponseAtRef.current = 0;
+    activityRef.current = 0;
+    clockOffsetRef.current = 0;
+    attendanceInFlightRef.current = null;
+    heartbeatInFlightRef.current = null;
+    attendanceRef.current = DEFAULT_ATTENDANCE;
+    setAttendance(DEFAULT_ATTENDANCE);
+  }, []);
+  const getAttendanceAuth = useCallback(async () => {
+    const epoch = authEpochRef.current;
+    const { data } = await supabaseBrowser().auth.getSession();
+    // An auth event while this read was pending makes its result obsolete.
+    if (epoch !== authEpochRef.current) return null;
+    resetAttendanceUser(data.session?.user?.id || null);
+    if (!data.session?.access_token) return null;
+    return { token: data.session.access_token, epoch: authEpochRef.current };
+  }, [resetAttendanceUser]);
+  useEffect(() => {
+    const sb = supabaseBrowser();
+    const subscription = sb.auth.onAuthStateChange?.((_event, session) => {
+      resetAttendanceUser(session?.user?.id || null);
+    }).data.subscription;
+    return () => subscription?.unsubscribe();
+  }, [resetAttendanceUser]);
+  const applyAttendance = useCallback((json: any) => {
+    const next = attendancePayload(json);
+    const serverAt = Date.parse(next.serverNow || '');
+    if (Number.isFinite(serverAt) && serverAt < lastResponseAtRef.current) return;
+    if (Number.isFinite(serverAt)) lastResponseAtRef.current = serverAt;
+    stateRevisionRef.current++;
+    if (Number.isFinite(serverAt)) clockOffsetRef.current = serverAt-Date.now();
+    const manual = Date.parse(next.lastManualActivityAt || '') || 0;
+    activityRef.current = attendanceRef.current.sessionId === next.sessionId ? Math.max(activityRef.current, manual) : manual;
+    attendanceRef.current = next;
+    setAttendance(next);
+  }, []);
 
   const fetchParking = useCallback(async () => {
     if (!ASTERISK_ENABLED) {
@@ -206,61 +286,148 @@ export function OpsProvider({ children }: { children: ReactNode }) {
 
   const fetchAttendance = useCallback(async () => {
     if (attendanceInFlightRef.current) return;
-    attendanceInFlightRef.current = true;
+    const requestId = Symbol('attendance-read');
+    attendanceInFlightRef.current = requestId;
+    let epoch = authEpochRef.current;
+    let transition = transitionRef.current;
+    let revision = stateRevisionRef.current;
+    const stillCurrent = () => mountedRef.current && epoch === authEpochRef.current && transition === transitionRef.current;
+    const fail = (error: string) => {
+      if (!stillCurrent() || revision !== stateRevisionRef.current) return;
+      setAttendance(previous => ({ ...previous, loading: false, error, refreshedAt: new Date().toISOString() }));
+    };
 
     try {
-      const token = await getAccessToken();
-      if (!mountedRef.current) return;
-
-      if (!token) {
-        setAttendance({ ...DEFAULT_ATTENDANCE, refreshedAt: new Date().toISOString() });
-        return;
-      }
+      const auth = await getAttendanceAuth();
+      if (!auth || !mountedRef.current) return;
+      epoch = auth.epoch;
+      transition = transitionRef.current;
+      revision = stateRevisionRef.current;
 
       setAttendance((prev) => ({ ...prev, loading: true, error: null }));
 
       const res = await fetch(`/api/attendance/me?t=${Date.now()}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${auth.token}` },
         cache: "no-store",
       });
       const json = await res.json().catch(() => null);
 
-      if (!mountedRef.current) return;
+      if (!stillCurrent()) return;
 
       if (!res.ok || !json?.ok) {
-        setAttendance({
-          loading: false,
-          online: false,
-          status: "offline",
-          lastEventAt: null,
-          error: String(json?.error || `HTTP ${res.status}`),
-          refreshedAt: new Date().toISOString(),
-        });
+        fail(String(json?.error || `HTTP ${res.status}`));
         return;
       }
 
-      setAttendance({
-        loading: false,
-        online: !!json.online,
-        status: String(json.status || (json.online ? "working" : "offline")),
-        lastEventAt: json.last_event_at ? String(json.last_event_at) : null,
-        error: null,
-        refreshedAt: new Date().toISOString(),
-      });
+      applyAttendance(json);
     } catch (e: any) {
-      if (!mountedRef.current) return;
-      setAttendance({
-        loading: false,
-        online: false,
-        status: "offline",
-        lastEventAt: null,
-        error: String(e?.message || "Error"),
-        refreshedAt: new Date().toISOString(),
-      });
+      fail(String(e?.message || 'Error'));
     } finally {
-      attendanceInFlightRef.current = false;
+      if (attendanceInFlightRef.current === requestId) attendanceInFlightRef.current = null;
     }
-  }, []);
+  }, [applyAttendance, getAttendanceAuth]);
+
+  const changeAttendance = useCallback(async (eventType: 'online' | 'offline' | 'break_start') => {
+    const auth = await getAttendanceAuth();
+    if (!auth) throw new Error('SESSION_REQUIRED');
+    const transition = ++transitionRef.current;
+    const res = await fetch('/api/attendance/event', {
+      method: 'POST', headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event_type: eventType, session_id: attendanceRef.current.sessionId }),
+    });
+    const json = await res.json().catch(() => null);
+    if (auth.epoch !== authEpochRef.current || transition !== transitionRef.current || !mountedRef.current) return;
+    if (res.status === 401) throw new Error('SESSION_REQUIRED');
+    if (!res.ok || !json?.ok || json.state_updated === false) {
+      void fetchAttendance();
+      throw new Error(json?.error === 'SESSION_CHANGED' ? 'El estado cambió en otra pestaña. Revisa el estado e inténtalo de nuevo.' : 'No se pudo confirmar el estado. Inténtalo de nuevo.');
+    }
+    applyAttendance(json);
+    if (json.worker?.id) {
+      try { localStorage.setItem(`tc-panel-state-v1:${json.worker.id}`, JSON.stringify({ at: Date.now(), session: json.session_id, status: json.status })); } catch {}
+    }
+  }, [applyAttendance, fetchAttendance, getAttendanceAuth]);
+
+  const sendPanelHeartbeat = useCallback(async () => {
+    const current = attendanceRef.current;
+    if (!current.sessionId || current.status !== 'working') return false;
+    if (heartbeatInFlightRef.current) return heartbeatInFlightRef.current;
+    const task = (async () => {
+      try {
+        const auth = await getAttendanceAuth();
+        if (!auth) return false;
+        const transition = transitionRef.current;
+        const res = await fetch('/api/attendance/event', {
+          method: 'POST', headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ event_type: 'heartbeat', session_id: current.sessionId,
+            activity_at: activityRef.current ? new Date(activityRef.current).toISOString() : null }),
+        });
+        const json = await res.json().catch(() => null);
+        if (auth.epoch !== authEpochRef.current || transition !== transitionRef.current || !mountedRef.current) return false;
+        if (!res.ok || !json?.ok) { await fetchAttendance(); return false; }
+        applyAttendance(json);
+        return !!json.session_id && json.status === 'working';
+      } catch {
+        // A network failure is not a sign-out. The gate uses the last confirmed
+        // server expiry and shows a retry option without replacing Auth tokens.
+        return false;
+      }
+    })();
+    heartbeatInFlightRef.current = task;
+    try { return await task; }
+    finally { if (heartbeatInFlightRef.current === task) heartbeatInFlightRef.current = null; }
+  }, [applyAttendance, fetchAttendance, getAttendanceAuth]);
+
+  const keepAttendanceActive = useCallback(async () => {
+    const requestedAt = Date.now()+clockOffsetRef.current;
+    activityRef.current = requestedAt;
+    const current = attendanceRef.current;
+    if (current.workerId && current.sessionId) {
+      try { localStorage.setItem(`tc-panel-activity-v1:${current.workerId}`, JSON.stringify({ session: current.sessionId, at: activityRef.current })); } catch {}
+    }
+    if (!await sendPanelHeartbeat()) throw new Error('No se pudo confirmar la actividad.');
+    // A poll already in flight may have carried the previous activity value.
+    // Send the explicit click after that poll finishes instead of losing it.
+    if (Date.parse(attendanceRef.current.lastManualActivityAt || '') < requestedAt-1000) {
+      if (!await sendPanelHeartbeat()) throw new Error('No se pudo confirmar la actividad.');
+    }
+  }, [sendPanelHeartbeat]);
+
+  useEffect(() => {
+    if (!isPanelPath(pathname)) return;
+    let lastSaved = 0;
+    const onActivity = (event: Event) => {
+      if (!event.isTrusted || !attendanceRef.current.sessionId || attendanceRef.current.status !== 'working') return;
+      const now = Date.now()+clockOffsetRef.current;
+      activityRef.current = now;
+      if (now-lastSaved < 1000) return;
+      lastSaved = now;
+      const current = attendanceRef.current;
+      try { localStorage.setItem(`tc-panel-activity-v1:${current.workerId}`, JSON.stringify({ session: current.sessionId, at: now })); } catch {}
+      if (Date.parse(current.expiresAt || '')-now <= 60_000) void sendPanelHeartbeat();
+    };
+    const onStorage = (event: StorageEvent) => {
+      const current = attendanceRef.current;
+      if (!current.workerId) return;
+      if (event.key === `tc-panel-state-v1:${current.workerId}`) { void fetchAttendance(); return; }
+      if (event.key !== `tc-panel-activity-v1:${current.workerId}` || !event.newValue) return;
+      try {
+        const item = JSON.parse(event.newValue);
+        if (item.session === current.sessionId && typeof item.at === 'number' && item.at <= Date.now()+clockOffsetRef.current+5000) activityRef.current = Math.max(activityRef.current,item.at);
+      } catch {}
+    };
+    // Scroll events can also be emitted by automatic chat scroll/scrollTo.
+    // Wheel, keys and pointer interaction cover deliberate user navigation.
+    const events = ['pointerdown','pointermove','keydown','input','wheel'];
+    for (const event of events) window.addEventListener(event,onActivity,{ passive: true });
+    window.addEventListener('storage',onStorage);
+    const interval = window.setInterval(() => { void sendPanelHeartbeat(); }, PANEL_HEARTBEAT_MS);
+    return () => {
+      for (const event of events) window.removeEventListener(event,onActivity);
+      window.removeEventListener('storage',onStorage);
+      window.clearInterval(interval);
+    };
+  }, [pathname, sendPanelHeartbeat, fetchAttendance]);
 
   const fetchPresences = useCallback(async () => {
     if (presencesInFlightRef.current) return;
@@ -385,9 +552,7 @@ export function OpsProvider({ children }: { children: ReactNode }) {
     void fetchLeads();
   }, [fetchParking, fetchLeads]);
 
-  const refreshAttendance = useCallback(() => {
-    void fetchAttendance();
-  }, [fetchAttendance]);
+  const refreshAttendance = useCallback(() => fetchAttendance(), [fetchAttendance]);
 
   const refreshPresences = useCallback(() => {
     void fetchPresences();
@@ -508,6 +673,8 @@ export function OpsProvider({ children }: { children: ReactNode }) {
       expected,
       refreshCounters,
       refreshAttendance,
+      changeAttendance,
+      keepAttendanceActive,
       refreshPresences,
       refreshExpected,
     }),
@@ -517,6 +684,8 @@ export function OpsProvider({ children }: { children: ReactNode }) {
       expected,
       presences,
       refreshAttendance,
+      changeAttendance,
+      keepAttendanceActive,
       refreshCounters,
       refreshExpected,
       refreshPresences,

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { verifiedAttendanceWorker, panelAttendanceEvent } from '@/lib/server/panel-attendance';
 
 export const runtime = "nodejs";
 
@@ -10,28 +10,16 @@ function getEnv(name: string) {
   return v;
 }
 
-async function uidFromBearer(req: Request) {
-  const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
-  const anon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-
-  const auth = req.headers.get("authorization") || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!token) return { uid: null as string | null };
-
-  const userClient = createClient(url, anon, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
-
-  const { data } = getAuthUserFromRequest(req);
-  return { uid: data.user?.id || null };
-}
-
 export async function POST(req: Request) {
   try {
-    const { uid } = await uidFromBearer(req);
-    if (!uid) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-
+    const gate = await verifiedAttendanceWorker(req);
+    if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
+    const uid = gate.uid;
     const body = await req.json().catch(() => ({}));
+    if (gate.worker.role === 'admin' || gate.worker.role === 'central') {
+      const result = await panelAttendanceEvent(gate.db, gate.worker, 'heartbeat', body);
+      return NextResponse.json(result, { status: result.ok ? 200 : 409 });
+    }
 
     const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
     const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");

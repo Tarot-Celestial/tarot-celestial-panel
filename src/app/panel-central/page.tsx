@@ -614,7 +614,6 @@ function CentralPage() {
   const attendance = useAttendance();
   const attOnline = attendance.online;
   const attStatus = attendance.status;
-  const attBeatRef = useRef<any>(null);
 
   // ✅ outbound calls (central)
   const [obDate, setObDate] = useState(dayKeyNow());
@@ -788,94 +787,7 @@ function CentralPage() {
     }
   }
 
-  async function postAttendanceEvent(event_type: "online" | "offline" | "heartbeat", metaExtra: any = {}) {
-    try {
-      setAttMsg("");
-      setAttLoading(true);
-
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-
-      const res = await fetch("/api/attendance/event", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          event_type,
-          meta: { path: window.location.pathname, ...metaExtra },
-        }),
-      });
-
-      const j = await safeJson(res);
-
-      if (!j?._ok || !j?.ok) {
-        const err = String(j?.error || `HTTP ${j?._status}`);
-        if (err === "OUTSIDE_SHIFT") setAttMsg("⛔ Estás fuera de tu turno. No puedes conectarte ahora.");
-        else setAttMsg(`❌ ${err}`);
-        await loadAttendanceMe(true);
-        return;
-      }
-
-      if (event_type === "online") {
-        await fetch("/api/attendance/event", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            event_type: "heartbeat",
-            meta: { path: window.location.pathname, immediate: true },
-          }),
-        }).catch(() => {});
-      }
-
-      await loadAttendanceMe(true);
-      setAttMsg("✅ Listo");
-      setTimeout(() => setAttMsg(""), 1000);
-    } catch (e: any) {
-      setAttMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      setAttLoading(false);
-    }
-  }
-
-  // ✅ Heartbeat SOLO si está online real
-  useEffect(() => {
-    if (!ok) return;
-
-    if (attBeatRef.current) {
-      clearInterval(attBeatRef.current);
-      attBeatRef.current = null;
-    }
-
-    if (!attOnline) return;
-
-    let stopped = false;
-
-    const start = async () => {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-
-      const ping = async () => {
-        if (stopped) return;
-        await fetch("/api/attendance/event", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ event_type: "heartbeat", meta: { path: window.location.pathname } }),
-        }).catch(() => {});
-      };
-
-      await ping();
-      attBeatRef.current = setInterval(ping, 30_000);
-    };
-
-    start();
-
-    return () => {
-      stopped = true;
-      if (attBeatRef.current) clearInterval(attBeatRef.current);
-      attBeatRef.current = null;
-    };
-  }, [ok, attOnline]);
+  // Attendance activity/heartbeat is shared by OpsProvider across all staff pages.
 
   async function refreshRanking() {
     setRankMsg("");
