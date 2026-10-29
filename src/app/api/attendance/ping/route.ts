@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
     const uid = gate.uid;
     const body = await req.json().catch(() => ({}));
-    if (gate.worker.role === 'admin' || gate.worker.role === 'central') {
+    if (['admin', 'central', 'tarotista'].includes(gate.worker.role)) {
       const result = await panelAttendanceEvent(gate.db, gate.worker, 'heartbeat', body);
       return NextResponse.json(result, { status: result.ok ? 200 : 409 });
     }

@@ -28,6 +28,7 @@ export type OpsAttendance = {
   error: string | null;
   refreshedAt: string | null;
   workerId: string | null;
+  workerRole: string | null;
   sessionId: string | null;
   sessionStartedAt: string | null;
   lastActivityAt: string | null;
@@ -37,6 +38,9 @@ export type OpsAttendance = {
   serverNow: string | null;
   callActive: boolean;
   callProtectionAvailable: boolean | null;
+  consultationStartedAt: string | null;
+  consultationUntil: string | null;
+  consultationSource: 'self_reported_external_call' | null;
 };
 
 
@@ -75,7 +79,7 @@ export type OpsContextValue = {
   expected: OpsListState<OpsExpectedRow>;
   refreshCounters: () => void;
   refreshAttendance: () => Promise<void>;
-  changeAttendance: (eventType: 'online' | 'offline' | 'break_start') => Promise<void>;
+  changeAttendance: (eventType: 'online' | 'offline' | 'break_start' | 'bathroom_start' | 'consultation_start' | 'consultation_end') => Promise<void>;
   keepAttendanceActive: () => Promise<void>;
   refreshPresences: () => void;
   refreshExpected: () => void;
@@ -94,20 +98,23 @@ const DEFAULT_ATTENDANCE: OpsAttendance = {
   lastEventAt: null,
   error: null,
   refreshedAt: null,
-  workerId: null, sessionId: null, sessionStartedAt: null, lastActivityAt: null,
+  workerId: null, workerRole: null, sessionId: null, sessionStartedAt: null, lastActivityAt: null,
   lastManualActivityAt: null, expiresAt: null, closeReason: null, serverNow: null,
   callActive: false, callProtectionAvailable: null,
+  consultationStartedAt: null, consultationUntil: null, consultationSource: null,
 };
 
 function attendancePayload(json: any): OpsAttendance {
   return {
     loading: false, online: !!json.online, status: String(json.status || 'offline'),
     lastEventAt: json.last_event_at || null, error: null, refreshedAt: new Date().toISOString(),
-    workerId: json.worker?.id || null, sessionId: json.session_id || null,
+    workerId: json.worker?.id || null, workerRole: json.worker?.role || null, sessionId: json.session_id || null,
     sessionStartedAt: json.session_started_at || null, lastActivityAt: json.last_activity_at || null,
     lastManualActivityAt: json.last_manual_activity_at || null, expiresAt: json.expires_at || null,
     closeReason: json.close_reason || null, serverNow: json.server_now || null,
     callActive: json.call_active === true, callProtectionAvailable: json.call_protection_available ?? null,
+    consultationStartedAt: json.consultation_started_at || null, consultationUntil: json.consultation_until || null,
+    consultationSource: json.consultation_source === 'self_reported_external_call' ? json.consultation_source : null,
   };
 }
 
@@ -327,7 +334,7 @@ export function OpsProvider({ children }: { children: ReactNode }) {
     }
   }, [applyAttendance, getAttendanceAuth]);
 
-  const changeAttendance = useCallback(async (eventType: 'online' | 'offline' | 'break_start') => {
+  const changeAttendance = useCallback(async (eventType: 'online' | 'offline' | 'break_start' | 'bathroom_start' | 'consultation_start' | 'consultation_end') => {
     const auth = await getAttendanceAuth();
     if (!auth) throw new Error('SESSION_REQUIRED');
     const transition = ++transitionRef.current;

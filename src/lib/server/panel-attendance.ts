@@ -53,11 +53,12 @@ export async function panelAttendanceEvent(db: SupabaseClient, worker: Attendanc
   const activityAt = Number.isFinite(inputActivity) ? new Date(inputActivity).toISOString() : null;
   let call: { startedAt: string | null; available: boolean | null } = { startedAt: null, available: null };
   if (['heartbeat','status'].includes(action) && (!activityAt || Date.now()-inputActivity > 60_000)) {
-    const current = await db.from('attendance_panel_sessions').select('id,expires_at').eq('worker_id', worker.id).is('ended_at', null).maybeSingle();
+    const current = await db.from('attendance_panel_sessions').select('id,expires_at,consultation_until').eq('worker_id', worker.id).is('ended_at', null).maybeSingle();
     if (current.error) throw current.error;
     // AMI is queried only near expiry and never for every interaction or normal
     // poll. An old tab cannot prolong a newer session through this path.
-    if (current.data && Date.parse(current.data.expires_at)-Date.now() <= 90_000 && (action==='status' || current.data.id===sessionId)) {
+    const manualConsultation = worker.role === 'tarotista' && current.data?.consultation_until && Date.parse(current.data.consultation_until) > Date.now();
+    if (current.data && !manualConsultation && Date.parse(current.data.expires_at)-Date.now() <= 90_000 && (action==='status' || current.data.id===sessionId)) {
       call = await confirmedWorkerCall(db, worker.id);
     }
   }
@@ -71,7 +72,7 @@ export async function panelAttendanceEvent(db: SupabaseClient, worker: Attendanc
 
 /** Call only after authenticating the caller and resolving its own worker. */
 export async function requireActivePanelSession(db: SupabaseClient, worker: { id: string; role: string; display_name?: string | null; is_active?: boolean | null }) {
-  if (!['admin','central'].includes(worker.role)) return { ok: true as const };
+  if (!['admin','central','tarotista'].includes(worker.role)) return { ok: true as const };
   const state = await panelAttendanceEvent(db, { ...worker, display_name: worker.display_name || null, is_active: worker.is_active ?? true }, 'status');
   if (!state.ok || !state.session_id || state.status !== 'working') return { ok: false as const, status: 423, error: 'PANEL_CONNECTION_REQUIRED' };
   return { ok: true as const };

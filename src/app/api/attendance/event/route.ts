@@ -224,9 +224,12 @@ export async function POST(req: Request) {
     if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
     const uid = gate.uid;
     const body = await req.json().catch(() => ({}));
-    if (gate.worker.role === 'admin' || gate.worker.role === 'central') {
+    if (['admin', 'central', 'tarotista'].includes(gate.worker.role)) {
       const action = attendanceAction(body.event_type, body.meta);
       if (!action) return NextResponse.json({ ok: false, error: 'BAD_EVENT' }, { status: 400 });
+      if (action.startsWith('consultation_') && gate.worker.role !== 'tarotista') {
+        return NextResponse.json({ ok: false, error: 'FORBIDDEN' }, { status: 403 });
+      }
       const result = await panelAttendanceEvent(gate.db, gate.worker, action, body);
       return NextResponse.json(result, { status: result.ok ? 200 : 409 });
     }

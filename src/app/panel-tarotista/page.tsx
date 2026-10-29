@@ -9,6 +9,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import { loadPanelIdentity, panelPathForRole, panelSessionRejected, redirectToLogin } from "@/lib/panel-access";
 import { useAttendance } from "@/hooks/useAttendance";
 import StaffDirectChatPanel from "@/components/chat/StaffDirectChatPanel";
+import { useStaffChat } from "@/providers/StaffChatProvider";
 import TarotistaInvoiceDashboard from "@/components/tarotista/TarotistaInvoiceDashboard";
 import TarotistaStatusHeader from "@/components/tarotista/TarotistaStatusHeader";
 import TarotistaRanksPanel from "@/components/tarotista/TarotistaRanksPanel";
@@ -274,7 +275,6 @@ export default function Tarotista() {
   const [attMsg, setAttMsg] = useState("");
   const [attOnline, setAttOnline] = useState(false);
   const [attStatus, setAttStatus] = useState<string>("offline");
-  const attBeatRef = useRef<any>(null);
 
   const [obDate, setObDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [obLoading, setObLoading] = useState(false);
@@ -289,14 +289,9 @@ export default function Tarotista() {
 
   const [chatLoading, setChatLoading] = useState(false);
   const [chatMsg, setChatMsg] = useState("");
-  const [chatUnread, setChatUnread] = useState(0);
+  const { unreadTotal: chatUnread } = useStaffChat();
   const [thread, setThread] = useState<ChatThread | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  useEffect(() => {
-    const update = (event: Event) => setChatUnread(Math.max(0, Number((event as CustomEvent<{ count?: number }>).detail?.count || 0)));
-    window.addEventListener("tc-chat-unread", update as EventListener);
-    return () => window.removeEventListener("tc-chat-unread", update as EventListener);
-  }, []);
   const [msgText, setMsgText] = useState("");
   const msgEndRef = useRef<HTMLDivElement | null>(null);
   const chatChannelRef = useRef<any>(null);
@@ -586,49 +581,15 @@ export default function Tarotista() {
     setAttStatus(String(attendance.status || (attendance.online ? "working" : "offline")));
   }, [attendance.online, attendance.status]);
 
-  async function postAttendanceEvent(event_type: "online" | "offline" | "heartbeat", metaExtra: any = {}) {
+  async function postAttendanceEvent(eventType: "online" | "offline" | "break_start" | "bathroom_start") {
     try {
       setAttMsg("");
       setAttLoading(true);
-
-      const token = await getTokenSafe();
-      if (!token) return;
-
-      const res = await fetch("/api/attendance/event", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          event_type,
-          meta: { path: window.location.pathname, ...metaExtra },
-        }),
-      });
-
-      const j = await safeJson(res);
-
-      if (!j?._ok || !j?.ok) {
-        const err = String(j?.error || `HTTP ${j?._status}`);
-        if (err === "OUTSIDE_SHIFT") setAttMsg("⛔ Estás fuera de tu turno. No puedes conectarte ahora.");
-        else setAttMsg(`❌ ${err}`);
-        await loadAttendanceMe(true);
-        return;
-      }
-
-      if (event_type === "online") {
-        await fetch("/api/attendance/event", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            event_type: "heartbeat",
-            meta: { path: window.location.pathname, immediate: true },
-          }),
-        }).catch(() => {});
-      }
-
-      await loadAttendanceMe(true);
+      await attendance.changeAttendance(eventType);
       setAttMsg("✅ Listo");
       setTimeout(() => setAttMsg(""), 1000);
     } catch (e: any) {
-      setAttMsg(`❌ ${e?.message || "Error"}`);
+      setAttMsg(e?.message === "SESSION_REQUIRED" ? "No se pudo verificar tu sesión. Vuelve a intentarlo." : e?.message || "Error");
     } finally {
       setAttLoading(false);
     }
@@ -771,27 +732,10 @@ export default function Tarotista() {
   }
 
   async function changeAttendanceStatus(action: "connected" | "break" | "bathroom" | "offline") {
-    if (action === "offline") {
-      await postAttendanceEvent("offline", { action: "check_out" });
-      return;
-    }
-    if (action === "break") {
-      await postAttendanceEvent("online", { action: "break", phase: "start" });
-      return;
-    }
-    if (action === "bathroom") {
-      await postAttendanceEvent("online", { action: "bathroom", phase: "start" });
-      return;
-    }
-    if (attStatus === "break") {
-      await postAttendanceEvent("online", { action: "break", phase: "end" });
-      return;
-    }
-    if (attStatus === "bathroom") {
-      await postAttendanceEvent("online", { action: "bathroom", phase: "end" });
-      return;
-    }
-    await postAttendanceEvent("online", { action: "check_in" });
+    await postAttendanceEvent(action === "offline" ? "offline"
+      : action === "break" ? "break_start"
+      : action === "bathroom" ? "bathroom_start"
+      : "online");
   }
 
   async function refreshInvoiceOnly() {
@@ -1071,52 +1015,6 @@ export default function Tarotista() {
 
   useEffect(() => {
     if (!ok) return;
-
-    if (chatChannelRef.current) {
-      sb.removeChannel(chatChannelRef.current);
-      chatChannelRef.current = null;
-    }
-
-    const threadId = (selectedThreadId || thread?.id) ? String(selectedThreadId || thread?.id) : "";
-    if (!threadId) return;
-
-    const ch = sb
-      .channel(`tarot-chat-${threadId}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "chat_messages", filter: `thread_id=eq.${threadId}` },
-        (payload) => {
-          const m: any = payload.new;
-          setMessages((prev) => {
-            const exists = (prev || []).some((x: any) => String(x.id) === String(m.id));
-            if (exists) return prev;
-
-            const msg: ChatMessage = {
-              id: String(m.id),
-              thread_id: String(m.thread_id),
-              sender_worker_id: m.sender_worker_id != null ? String(m.sender_worker_id) : null,
-              sender_display_name: m.sender_display_name != null ? String(m.sender_display_name) : null,
-              text: m.text != null ? String(m.text) : m.body != null ? String(m.body) : "",
-              created_at: m.created_at != null ? String(m.created_at) : null,
-            };
-            return [...(prev || []), msg];
-          });
-
-          setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-        }
-      )
-      .subscribe();
-
-    chatChannelRef.current = ch;
-
-    return () => {
-      sb.removeChannel(ch);
-      chatChannelRef.current = null;
-    };
-  }, [ok, thread?.id, selectedThreadId]);
-
-  useEffect(() => {
-    if (!ok) return;
     refresh();
     loadChecklist();
     loadAttendanceMe(true);
@@ -1155,20 +1053,6 @@ export default function Tarotista() {
 
   useEffect(() => {
     if (!ok) return;
-    if (tab !== "chat") return;
-    loadMyChatThread(false);
-  }, [ok, tab]);
-
-  useEffect(() => {
-    if (!ok) return;
-    if (tab !== "chat") return;
-    const tid = selectedThreadId || thread?.id || "";
-    if (!tid) return;
-    loadChatMessages(tid, false);
-  }, [ok, tab, thread?.id, selectedThreadId]);
-
-  useEffect(() => {
-    if (!ok) return;
 
     if (obChannelRef.current) {
       sb.removeChannel(obChannelRef.current);
@@ -1199,48 +1083,6 @@ export default function Tarotista() {
       obChannelRef.current = null;
     };
   }, [ok, obBatch?.id]);
-
-  useEffect(() => {
-    if (!ok) return;
-
-    if (attBeatRef.current) {
-      clearInterval(attBeatRef.current);
-      attBeatRef.current = null;
-    }
-
-    if (!attOnline) return;
-
-    let stopped = false;
-
-    const start = async () => {
-      const token = await getTokenSafe();
-      if (!token) return;
-
-      const ping = async () => {
-        if (stopped) return;
-
-        const token2 = await getTokenSafe();
-        if (!token2) return;
-
-        await fetch("/api/attendance/event", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token2}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ event_type: "heartbeat", meta: { path: window.location.pathname } }),
-        }).catch(() => {});
-      };
-
-      await ping();
-      attBeatRef.current = setInterval(ping, 30_000);
-    };
-
-    start();
-
-    return () => {
-      stopped = true;
-      if (attBeatRef.current) clearInterval(attBeatRef.current);
-      attBeatRef.current = null;
-    };
-  }, [ok, attOnline]);
 
   useEffect(() => {
     if (!ok || !myWorkerId) return;

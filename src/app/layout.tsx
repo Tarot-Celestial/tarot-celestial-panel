@@ -6,6 +6,7 @@ import { PhoneProvider } from "@/context/PhoneContext";
 import { OpsProvider } from "@/providers/OpsProvider";
 import GlobalBottomBar from "@/components/global/GlobalBottomBar";
 import PanelAccessGate from '@/components/attendance/PanelAccessGate';
+import { StaffChatProvider } from '@/providers/StaffChatProvider';
 
 export const metadata: Metadata = {
   title: "Panel Interno - Tarot Celestial",
@@ -18,10 +19,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="bg-[#0b0b0f] text-white">
         <OpsProvider>
           <PhoneProvider>
+            <StaffChatProvider>
             <PanelAccessGate>
               {children}
               <GlobalBottomBar />
             </PanelAccessGate>
+            </StaffChatProvider>
           </PhoneProvider>
         </OpsProvider>
       </body>

@@ -3,6 +3,7 @@
 import { useEffect, useId, useState, type CSSProperties } from "react";
 import { ChevronDown, type LucideIcon } from "lucide-react";
 import NavigationVisibilityMenu, { useHiddenNavigation } from "@/components/navigation/NavigationVisibilityMenu";
+import { useStaffChat } from "@/providers/StaffChatProvider";
 import styles from "./CentralSidebar.module.css";
 
 export type CentralNavItem<T extends string = string> = {
@@ -65,9 +66,10 @@ function navTone(key: string, notificationAlert: boolean) {
 export default function CentralSidebar<T extends string = string>({ items, activeTab, onTabChange }: CentralSidebarProps<T>) {
   const sidebarId = useId().replace(/:/g, "");
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
-  const [chatUnread, setChatUnread] = useState(0);
+  const { unreadTotal: chatUnread } = useStaffChat();
   const { hiddenKeys, toggleHidden, resetHidden } = useHiddenNavigation("tc:navigation:hidden:central:v1");
-  const visibleItems = items.filter((item) => !hiddenKeys.includes(String(item.key)) || (["captacion", "whatsapp", "instagram", "facebook"].includes(String(item.key)) && (item.badge || 0) > 0));
+  const chatItems = items.map(item => String(item.key) === 'chat' || item.children?.some(child => String(child.key) === 'chat') ? { ...item, badge: chatUnread || item.badge } : item);
+  const visibleItems = chatItems.filter((item) => !hiddenKeys.includes(String(item.key)) || ((["captacion", "whatsapp", "instagram", "facebook", "chat"].includes(String(item.key)) || item.children?.some(child => String(child.key) === 'chat')) && (item.badge || 0) > 0));
   const sections = NAV_SECTIONS.map(section => ({
     ...section,
     items: section.keys.flatMap(key => visibleItems.filter(item => String(item.key) === key)),
@@ -81,12 +83,6 @@ export default function CentralSidebar<T extends string = string>({ items, activ
       setOpenGroups((current) => ({ ...current, [String(activeParent.key)]: true }));
     }
   }, [activeTab, items]);
-
-  useEffect(() => {
-    const update = (event: Event) => setChatUnread(Math.max(0, Number((event as CustomEvent<{ count?: number }>).detail?.count || 0)));
-    window.addEventListener("tc-chat-unread", update as EventListener);
-    return () => window.removeEventListener("tc-chat-unread", update as EventListener);
-  }, []);
 
   return (
     <aside className={`tc-sidebar ${styles.sidebar}`}>
@@ -115,8 +111,9 @@ export default function CentralSidebar<T extends string = string>({ items, activ
             const captacionUrgent = key === "captacion" && typeof item.badge === "number" && item.badge > 0;
             const whatsappUrgent = key === "whatsapp" && typeof item.badge === "number" && item.badge > 0;
             const socialUrgent = ["instagram", "facebook"].includes(key) && typeof item.badge === "number" && item.badge > 0;
-            const operationalUrgent = captacionUrgent || whatsappUrgent || socialUrgent;
-            const pendingLabel = socialUrgent ? `${item.badge} mensajes y comentarios pendientes de revisar` : whatsappUrgent ? `${item.badge} mensajes sin leer` : `${item.badge} contactos nuevos pendientes`;
+            const chatUrgent = chatUnread > 0 && (key === 'chat' || Boolean(item.children?.some(child => String(child.key) === 'chat')));
+            const operationalUrgent = captacionUrgent || whatsappUrgent || socialUrgent || chatUrgent;
+            const pendingLabel = chatUrgent ? `${chatUnread} mensajes del equipo sin leer` : socialUrgent ? `${item.badge} mensajes y comentarios pendientes de revisar` : whatsappUrgent ? `${item.badge} mensajes sin leer` : `${item.badge} contactos nuevos pendientes`;
             const tone = navTone(key, notificationAlert || operationalUrgent);
             const toneStyle = { "--nav-rgb": tone.rgb } as CSSProperties;
             const label = NAV_LABELS[key] || item.label;

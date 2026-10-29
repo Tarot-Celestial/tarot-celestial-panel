@@ -19,6 +19,7 @@ before(async () => {
     create table attendance_state(worker_id uuid primary key references workers(id),is_online boolean not null default false,status text not null default 'offline',last_event_at timestamptz,updated_at timestamptz not null default now());
     grant select,update on workers to service_role;grant select,insert,update on attendance_events,attendance_state to service_role;`);
   await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261028222646_panel_attendance_sessions.sql'),'utf8'));
+  await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261029123043_tarotista_panel_attendance.sql'),'utf8'));
 });
 after(async () => { await db.close(); });
 
@@ -82,7 +83,7 @@ test('a call starting after the expired deadline cannot retroactively bridge idl
   assert.equal((await event(9,'status',null,null,call)).session_id,null);
 });
 test('inactive workers and unrelated roles cannot open panel sessions',async () => {
-  await worker(10,'central',false);await worker(11,'tarotista',true);
+  await worker(10,'central',false);await worker(11,'cliente',true);
   await assert.rejects(()=>event(10,'connect'),/WORKER_NOT_ALLOWED/);
   await assert.rejects(()=>event(11,'connect'),/WORKER_NOT_ALLOWED/);
 });

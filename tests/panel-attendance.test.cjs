@@ -2,9 +2,9 @@ const {test}=require('node:test');const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),ts=require('typescript');
 function load(file,mocks={},env={}){const exports={};const source=ts.transpileModule(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;vm.runInNewContext(source,{exports,require:n=>mocks[n]||require(n),Date,Set,process:{env},URL,Request,Response});return exports;}
 const helper=load('src/lib/attendance/panel-session.ts');
-test('admin subroutes and central are gated; login, client and tarotista remain outside',()=>{
-  for(const p of ['/admin','/admin/cerebro','/admin/companions','/panel-central','/panel-central/more'])assert.equal(helper.isPanelPath(p),true);
-  for(const p of ['/login','/cliente','/panel-tarotista','/administrator',null])assert.equal(helper.isPanelPath(p),false);
+test('all three staff panels and subroutes are gated; login, client and similar prefixes remain outside',()=>{
+  for(const p of ['/admin','/admin/cerebro','/admin/companions','/panel-central','/panel-central/more','/panel-tarotista','/panel-tarotista/more'])assert.equal(helper.isPanelPath(p),true);
+  for(const p of ['/login','/cliente','/panel-tarotistas','/administrator',null])assert.equal(helper.isPanelPath(p),false);
   assert.equal(helper.PANEL_IDLE_TIMEOUT_MS,600000);
 });
 test('confirmed call requires own server extension, Up and a bridged leg',()=>{
@@ -32,6 +32,8 @@ test('legacy aliases map to explicit transitions, and heartbeat remains heartbea
   assert.equal(helper.attendanceAction('logout'),'disconnect');
   assert.equal(helper.attendanceAction('online',{action:'break',phase:'start'}),'break');
   assert.equal(helper.attendanceAction('unknown'),null);
+  assert.equal(helper.attendanceAction('consultation_start'),'consultation_start');
+  assert.equal(helper.attendanceAction('consultation_end'),'consultation_end');
 });
 test('attendance identity is verified with getUser and a worker resolved by user_id',async()=>{
   const calls=[];const db={auth:{getUser:async(token)=>{calls.push(['getUser',token]);return {data:{user:{id:'auth-user'}}}}},from:()=>({select(){return this},eq(key,value){calls.push([key,value]);return this},maybeSingle:async()=>({data:{id:'worker',role:'central',is_active:true}})})};
@@ -59,4 +61,50 @@ test('unavailable call evidence preserves normal state handling and reports unav
   const api=load('src/lib/server/panel-attendance.ts',{'@supabase/supabase-js':{},'@/lib/server/asterisk-ami':{amiCommand:async()=>{throw new Error('Fixture unavailable')}},'@/lib/attendance/panel-session':helper},{ASTERISK_AMI_HOST:'fixture-host',ASTERISK_AMI_SECRET:'fixture-secret'});
   const state=await api.panelAttendanceEvent(db,{id:'worker',role:'central',display_name:null,is_active:true},'status');
   assert.equal(calls,1);assert.equal(state.ok,true);assert.equal(state.call_protection_available,false);
+});
+
+test('tarotista server gate requires an open session just like central and admin',async()=>{
+  let state={ok:true,status:'offline',session_id:null};
+  const db={from:()=>({select(){return this},eq(){return this},is(){return this},maybeSingle:async()=>({data:null})}),rpc:async()=>({data:state})};
+  const api=load('src/lib/server/panel-attendance.ts',{'@supabase/supabase-js':{},'@/lib/server/asterisk-ami':{},'@/lib/attendance/panel-session':helper});
+  for(const role of ['admin','central','tarotista']) {
+    const denied=await api.requireActivePanelSession(db,{id:'worker',role});
+    assert.equal(denied.status,423);assert.equal(denied.error,'PANEL_CONNECTION_REQUIRED');
+  }
+  state={ok:true,status:'working',session_id:'verified-session'};
+  assert.equal((await api.requireActivePanelSession(db,{id:'worker',role:'tarotista'})).ok,true);
+});
+
+test('manual consultation does not query AMI, set PBX evidence or accept a client-controlled duration',async()=>{
+  const session='00000000-0000-0000-0000-000000000001',worker={id:'taro',role:'tarotista',display_name:null,is_active:true};
+  let amiCalls=0;const calls=[];
+  const db={from:()=>({select(){return this},eq(){return this},is(){return this},maybeSingle:async()=>({data:{id:session,expires_at:new Date(Date.now()+60000).toISOString(),consultation_until:new Date(Date.now()+60000).toISOString()}})}),
+    rpc:async(name,args)=>{calls.push(args);return {data:{ok:true,status:'working',session_id:session}}}};
+  const api=load('src/lib/server/panel-attendance.ts',{'@supabase/supabase-js':{},'@/lib/server/asterisk-ami':{amiCommand:async()=>{amiCalls++;throw Error('unexpected')}} ,'@/lib/attendance/panel-session':helper},{ASTERISK_AMI_HOST:'fixture',ASTERISK_AMI_SECRET:'fixture'});
+  await api.panelAttendanceEvent(db,worker,'consultation_start',{session_id:session,duration_minutes:999,consultation_until:'2099-01-01',call_active:true,call_started_at:'2020-01-01'});
+  await api.panelAttendanceEvent(db,worker,'heartbeat',{session_id:session});
+  assert.equal(amiCalls,0);
+  for(const args of calls) { assert.equal(args.p_call_started_at,null);assert.equal(args.p_duration_minutes,undefined);assert.equal(args.p_consultation_until,undefined); }
+});
+
+test('attendance routes send tarotista status and heartbeat through the session RPC; manual mode is tarotista-only',async()=>{
+  let role='tarotista',actionResult={ok:true,status:'offline',session_id:null},actions=[];
+  const mocks={
+    'next/server':{NextResponse:{json:(body,options={})=>new Response(JSON.stringify(body),{status:options.status||200})}},
+    '@supabase/supabase-js':{createClient:()=>{throw Error('legacy path must not execute')}},
+    '@/lib/server/worker-cache':{},
+    '@/lib/server/panel-attendance':{verifiedAttendanceWorker:async()=>({ok:true,db:{},worker:{id:'worker',role},uid:'uid'}),panelAttendanceEvent:async(db,worker,action,body)=>{actions.push([action,body]);return actionResult;}},
+    '@/lib/attendance/panel-session':helper,
+  };
+  const request=(event_type)=>new Request('https://fixture/api/attendance/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event_type,session_id:'old-session'})});
+  const me=load('src/app/api/attendance/me/route.ts',mocks);
+  const ping=load('src/app/api/attendance/ping/route.ts',mocks);
+  const events=load('src/app/api/attendance/event/route.ts',mocks);
+  assert.equal((await (await me.GET(new Request('https://fixture'))).json()).session_id,null);
+  assert.equal((await (await ping.POST(request('heartbeat'))).json()).session_id,null);
+  await events.POST(request('bathroom_start'));await events.POST(request('consultation_start'));
+  assert.deepEqual(actions.map(([action])=>action),['status','heartbeat','bathroom','consultation_start']);
+  assert.equal(actions[1][1].session_id,'old-session');
+  role='central';assert.equal((await events.POST(request('consultation_start'))).status,403);
+  assert.equal(actions.length,4);
 });
