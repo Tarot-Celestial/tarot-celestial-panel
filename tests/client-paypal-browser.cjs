@@ -110,7 +110,7 @@ async function check(name, run) {
         assert.equal(new URL(f.page.url()).pathname, '/cliente/precios-ofertas'); await shot(f.page, 'checkout-retry-conflict');
       } finally { await f.close(); }
     });
-    await check('Checkout refuses unexpected redirect origins and preserves Oracle manual purchase behavior', async () => {
+    await check('Minutes and Oracle refuse unexpected redirect origins without opening maintenance', async () => {
       const f = await checkoutFixture(browser, { name: 'redirect-and-oracle' });
       try {
         f.state.checkoutBody.url = 'https://foreign.invalid/pay';
@@ -118,8 +118,11 @@ async function check(name, run) {
         await article.getByRole('button', { name: 'Elegir paquete', exact: true }).click(); await article.getByRole('alert').waitFor();
         assert.equal(new URL(f.page.url()).pathname, '/cliente/precios-ofertas');
         await f.page.locator('#oraculo-packs').getByRole('button', { name: 'COMPRAR', exact: true }).first().click();
-        await f.page.getByRole('dialog', { name: 'Compras desde la app en mantenimiento' }).waitFor();
-        assert.equal(f.calls.filter(call => call.path === 'checkout').length, 1);
+        await f.page.locator('#oraculo-packs').getByRole('alert').waitFor();
+        assert.equal(await f.page.getByRole('dialog', { name: 'Compras desde la app en mantenimiento' }).count(), 0);
+        assert.equal(f.calls.filter(call => call.path === 'checkout').length, 2);
+        assert.equal(f.calls.filter(call => call.path === 'checkout')[1].body.packId, 'oracle_2');
+        assert.equal(new URL(f.page.url()).pathname, '/cliente/precios-ofertas');
       } finally { await f.close(); }
     });
     await check('Simulated hosted card approval confirms the receipt, clears only its purchase key and refreshes balances once', async () => {

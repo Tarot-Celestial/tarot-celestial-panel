@@ -2,6 +2,7 @@
 .shell { --gold:#e7bd62; --gold-soft:#f4d89f; --champagne:#fff4d0; display:grid; gap:28px; min-width:0; }
 .shell *, .shell *::before, .shell *::after { box-sizing:border-box; }
 .message { padding:16px; border:1px solid #e7bd6266; border-radius:16px; color:#fff4d0; background:#211a2d; font-size:16px; line-height:1.6; }
+.message a { display:block; margin-top:8px; text-decoration:underline; font-weight:700; }
 .message button { margin:8px; min-height:44px; padding:8px 14px; border:1px solid #e7bd6280; border-radius:10px; color:#fff4d0; background:#302238; cursor:pointer; font:inherit; }
 .shell button:focus-visible, .shell a:focus-visible { outline:3px solid #fff0b7; outline-offset:4px; }
 .catalogueLoading { padding:8px 0; color:#eee4d6; font-size:16px; }

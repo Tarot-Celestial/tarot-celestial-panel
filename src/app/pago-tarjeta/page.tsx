@@ -6,12 +6,14 @@ import styles from "./payment.module.css";
 type Session = { amount: number; currency: string; description: string; status: string; remote_status: string;
   can_pay: boolean; client_id?: string; client_token?: string; environment?: string; last_error?: string | null;
   checkout_kind?: string; attempt_id?: string; can_cancel?: boolean; credited?: boolean;
-  purchase_summary?: { packName: string; totalMinutes: number; normalMinutes: number; freeMinutes: number }; receipt?: unknown };
+  purchase_kind?: 'oracle' | 'minutes';
+  purchase_summary?: { packName: string; purchaseKind?: 'oracle' | 'minutes'; oracleCredits?: number; oracleQuestions?: number; totalMinutes: number; normalMinutes: number; freeMinutes: number }; receipt?: unknown };
 type CardFields = { isEligible: () => boolean; NameField: (options?: object) => Field;
   NumberField: (options?: object) => Field; ExpiryField: (options?: object) => Field; CVVField: (options?: object) => Field;
   submit: (options?: object) => Promise<void>; getState: () => Promise<{ isFormValid: boolean }> };
 type Field = { render: (selector: string) => Promise<void>; close?: () => void };
 type PayPalSDK = { CardFields: (options: object) => CardFields };
+const isOraclePurchase = (session: Session | null) => session?.purchase_summary?.purchaseKind === 'oracle' || session?.purchase_kind === 'oracle';
 
 export default function CardPayment() {
   const [session, setSession] = useState<Session | null>(null);
@@ -38,10 +40,10 @@ export default function CardPayment() {
     const clientPurchase = data.checkout_kind === "client_purchase";
     const completed = data.status === "completed" && (!clientPurchase || data.credited === true);
     setPhase(completed ? "completed" : data.status === "cancelled" ? "cancelled" : "pending");
-    setMessage(completed ? clientPurchase ? "Pago realizado. Tus minutos y beneficios ya están añadidos." : "Tu compra está registrada. Gracias por confiar en Tarot Celestial."
+    setMessage(completed ? clientPurchase ? isOraclePurchase(data) ? "Pago realizado. Tu compra del Oráculo ya está disponible." : "Pago realizado. Tus minutos y beneficios ya están añadidos." : "Tu compra está registrada. Gracias por confiar en Tarot Celestial."
       : data.status === "cancelled" ? data.remote_status === "CANCELLED_BY_CLIENT" ? "Has cancelado esta compra. Puedes volver a los precios y elegir otro paquete."
         : data.last_error || "El pago no se ha completado. Consulta con tu banco o con tu central antes de intentarlo de nuevo."
-      : clientPurchase && data.status === "completed" ? "El pago está recibido. Estamos confirmando que tus minutos y beneficios estén añadidos. No repitas la compra."
+      : clientPurchase && data.status === "completed" ? isOraclePurchase(data) ? "El pago está recibido. Estamos confirmando que tu compra del Oráculo esté disponible. No repitas la compra." : "El pago está recibido. Estamos confirmando que tus minutos y beneficios estén añadidos. No repitas la compra."
       : data.last_error || "Estamos comprobando el resultado. No repitas el pago; consulta su estado en unos instantes.");
     if (clientPurchase && (completed || data.status === "cancelled")) {
       clearFinishedAttempt(data.attempt_id);
@@ -180,6 +182,9 @@ export default function CardPayment() {
   }
   const money = session ? new Intl.NumberFormat("es-ES", { style: "currency", currency: session.currency }).format(session.amount) : "";
   const clientPurchase = session?.checkout_kind === "client_purchase";
+  const oraclePurchase = clientPurchase && isOraclePurchase(session);
+  const oracleCredits = Number(session?.purchase_summary?.oracleCredits || 0);
+  const oracleQuestions = Number(session?.purchase_summary?.oracleQuestions || 0);
   const showForm = ["loading", "ready", "paying"].includes(phase) || (phase === "cancelling" && Boolean(fields.current));
   return <main className={styles.page}>
     <div className={styles.brand}><span aria-hidden="true">✦</span> TAROT CELESTIAL</div>
@@ -188,7 +193,11 @@ export default function CardPayment() {
       <h1 id="payment-title">{phase === "completed" ? "Pago confirmado" : phase === "cancelled" ? session?.remote_status === "CANCELLED_BY_STAFF" ? "Enlace cancelado" : session?.remote_status === "CANCELLED_BY_CLIENT" ? "Compra cancelada" : "Pago no completado" : "Tu consulta, a un paso"}</h1>
       <p className={styles.intro}>{phase === "completed" ? "Gracias por confiar en Tarot Celestial." : "Paga con tu tarjeta. No necesitas una cuenta PayPal."}</p>
       {session && <div className={styles.summary}><span>{session.description}<small>Importe total</small></span><strong>{money}</strong></div>}
-      {clientPurchase && session.purchase_summary ? <div className={styles.purchaseSummary} aria-label="Minutos de tu compra"><strong>{session.purchase_summary.totalMinutes} <span>minutos de consulta</span></strong><p>{session.purchase_summary.normalMinutes} minutos normales{session.purchase_summary.freeMinutes > 0 ? ` + ${session.purchase_summary.freeMinutes} minutos gratis` : ""}</p><small>{phase === "completed" ? "Ya están disponibles en tu cuenta." : "Se añadirán cuando el pago quede confirmado."}</small></div> : null}
+      {clientPurchase && session.purchase_summary ? oraclePurchase ? <div className={styles.purchaseSummary} aria-label="Oráculo de tu compra">
+        {oracleCredits > 0 ? <strong>{oracleCredits} <span>{oracleCredits === 1 ? "tirada del Oráculo" : "tiradas del Oráculo"}</span></strong> : null}
+        {oracleQuestions > 0 ? <strong>{oracleQuestions} <span>{oracleQuestions === 1 ? "pregunta adicional" : "preguntas adicionales"}</span></strong> : null}
+        <p>{session.purchase_summary.packName}</p><small>{phase === "completed" ? "Ya está disponible en tu Oráculo." : "Se añadirá a tu Oráculo cuando el pago quede confirmado."}</small>
+      </div> : <div className={styles.purchaseSummary} aria-label="Minutos de tu compra"><strong>{session.purchase_summary.totalMinutes} <span>minutos de consulta</span></strong><p>{session.purchase_summary.normalMinutes} minutos normales{session.purchase_summary.freeMinutes > 0 ? ` + ${session.purchase_summary.freeMinutes} minutos gratis` : ""}</p><small>{phase === "completed" ? "Ya están disponibles en tu cuenta." : "Se añadirán cuando el pago quede confirmado."}</small></div> : null}
       {session?.environment === "sandbox" && <p className={styles.notice}>Modo de pruebas · No se cobra dinero real.</p>}
       <form onSubmit={pay} hidden={!showForm} className={styles.form}>
         <fieldset disabled={phase !== "ready"}>
@@ -213,7 +222,7 @@ export default function CardPayment() {
       {["pending", "checking"].includes(phase) && <><button className={styles.pay} onClick={() => void check()} disabled={phase === "checking"}>{phase === "checking" ? "Comprobando…" : "Comprobar estado del pago"}</button>
         {phase === "pending" && session?.remote_status === "CREATED" && <button className={styles.secondary} onClick={() => window.location.reload()}>Volver a cargar el formulario</button>}</>}
       {clientPurchase && session.can_cancel === true && ["ready", "pending", "unavailable", "cancelling"].includes(phase) ? <button type="button" className={styles.secondary} disabled={phase === "cancelling"} onClick={() => void cancel()}>{phase === "cancelling" ? "Comprobando cancelación…" : "Cancelar esta compra"}</button> : null}
-      {phase === "completed" ? clientPurchase ? <div className={styles.resultLinks}><a className={styles.pay} href="/cliente/dashboard">Ver mis minutos y beneficios</a><a className={styles.back} href="/cliente/precios-ofertas">Volver a precios y ofertas</a></div> : <a className={styles.back} href="/cliente">Volver al panel →</a> : null}
+      {phase === "completed" ? clientPurchase ? <div className={styles.resultLinks}><a className={styles.pay} href={oraclePurchase ? "/cliente/oraculo" : "/cliente/dashboard"}>{oraclePurchase ? "Volver a mi Oráculo" : "Ver mis minutos y beneficios"}</a><a className={styles.back} href="/cliente/precios-ofertas">Volver a precios y ofertas</a></div> : <a className={styles.back} href="/cliente">Volver al panel →</a> : null}
       {clientPurchase && phase === "cancelled" ? <a className={styles.back} href="/cliente/precios-ofertas">Volver a precios y elegir otro paquete →</a> : null}
       <footer className={styles.footer}>Procesado de forma segura por <b>PayPal</b>.<br />Tu banco puede pedirte una confirmación adicional.</footer>
     </section>

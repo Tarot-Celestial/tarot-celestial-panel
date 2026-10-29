@@ -2,7 +2,9 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { rouletteClient, RouletteAccessError } from "@/lib/server/ruleta-access";
 import { getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
-import { buildClientPurchaseSnapshot, buildPromotionPurchaseSnapshot } from "@/lib/server/client-paypal-checkout";
+import { buildClientPurchaseSnapshot, buildPromotionPurchaseSnapshot, buildOraclePurchaseSnapshot } from "@/lib/server/client-paypal-checkout";
+import { getOraclePack } from "@/lib/server/oracle-premium";
+import { getOracleQuestionPack } from "@/lib/server/oracle-questions";
 import { loadActivePromotion, promotionPackageSnapshot } from "@/lib/server/client-promotions";
 import { PAYPAL_TABLE, PayPalError, paypalConfig, paypalConfigForAttempt, paypalAccountForNewClientPurchase, paypalPublicOrigin, paypalRequest, validateOrder, clientPayPalOriginAllowed } from "@/lib/server/paypal-crm";
 
@@ -19,8 +21,10 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => null);
     const pack = getConfiguredMinutePack(body?.packId);
     const packId = typeof body?.packId === "string" ? body.packId : "";
+    const oracleCandidate = getOracleQuestionPack(packId) || getOraclePack(packId);
+    const oraclePack = oracleCandidate?.id === packId ? oracleCandidate : null;
     const promotionId = packId.startsWith("promo:") ? packId.slice(6) : "";
-    if ((!pack && !uuid.test(promotionId)) || !uuid.test(body?.attemptId || "")) throw new PayPalError("Selecciona un paquete válido e inténtalo de nuevo.", 400);
+    if ((!pack && !oraclePack && !uuid.test(promotionId)) || !uuid.test(body?.attemptId || "")) throw new PayPalError("Selecciona un paquete válido e inténtalo de nuevo.", 400);
 
     const selected = await admin.from(PAYPAL_TABLE).select("*").eq("id", body.attemptId).maybeSingle();
     if (selected.error) throw selected.error;
@@ -47,6 +51,9 @@ export async function POST(req: Request) {
         try { payload = buildPromotionPurchaseSnapshot(snapshot); }
         catch { throw new PayPalError("Esta promoción necesita tramitarse con tu central.", 409); }
         amount = snapshot.price;
+      } else if (oraclePack) {
+        payload = buildOraclePurchaseSnapshot(oraclePack);
+        amount = oraclePack.priceEur;
       } else {
         payload = buildClientPurchaseSnapshot(pack!);
         amount = pack!.priceUsd;

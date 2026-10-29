@@ -31,13 +31,17 @@ export async function POST(req: Request) {
     const current = body.action === "cancel" ? await cancelPayPalLink(admin, attempt, "client")
       : await reconcilePayPal(admin, attempt, body.action === "capture");
     const isPurchase = current.checkout_kind === "client_purchase";
+    const purchaseKind = current.purchase_payload?.purchase_kind === "oracle" ? "oracle" : "minutes";
     const summary = { status: current.status, remote_status: current.remote_status,
       amount: Number(current.amount), currency: current.currency, description: current.pack_name, last_error: current.last_error || null,
       attempt_id: current.id, checkout_kind: isPurchase ? "client_purchase" : "crm_collection",
       can_cancel: isPurchase && current.status === "pending" && ["CREATED", "SAVED", "PAYER_ACTION_REQUIRED", "APPROVED"].includes(current.remote_status),
       credited: isPurchase && current.status === "completed" && !!current.payment_id,
-      ...(isPurchase ? { purchase_summary: { packName: current.pack_name, totalMinutes: current.purchase_payload.total_minutes,
-        normalMinutes: current.purchase_payload.normal, freeMinutes: current.purchase_payload.free } } : {}) };
+      ...(isPurchase ? { purchase_kind: purchaseKind, purchase_summary: {
+        purchaseKind, packName: current.pack_name, totalMinutes: current.purchase_payload.total_minutes,
+        normalMinutes: current.purchase_payload.normal, freeMinutes: current.purchase_payload.free,
+        oracleCredits: Number(current.purchase_payload.oracle_credits || 0), oracleQuestions: Number(current.purchase_payload.oracle_questions || 0),
+      } } : {}) };
     const canPay = current.status === "pending" && current.remote_status === "CREATED";
     if (body.action === "status" || body.action === "capture" || body.action === "cancel" || !canPay)
       return NextResponse.json({ ...summary, can_pay: false }, { headers });

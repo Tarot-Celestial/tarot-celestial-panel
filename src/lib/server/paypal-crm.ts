@@ -287,7 +287,9 @@ export async function reconcilePayPal(admin: any, attempt: any, captureApproved 
     if (order.status !== "COMPLETED" || !capture.id || capture.amount?.currency_code !== attempt.currency || Number(capture.amount?.value) !== Number(attempt.amount)) throw new PayPalError("La captura de PayPal no coincide con el cobro.");
     // Both browser callbacks and the signed webhook use the same atomic
     // finalizer. Staff collections keep their existing collection-only mode.
-    const completion = attempt.checkout_kind === "client_purchase" ? "tc_complete_paypal_client" : "tc_complete_paypal_crm";
+    const completion = attempt.checkout_kind === "client_purchase"
+      ? attempt.purchase_payload?.purchase_kind === "oracle" ? "tc_complete_paypal_oracle" : "tc_complete_paypal_client"
+      : "tc_complete_paypal_crm";
     const { error } = await admin.rpc(completion, { p_id: attempt.id, p_order_id: order.id, p_capture_id: capture.id, p_amount: Number(capture.amount.value), p_currency: capture.amount.currency_code });
     if (error) {
       await admin.from(PAYPAL_TABLE).update({ remote_status: "CAPTURE_COMPLETED", last_error: "Pago recibido. Pendiente de guardar la confirmación del cobro; no solicites otro pago." }).eq("id", attempt.id).neq("status", "completed");
