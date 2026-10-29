@@ -73,7 +73,7 @@ test('polling and reload never become activity; trusted interaction and a matchi
   const time = clock(), start = time.now(), writes = [], requests = [];
   const listeners = new Map();
   const document = { visibilityState: 'visible', addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: name => listeners.delete(name) };
-  let state = { ok: true, worker: { id: 'worker-a' }, online: true, status: 'working', session_id: 'session-a',
+  let state = { ok: true, worker: { id: 'worker-a', role: 'tarotista' }, online: true, status: 'working', session_id: 'session-a',
     session_started_at: new Date(start).toISOString(), last_manual_activity_at: new Date(start).toISOString(), last_activity_at: new Date(start).toISOString(),
     expires_at: new Date(start + 600000).toISOString(), server_now: new Date(start).toISOString() };
   const sb = { auth: { getSession: async () => ({ data: { session: { access_token: 'fixture-token' } } }) },
@@ -84,7 +84,7 @@ test('polling and reload never become activity; trusted interaction and a matchi
     return { ok: true, status: 200, json: async () => ({ ...state, server_now: new Date(time.now()).toISOString() }) };
   };
   const provider = load('src/providers/OpsProvider.tsx', {
-    'next/navigation': { usePathname: () => '/admin' }, '@/lib/supabase-browser': { supabaseBrowser: () => sb },
+    'next/navigation': { usePathname: () => '/panel-tarotista' }, '@/lib/supabase-browser': { supabaseBrowser: () => sb },
     '@/lib/attendance/panel-session': { isPanelPath: () => true, PANEL_HEARTBEAT_MS: 30000 },
   }, { ...time, document, fetch, localStorage: { setItem: (key, value) => writes.push([key, value]) } });
   let context, tree;
@@ -109,6 +109,11 @@ test('polling and reload never become activity; trusted interaction and a matchi
   time.fire('storage', { key: 'tc-panel-activity-v1:worker-a', newValue: JSON.stringify({ session: 'session-a', at: time.now() }) });
   await Renderer.act(async () => time.tick(30000));
   assert.equal(requests.at(-1).activity_at, new Date(time.now()).toISOString());
+  state={...state,consultation_started_at:new Date(time.now()).toISOString(),consultation_until:new Date(time.now()+3600000).toISOString(),consultation_source:'self_reported_external_call'};
+  await Renderer.act(async () => context.changeAttendance('consultation_start'));
+  assert.equal(requests.at(-1).event_type,'consultation_start');assert.equal(requests.at(-1).session_id,'session-a');
+  assert.equal(context.attendance.workerRole,'tarotista');assert.equal(context.attendance.consultationSource,'self_reported_external_call');
+  assert.equal(context.attendance.consultationUntil,state.consultation_until);
   state = { ...state, online: false, status: 'offline', session_id: null };
   time.set(start + 210000);
   await Renderer.act(async () => time.fire('storage', { key: 'tc-panel-state-v1:worker-a', newValue: '{}' }));
@@ -117,4 +122,50 @@ test('polling and reload never become activity; trusted interaction and a matchi
   assert.equal(requests.length, count);
   assert.ok(writes.some(([key]) => key === 'tc-panel-activity-v1:worker-a'));
   await Renderer.act(async () => tree.unmount());
+});
+
+test('tarotista manual consultation controls use explicit actions, warn at 90 seconds and lock on expiry without Auth logout',async()=>{
+  const time=clock(),start=time.now(),actions=[];let signOuts=0,refreshes=0;
+  const measuredStyles=new Map();let measuredHeight=108;
+  class Element { constructor(){this.inert=false;this.tagName='DIV';this.style={setProperty:(key,value)=>measuredStyles.set(key,value),removeProperty:key=>measuredStyles.delete(key)};} contains(other){return other===this;} blur(){} getBoundingClientRect(){return {height:measuredHeight};} }
+  const document={body:{children:[]},activeElement:null};
+  let attendance={online:true,status:'working',workerRole:'tarotista',sessionId:'session-a',serverNow:new Date(start).toISOString(),expiresAt:new Date(start+600000).toISOString(),
+    consultationStartedAt:null,consultationUntil:null,consultationSource:null,error:null,loading:false,
+    changeAttendance:async action=>{actions.push(action);},refreshAttendance:async()=>{refreshes++;},keepAttendanceActive:async()=>{actions.push('keep');}};
+  const helper=load('src/lib/attendance/panel-session.ts',{},{});
+  const Component=load('src/components/attendance/PanelAccessGate.tsx',{
+    'next/navigation':{usePathname:()=>'/panel-tarotista'},'@/hooks/useAttendance':{useAttendance:()=>attendance},
+    '@/lib/supabase-browser':{supabaseBrowser:()=>({auth:{signOut:async()=>{signOuts++;}}})},
+    '@/lib/attendance/panel-session':helper,'./PanelAccessGate.module.css':{default:{}},
+  },{...time,document,HTMLElement:Element,MutationObserver:class{observe(){}disconnect(){}}}).default;
+  const render=()=>React.createElement(Component,{},React.createElement('button',{},'Abrir pestaña'));
+  let tree;await Renderer.act(async()=>{tree=Renderer.create(render(),{createNodeMock:()=>new Element()});});
+  const button=label=>tree.root.findAllByType('button').find(node=>node.children.includes(label));
+  const workspace=tree.root.findByProps({'data-panel-workspace':true});
+  assert.equal(workspace.children[0].props.role,'status','consultation reserves its own row before the panel content');
+  assert.equal(workspace.children[1].children[0],'Abrir pestaña');
+  assert.equal(measuredStyles.get('--panel-consultation-height'),'108px','sticky header is offset by the measured controls height');
+  measuredHeight=164;time.fire('resize');
+  assert.equal(measuredStyles.get('--panel-consultation-height'),'164px','wrapped mobile controls reserve their actual height');
+  await Renderer.act(async()=>button('Estoy en consulta (60 min)').props.onClick());
+  assert.deepEqual(actions,['consultation_start']);
+  attendance={...attendance,consultationStartedAt:new Date(start).toISOString(),consultationUntil:new Date(start+3600000).toISOString(),consultationSource:'self_reported_external_call',expiresAt:new Date(start+3600000).toISOString()};
+  await Renderer.act(async()=>tree.update(render()));
+  assert.ok(button('Terminar consulta'));assert.ok(button('Ampliar 60 min'));
+  assert.match(JSON.stringify(tree.toJSON()),/Declarada por ti hasta/);
+  time.set(start+3510000);await Renderer.act(async()=>time.tick(1000));
+  assert.match(JSON.stringify(tree.toJSON()),/Tu consulta declarada está por terminar/);
+  assert.equal(actions.length,1);
+  await Renderer.act(async()=>button('Ampliar 60 min').props.onClick());
+  assert.deepEqual(actions,['consultation_start','consultation_start']);
+  await Renderer.act(async()=>button('Terminar consulta').props.onClick());
+  assert.equal(actions.at(-1),'consultation_end');
+  // A lost response does not let the browser invent a renewed deadline.
+  time.set(start+3601000);await Renderer.act(async()=>time.tick(1000));
+  assert.equal(tree.root.findByProps({'data-panel-workspace':true}).props.inert,'');
+  assert.match(JSON.stringify(tree.toJSON()),/Han terminado los 60 minutos/);
+  assert.ok(button('Conectado'));assert.equal(signOuts,0);assert.equal(refreshes,1);
+  assert.equal(tree.root.findAllByProps({role:'status'}).length,0,'locked workspace cannot keep an actionable consultation banner');
+  assert.equal(measuredStyles.has('--panel-consultation-height'),false,'locking releases the header offset');
+  await Renderer.act(async()=>tree.unmount());
 });

@@ -16,7 +16,7 @@ export async function GET(req: Request) {
     const gate = await verifiedAttendanceWorker(req);
     if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
     const uid = gate.uid;
-    if (gate.worker.role === 'admin' || gate.worker.role === 'central') {
+    if (['admin', 'central', 'tarotista'].includes(gate.worker.role)) {
       return NextResponse.json(await panelAttendanceEvent(gate.db, gate.worker, 'status'));
     }
 

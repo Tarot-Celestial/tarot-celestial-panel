@@ -2,7 +2,7 @@ export const PANEL_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 export const PANEL_HEARTBEAT_MS = 30_000;
 
 export function isPanelPath(path: string | null) {
-  return !!path && (path === '/admin' || path.startsWith('/admin/') || path === '/panel-central' || path.startsWith('/panel-central/'));
+  return !!path && ['/admin', '/panel-central', '/panel-tarotista'].some(base => path === base || path.startsWith(`${base}/`));
 }
 
 export function attendanceAction(event: unknown, meta?: { action?: unknown; phase?: unknown }) {
@@ -15,6 +15,8 @@ export function attendanceAction(event: unknown, meta?: { action?: unknown; phas
     case 'offline': case 'check_out': case 'logout': return 'disconnect';
     case 'break_start': return 'break';
     case 'bathroom_start': return 'bathroom';
+    case 'consultation_start': return 'consultation_start';
+    case 'consultation_end': return 'consultation_end';
     case 'pause': return meta?.phase === 'end' ? 'connect' : 'break';
     case 'bathroom': return meta?.phase === 'end' ? 'connect' : 'bathroom';
     case 'heartbeat': return 'heartbeat';

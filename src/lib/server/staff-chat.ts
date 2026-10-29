@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { requireActivePanelSession } from "@/lib/server/panel-attendance";
 
 export type StaffChatActor = {
   id: string;
@@ -10,10 +10,11 @@ export type StaffChatActor = {
 };
 
 export async function getStaffChatActor(req: Request) {
-  const { data, error } = getAuthUserFromRequest(req);
-  if (error || !data.user?.id) throw new Error("NO_AUTH");
-
+  const token = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+  if (!token) throw new Error("NO_AUTH");
   const db = supabaseAdmin();
+  const { data, error } = await db.auth.getUser(token);
+  if (error || !data.user?.id) throw new Error("NO_AUTH");
   const { data: worker, error: workerError } = await db
     .from("workers")
     .select("id, role, display_name, team, state, is_active")
@@ -38,7 +39,20 @@ export async function getStaffChatActor(req: Request) {
   };
 }
 
+export async function requireStaffChatConnection(db: ReturnType<typeof supabaseAdmin>, me: StaffChatActor) {
+  const state = await requireActivePanelSession(db, { ...me, is_active: true });
+  if (!state.ok) throw new Error(state.error);
+}
+
+export function requireStaffChatUuid(value: string, kind: "THREAD" | "MESSAGE" | "CONTACT") {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+    throw new Error(`INVALID_${kind}_ID`);
+  }
+  return value;
+}
+
 export async function requireStaffChatThread(db: ReturnType<typeof supabaseAdmin>, me: StaffChatActor, threadId: string) {
+  requireStaffChatUuid(threadId, "THREAD");
   const { data: thread, error } = await db
     .from("chat_threads")
     .select("id, central_worker_id, tarotist_worker_id, status, created_at, last_message_at, last_message_preview, title")
@@ -53,7 +67,8 @@ export async function requireStaffChatThread(db: ReturnType<typeof supabaseAdmin
 }
 
 export function staffChatError(error: unknown) {
-  const code = error instanceof Error ? error.message : "CHAT_ERROR";
-  const status = code === "NO_AUTH" ? 401 : code === "NO_WORKER" || code === "FORBIDDEN" ? 403 : code === "THREAD_NOT_FOUND" ? 404 : code.startsWith("INVALID_") || code.startsWith("MISSING_") || code === "EMPTY_BODY" ? 400 : 500;
+  const raw = error instanceof Error ? error.message : typeof error === "object" && error && "message" in error ? String(error.message) : "CHAT_ERROR";
+  const code = /^(NO_AUTH|NO_WORKER|FORBIDDEN|THREAD_NOT_FOUND|MESSAGE_NOT_FOUND|CONTACT_NOT_FOUND|MESSAGE_ID_CONFLICT|PANEL_CONNECTION_REQUIRED|EMPTY_BODY|INVALID_[A-Z_]+|MISSING_[A-Z_]+)$/.test(raw) ? raw : "CHAT_ERROR";
+  const status = code === "NO_AUTH" ? 401 : code === "PANEL_CONNECTION_REQUIRED" ? 423 : code === "NO_WORKER" || code === "FORBIDDEN" ? 403 : ["THREAD_NOT_FOUND", "MESSAGE_NOT_FOUND", "CONTACT_NOT_FOUND"].includes(code) ? 404 : code === "MESSAGE_ID_CONFLICT" ? 409 : code.startsWith("INVALID_") || code.startsWith("MISSING_") || code === "EMPTY_BODY" ? 400 : 500;
   return { code, status };
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getStaffChatActor, staffChatError } from "@/lib/server/staff-chat";
+import { getStaffChatActor, requireStaffChatConnection, requireStaffChatUuid, staffChatError } from "@/lib/server/staff-chat";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,15 +29,23 @@ export async function GET(req: Request) {
     if (participantError) throw participantError;
     const workerById = new Map((participants || []).map((worker: any) => [String(worker.id), publicWorker(worker)]));
     const unreadByThread = new Map<string, number>();
-    const { data: unreadRows, error: unreadError } = threadIds.length
-      ? await db.rpc("staff_chat_unread_counts", { p_worker_id: me.id, p_thread_ids: threadIds })
-      : { data: [], error: null };
+    const [{ data: unreadRows, error: unreadError }, { data: incomingRows, error: incomingError }] = threadIds.length
+      ? await Promise.all([
+        db.rpc("staff_chat_unread_counts", { p_worker_id: me.id, p_thread_ids: threadIds }),
+        db.rpc("staff_chat_latest_incoming", { p_worker_id: me.id, p_thread_ids: threadIds }),
+      ])
+      : [{ data: [], error: null }, { data: [], error: null }];
     if (unreadError) throw unreadError;
+    if (incomingError) throw incomingError;
     for (const row of unreadRows || []) unreadByThread.set(String(row.thread_id), Number(row.unread_count || 0));
+    const incomingByThread = new Map<string, any>((incomingRows || []).map((row: any) => [String(row.thread_id), {
+      id: String(row.id), thread_id: String(row.thread_id), sender_worker_id: String(row.sender_worker_id),
+      sender_display_name: String(row.sender_display_name || ""), text: String(row.text || ""), created_at: String(row.created_at),
+    }]));
     const normalizedThreads = (threads || []).map((thread: any) => {
       const otherId = me.role === "tarotista" ? thread.central_worker_id : thread.tarotist_worker_id;
       const legacyContact = !otherId && me.role === "tarotista" ? { id: `legacy:${thread.id}`, display_name: "Historial anterior", role: "central", team: null, state: "offline" } : null;
-      return { ...thread, id: String(thread.id), contact: otherId ? workerById.get(String(otherId)) || null : legacyContact, unread_count: unreadByThread.get(String(thread.id)) || 0, legacy: !thread.central_worker_id };
+      return { ...thread, id: String(thread.id), contact: otherId ? workerById.get(String(otherId)) || null : legacyContact, unread_count: unreadByThread.get(String(thread.id)) || 0, latest_incoming: incomingByThread.get(String(thread.id)) || null, legacy: !thread.central_worker_id };
     });
     const legacyContacts = normalizedThreads.filter((thread: any) => thread.legacy && thread.contact).map((thread: any) => thread.contact);
     return NextResponse.json({ ok: true, mode: me.role, me, contacts: [...(contacts || []).map(publicWorker), ...legacyContacts], threads: normalizedThreads, unread_total: normalizedThreads.reduce((total: number, thread: any) => total + Number(thread.unread_count || 0), 0) }, { headers: { "Cache-Control": "no-store" } });
@@ -51,9 +59,11 @@ export async function POST(req: Request) {
   try {
     const { db, me } = await getStaffChatActor(req);
     if (me.role === "admin") throw new Error("FORBIDDEN");
+    await requireStaffChatConnection(db, me);
     const body = await req.json().catch(() => ({}));
     const requestedId = String(body?.contact_worker_id || body?.tarotist_worker_id || "").trim();
     if (!requestedId) throw new Error("MISSING_CONTACT_WORKER_ID");
+    requireStaffChatUuid(requestedId, "CONTACT");
     const { data: contact, error: contactError } = await db.from("workers").select("id, display_name, role, team, state, is_active").eq("id", requestedId).eq("is_active", true).maybeSingle();
     if (contactError) throw contactError;
     if (!contact?.id) throw new Error("CONTACT_NOT_FOUND");

@@ -370,6 +370,7 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
   return (
     <>
       <div
+        data-panel-header
         className={styles.shell}
         style={{
           position: "sticky",
