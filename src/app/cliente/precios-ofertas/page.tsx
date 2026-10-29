@@ -11,11 +11,10 @@ import RouletteRewardArt from "@/components/cliente/RouletteRewardArt";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import type { RouletteLevel, RouletteSummary } from "@/lib/ruleta";
 import { promotionDisplayCopy } from "@/lib/purchase-presentation";
+import { ClientPurchaseError, prepareClientPurchase } from "@/lib/client-purchase-checkout";
 import styles from "./PricesOffers.module.css";
 
 const sb = supabaseClienteBrowser();
-const PURCHASE_ATTEMPT_PREFIX = "tc-client-purchase-attempt:v1:";
-const attemptUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type OraclePack = { id: string; nombre: string; descripcion: string; priceEur: number; credits: number };
 type QuestionPack = { id: string; nombre: string; descripcion: string; priceEur: number; questions: number };
@@ -142,35 +141,10 @@ export default function PreciosOfertasPage() {
     };
   }, [load, resetAccount]);
 
-  async function checkout(endpoint: string, packId: string) {
-    const checkoutGeneration = generation.current;
-    try {
-      setBusy(packId);
-      setMessage("");
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("Sesión no válida");
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ pack_id: packId }),
-      });
-      const result = await response.json().catch(() => null);
-      if (!mounted.current || generation.current !== checkoutGeneration || owner.current !== data.session?.user.id) return;
-      if (!result?.ok || !result?.url) throw new Error(result?.error || "No hemos podido iniciar el pago");
-      window.location.href = result.url;
-    } catch (error) {
-      if (mounted.current && generation.current === checkoutGeneration) setMessage(error instanceof Error ? error.message : "No hemos podido iniciar el pago");
-    } finally {
-      if (mounted.current && generation.current === checkoutGeneration) setBusy("");
-    }
-  }
-
-  async function checkoutMinutes(packId: string) {
+  async function checkoutPurchase(packId: string) {
     if (purchaseInFlight.current || states[packId.startsWith("promo:") ? "promotion" : "catalogue"] !== "ready") return;
     purchaseInFlight.current = true;
     const checkoutGeneration = generation.current;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       setBusy(packId); setMessage(""); setPendingCheckoutUrl(null); setCheckoutMessagePack(packId);
       const { data } = await sb.auth.getSession();
@@ -178,43 +152,15 @@ export default function PreciosOfertasPage() {
       const isCurrent = () => mounted.current && generation.current === checkoutGeneration && owner.current === session?.user.id;
       if (!isCurrent()) return;
       if (!session) throw new Error("Tu sesión ha caducado. Vuelve a iniciar sesión para comprar.");
-      const key = `${PURCHASE_ATTEMPT_PREFIX}${session.user.id}:${packId}`;
-      let stored: { attemptId: string; url?: string } | null = null;
-      try {
-        const raw = localStorage.getItem(key);
-        if (raw) { const parsed = JSON.parse(raw); if (attemptUuid.test(parsed?.attemptId || "")) stored = parsed; }
-      } catch { /* A damaged entry is replaced below before making a request. */ }
-      // A confirmed link belongs to an earlier visit. A new click starts a new purchase;
-      // ambiguous or failed requests retain their ID so retrying cannot duplicate them.
-      const attemptId = stored?.url ? crypto.randomUUID() : stored?.attemptId || crypto.randomUUID();
-      try { localStorage.setItem(key, JSON.stringify({ attemptId })); }
-      catch { throw new Error("Tu navegador no puede guardar este intento de compra. Permite el almacenamiento del sitio y vuelve a intentarlo."); }
-      const controller = new AbortController();
-      timeout = setTimeout(() => controller.abort(), 30000);
-      const request = (token: string) => fetch("/api/cliente/pagos/paypal", { method: "POST", cache: "no-store", signal: controller.signal,
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ packId, attemptId }) });
-      let response = await request(session.access_token);
-      if (response.status === 401) {
-        const refreshed = (await sb.auth.refreshSession()).data.session;
-        if (!isCurrent() || refreshed?.user.id !== session.user.id) throw new Error("Tu sesión ha caducado. Vuelve a iniciar sesión.");
-        response = await request(refreshed.access_token);
-      }
-      const result = await response.json().catch(() => null);
-      if (!isCurrent()) return;
-      if (response.status === 409 && result?.url) {
-        const pendingUrl = new URL(result.url, window.location.origin);
-        if (pendingUrl.origin === window.location.origin && pendingUrl.pathname === "/pago-tarjeta" && attemptUuid.test(pendingUrl.searchParams.get("ref") || "")) setPendingCheckoutUrl(pendingUrl.pathname + pendingUrl.search);
-      }
-      if (!response.ok || !result?.ok || !result?.url) throw new Error(result?.error || "No hemos podido preparar el pago. Vuelve a intentarlo: recuperaremos la misma compra.");
-      const url = new URL(result.url, window.location.origin);
-      if (url.origin !== window.location.origin || url.pathname !== "/pago-tarjeta" || !attemptUuid.test(url.searchParams.get("ref") || "")) throw new Error("No hemos podido verificar el enlace de pago. Vuelve a intentarlo.");
-      const confirmedAttemptId = attemptUuid.test(result.attempt_id || "") ? result.attempt_id : attemptId;
-      localStorage.setItem(key, JSON.stringify({ attemptId: confirmedAttemptId, url: url.pathname + url.search }));
-      window.location.href = url.pathname + url.search;
+      const url = await prepareClientPurchase({ auth: sb.auth, session, packId, isCurrent });
+      if (url && isCurrent()) window.location.href = url;
     } catch (error) {
-      if (mounted.current && generation.current === checkoutGeneration) setMessage(error instanceof Error && error.name !== "AbortError" ? error.message : "La conexión ha tardado demasiado. Vuelve a intentarlo: recuperaremos el mismo intento de pago.");
+      if (mounted.current && generation.current === checkoutGeneration) {
+        setPendingCheckoutUrl(error instanceof ClientPurchaseError ? error.pendingUrl : null);
+        setMessage(error instanceof Error && error.name !== "AbortError" ? error.message : "La conexión ha tardado demasiado. Vuelve a intentarlo: recuperaremos el mismo intento de pago.");
+      }
     } finally {
-      clearTimeout(timeout); purchaseInFlight.current = false;
+      purchaseInFlight.current = false;
       if (mounted.current && generation.current === checkoutGeneration) setBusy("");
     }
   }
@@ -290,7 +236,7 @@ export default function PreciosOfertasPage() {
                     {extraBenefit ? <span>✦ {extraBenefit}</span> : null}
                     {pack.rankBenefits?.enabled && Number(pack.rankBenefits.oracle_credits || 0) > 0 ? <span><strong>Por tu rango:</strong> +{Number(pack.rankBenefits.oracle_credits)} Oráculo</span> : null}
                   </div>
-                  <ClientPurchaseAction className={styles.promoBuy} checkoutEnabled><button type="button" className={styles.promoBuy} disabled={busy === `promo:${pack.id}` || states.promotion !== "ready"} onClick={() => checkoutMinutes(`promo:${pack.id}`)}>{busy === `promo:${pack.id}` ? "Conectando…" : "COMPRAR AHORA"}</button></ClientPurchaseAction>
+                  <ClientPurchaseAction className={styles.promoBuy} checkoutEnabled><button type="button" className={styles.promoBuy} disabled={busy === `promo:${pack.id}` || states.promotion !== "ready"} onClick={() => checkoutPurchase(`promo:${pack.id}`)}>{busy === `promo:${pack.id}` ? "Conectando…" : "COMPRAR AHORA"}</button></ClientPurchaseAction>
                   {checkoutMessagePack === `promo:${pack.id}` && message ? <div className={styles.message} role="alert">{message}{pendingCheckoutUrl ? <Link href={pendingCheckoutUrl}>Revisar compra pendiente</Link> : null}</div> : null}
                 </article>
                 );
@@ -328,7 +274,7 @@ export default function PreciosOfertasPage() {
                   </div>
                   <LevelPrizeBanner packs={packs} summary={rouletteSummary} />
                   <div className={styles.minuteGrid}>
-                    {packs.map(pack => <MinuteCard key={pack.id} pack={pack} packageLevel={level} rankLabel={rankLabel} busy={busy === pack.id} unavailable={states.catalogue !== "ready" || Boolean(busy)} onBuy={() => checkoutMinutes(pack.id)} feedback={checkoutMessagePack === pack.id ? { message, pendingUrl: pendingCheckoutUrl } : null} />)}
+                    {packs.map(pack => <MinuteCard key={pack.id} pack={pack} packageLevel={level} rankLabel={rankLabel} busy={busy === pack.id} unavailable={states.catalogue !== "ready" || Boolean(busy)} onBuy={() => checkoutPurchase(pack.id)} feedback={checkoutMessagePack === pack.id ? { message, pendingUrl: pendingCheckoutUrl } : null} />)}
                   </div>
                   {nextPacks.length > 0 ? <a className={styles.nextLevelLink} href={`#nivel-${level + 1}`}><span>{level === 1 ? "¿Quieres más tiempo?" : "¿Prefieres una consulta más larga?"}</span><strong>Ver paquetes {minutesRange(nextPacks).toLowerCase()} <ArrowDown aria-hidden="true" /></strong></a> : null}
                 </div>
@@ -342,7 +288,7 @@ export default function PreciosOfertasPage() {
               <div className={styles.levelIdentity}><span>PAQUETES DISPONIBLES</span><h3 id="unassigned-packs-title">Elige tus minutos</h3><p>Consulta el precio y los beneficios de cada paquete.</p></div>
             </div>
             <div className={styles.minuteGrid}>
-              {unassignedPacks.map(pack => <MinuteCard key={pack.id} pack={pack} packageLevel={null} rankLabel={rankLabel} busy={busy === pack.id} unavailable={states.catalogue !== "ready" || Boolean(busy)} onBuy={() => checkoutMinutes(pack.id)} feedback={checkoutMessagePack === pack.id ? { message, pendingUrl: pendingCheckoutUrl } : null} />)}
+              {unassignedPacks.map(pack => <MinuteCard key={pack.id} pack={pack} packageLevel={null} rankLabel={rankLabel} busy={busy === pack.id} unavailable={states.catalogue !== "ready" || Boolean(busy)} onBuy={() => checkoutPurchase(pack.id)} feedback={checkoutMessagePack === pack.id ? { message, pendingUrl: pendingCheckoutUrl } : null} />)}
             </div>
           </section> : null}
 
@@ -362,16 +308,18 @@ export default function PreciosOfertasPage() {
               <article key={pack.id} className={`${styles.card} ${index === 1 ? styles.featured : ""}`}>
                 <div className={styles.serviceTop}><div className={styles.icon}>{index === 0 ? "🔮" : "✨"}</div><span className={styles.badge}>{pack.credits} TIRADAS</span></div>
                 <h3>{pack.nombre}</h3><p>{pack.descripcion}</p>
-                <strong className={styles.price}>${pack.priceEur.toFixed(2).replace(".", ",")}</strong>
-                <ClientPurchaseAction className={styles.buyButton}><button className={styles.buyButton} disabled={busy === pack.id || states.catalogue !== "ready"} onClick={() => checkout("/api/cliente/oraculo/checkout", pack.id)}>{busy === pack.id ? "Conectando…" : "COMPRAR"}</button></ClientPurchaseAction>
+                <strong className={styles.price}>{new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(pack.priceEur)}</strong>
+                <ClientPurchaseAction className={styles.buyButton} checkoutEnabled><button type="button" className={styles.buyButton} disabled={Boolean(busy) || states.catalogue !== "ready"} onClick={() => checkoutPurchase(pack.id)}>{busy === pack.id ? "Conectando…" : "COMPRAR"}</button></ClientPurchaseAction>
+                {checkoutMessagePack === pack.id && message ? <div className={styles.message} role="alert">{message}{pendingCheckoutUrl ? <Link href={pendingCheckoutUrl}>Revisar pago pendiente</Link> : null}</div> : null}
               </article>
             ))}
             {questionPack ? (
               <article className={`${styles.card} ${styles.featured}`}>
                 <div className={styles.serviceTop}><div className={styles.icon}>💬</div><span className={styles.badge}>{questionPack.questions} PREGUNTAS</span></div>
                 <h3>{questionPack.nombre}</h3><p>{questionPack.descripcion}</p>
-                <strong className={styles.price}>${questionPack.priceEur.toFixed(2).replace(".", ",")}</strong>
-                <ClientPurchaseAction className={styles.buyButton}><button className={styles.buyButton} disabled={busy === questionPack.id || states.catalogue !== "ready"} onClick={() => checkout("/api/cliente/oraculo/checkout", questionPack.id)}>{busy === questionPack.id ? "Conectando…" : "COMPRAR"}</button></ClientPurchaseAction>
+                <strong className={styles.price}>{new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(questionPack.priceEur)}</strong>
+                <ClientPurchaseAction className={styles.buyButton} checkoutEnabled><button type="button" className={styles.buyButton} disabled={Boolean(busy) || states.catalogue !== "ready"} onClick={() => checkoutPurchase(questionPack.id)}>{busy === questionPack.id ? "Conectando…" : "COMPRAR"}</button></ClientPurchaseAction>
+                {checkoutMessagePack === questionPack.id && message ? <div className={styles.message} role="alert">{message}{pendingCheckoutUrl ? <Link href={pendingCheckoutUrl}>Revisar pago pendiente</Link> : null}</div> : null}
               </article>
             ) : null}
           </div>

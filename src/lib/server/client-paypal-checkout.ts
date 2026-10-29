@@ -1,6 +1,24 @@
 import type { ClienteMinutePack } from "@/lib/server/cliente-minute-packs";
 import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
 import type { PromotionPackageSnapshot } from "@/lib/server/client-promotions";
+import type { OraclePack } from "@/lib/server/oracle-premium";
+import type { ORACLE_QUESTION_PACK } from "@/lib/server/oracle-questions";
+
+export function buildOraclePurchaseSnapshot(pack: OraclePack | typeof ORACLE_QUESTION_PACK) {
+  const oracleCredits = "credits" in pack ? pack.credits : 0;
+  const oracleQuestions = "questions" in pack ? pack.questions : 0;
+  if (!["oracle_2", "destino_3", "oracle_questions_3"].includes(pack.id) || !Number.isFinite(pack.priceEur) || pack.priceEur <= 0 ||
+    ![oracleCredits, oracleQuestions].every(value => Number.isSafeInteger(value) && value >= 0) ||
+    (oracleCredits > 0) === (oracleQuestions > 0)) throw new Error("Paquete de Oráculo no válido.");
+  return {
+    purchase_kind: "oracle" as const, pack_id: pack.id, pack_name: pack.nombre,
+    total_minutes: 0, normal: 0, free: 0, points: 0,
+    oracle_credits: oracleCredits, oracle_questions: oracleQuestions,
+    roulette_level: null, roulette_spins: 0, package_level: null,
+    reward_policy_version: 1, pricing_mode: "oracle", purchase_classification: "nada", rewards_eligible: false,
+    created_by_role: "cliente", notas: "Compra de Oráculo desde el panel cliente · PayPal · EUR",
+  };
+}
 
 export function buildPromotionPurchaseSnapshot(snapshot: PromotionPackageSnapshot) {
   // Match the EUR card settlement contract before creating a payable order.

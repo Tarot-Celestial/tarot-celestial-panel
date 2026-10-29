@@ -96,6 +96,8 @@ function routeHarness() {
       return { ...auth, admin };
     } },
     '@/lib/server/cliente-minute-packs': packModule,
+    '@/lib/server/oracle-premium': load('src/lib/server/oracle-premium.ts'),
+    '@/lib/server/oracle-questions': load('src/lib/server/oracle-questions.ts'),
     '@/lib/server/client-promotions': { ...promotions, loadActivePromotion: async () => state.promotion },
     '@/lib/server/client-paypal-checkout': checkoutModule(),
     '@/lib/server/paypal-crm': paypal,
@@ -311,7 +313,7 @@ function cardRouteHarness(kind = 'client_purchase') {
 test('Client checkout session exposes exact purchased split without private customer identifiers', async () => {
   const h = cardRouteHarness(), response = await h.post('session'), data = await response.json();
   assert.equal(response.status, 200); assert.equal(data.checkout_kind, 'client_purchase'); assert.equal(data.can_cancel, true); assert.equal(data.credited, false);
-  assert.deepEqual(data.purchase_summary, { packName: '30 minutos', totalMinutes: 30, normalMinutes: 20, freeMinutes: 10 });
+  assert.deepEqual(data.purchase_summary, { purchaseKind: 'minutes', packName: '30 minutos', totalMinutes: 30, normalMinutes: 20, freeMinutes: 10, oracleCredits: 0, oracleQuestions: 0 });
   for (const field of ['cliente_id', 'purchaser_auth_user_id', 'purchase_payload', 'create_payload', 'public_token']) assert.equal(data[field], undefined);
   assert.ok(h.calls.every(call => call.capture === false));
 });

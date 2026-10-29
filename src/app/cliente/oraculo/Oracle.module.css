@@ -501,6 +501,7 @@
   gap: 10px;
 }
 
+.errorBox a { display:block; margin-top:8px; text-decoration:underline; font-weight:700; }
 .errorBox {
   padding: 12px 14px;
   border-radius: 14px;

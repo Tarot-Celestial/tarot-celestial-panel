@@ -130,6 +130,8 @@ function harness(overrides = {}) {
   const sharedMocks = { 'next/server': { NextResponse }, '@/lib/server/paypal-crm': paypal,
     '@/lib/server/ruleta-access': { RouletteAccessError, rouletteClient: async () => ({ admin, cliente: client, user }), rouletteStaff: async () => ({ admin, worker }) },
     '@/lib/server/cliente-minute-packs': packs, '@/lib/server/client-paypal-checkout': checkout,
+    '@/lib/server/oracle-premium': load('src/lib/server/oracle-premium.ts'),
+    '@/lib/server/oracle-questions': load('src/lib/server/oracle-questions.ts'),
     '@/lib/server/client-promotions': { loadActivePromotion: async () => null }, '@/lib/ruleta': roulette,
     '@/lib/server/cliente-platform': { splitMinutes: n => ({ normal: n / 2, free: n / 2 }) },
   };

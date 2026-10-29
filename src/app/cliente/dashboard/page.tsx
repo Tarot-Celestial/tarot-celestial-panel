@@ -1,6 +1,5 @@
 "use client";
 import HomeObservatory from "@/components/cliente/HomeObservatory";
-import ClientPurchaseAction from "@/components/cliente/ClientPurchaseAction";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -172,7 +171,6 @@ export default function ClienteDashboardPage() {
   const [oracleFreeAvailable, setOracleFreeAvailable] = useState(false);
   const [oracleNextFreeAt, setOracleNextFreeAt] = useState<string | null>(null);
   const [oracleFreeCountdown, setOracleFreeCountdown] = useState(0);
-  const [buyingOraclePackId, setBuyingOraclePackId] = useState("");
   const [buyingMinutePackId, setBuyingMinutePackId] = useState("");
   const [showWelcomeGift, setShowWelcomeGift] = useState(false);
   const [welcomeGiftMinutes, setWelcomeGiftMinutes] = useState(10);
@@ -750,28 +748,6 @@ export default function ClienteDashboardPage() {
       throw e;
     } finally {
       setRedeeming(false);
-    }
-  }
-
-  async function buyOraclePack(packId: string) {
-    try {
-      setBuyingOraclePackId(packId);
-      setMsg("");
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("Sesión no válida");
-      const res = await fetch("/api/cliente/oraculo/checkout", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ pack_id: packId }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!json?.ok || !json?.url) throw new Error(json?.error || "No hemos podido iniciar el pago");
-      window.location.href = json.url;
-    } catch (e: any) {
-      setMsg(e?.message || "No hemos podido iniciar el pago");
-    } finally {
-      setBuyingOraclePackId("");
     }
   }
 
