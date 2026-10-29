@@ -45,6 +45,7 @@ const sb = supabaseBrowser();
 const AtlasPanel = nextDynamic(() => import("@/features/admin/atlas/AtlasPanel"), { ssr:false });
 const DashboardPanel = nextDynamic(() => import("@/components/admin/DashboardPanel"), { ssr:false });
 const StatisticsPanel = nextDynamic(() => import("@/components/admin/StatisticsPanel"), { ssr:false });
+const CentralStatisticsPanel = nextDynamic(() => import("@/components/admin/CentralStatisticsPanel"), { ssr:false });
 const OperatorPanel = nextDynamic(() => import("@/components/panel/OperatorPanel"), { ssr:false });
 const AdminClientesTab = nextDynamic(() => import("@/components/admin/AdminClientesTab"), { ssr:false });
 const CRMClientesPanel = nextDynamic(() => import("@/components/crm/CRMClientesPanel"), { ssr:false });
@@ -2091,6 +2092,7 @@ function AdminPage() {
             />
           )}
 
+          {tab === "estadisticas-centrales" && <CentralStatisticsPanel month={month} />}
           {tab === "equipos-marcador" && <TeamScoreboardAdminPanel month={month} />}
 
 
