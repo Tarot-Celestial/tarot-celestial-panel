@@ -4,7 +4,7 @@ import { rouletteClient, RouletteAccessError } from "@/lib/server/ruleta-access"
 import { getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
 import { buildClientPurchaseSnapshot, buildPromotionPurchaseSnapshot } from "@/lib/server/client-paypal-checkout";
 import { loadActivePromotion, promotionPackageSnapshot } from "@/lib/server/client-promotions";
-import { PAYPAL_TABLE, PayPalError, paypalConfig, paypalRequest, clientPayPalOriginAllowed } from "@/lib/server/paypal-crm";
+import { PAYPAL_TABLE, PayPalError, paypalConfig, paypalConfigForAttempt, paypalAccountForNewClientPurchase, paypalPublicOrigin, paypalRequest, validateOrder, clientPayPalOriginAllowed } from "@/lib/server/paypal-crm";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,9 +14,8 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{1
 export async function POST(req: Request) {
   try {
     const { admin, user, cliente } = await rouletteClient(req);
-    const config = paypalConfig();
     const origin = req.headers.get("origin");
-    if (!clientPayPalOriginAllowed(origin, config.origin)) return NextResponse.json({ error: "Origen no válido." }, { status: 403, headers });
+    if (!clientPayPalOriginAllowed(origin, paypalPublicOrigin())) return NextResponse.json({ error: "Origen no válido." }, { status: 403, headers });
     const body = await req.json().catch(() => null);
     const pack = getConfiguredMinutePack(body?.packId);
     const packId = typeof body?.packId === "string" ? body.packId : "";
@@ -27,7 +26,7 @@ export async function POST(req: Request) {
     if (selected.error) throw selected.error;
     let attempt = selected.data;
     const owns = (a: any) => a.checkout_kind === "client_purchase" && a.purchaser_auth_user_id === user.id &&
-      a.cliente_id === cliente.id && a.environment === config.environment;
+      a.cliente_id === cliente.id;
     if (attempt && (!owns(attempt) || attempt.pack_id !== packId)) throw new PayPalError("La operación no corresponde a esta compra.", 409);
 
     // Each attempt is independent; retries only recover this exact request ID.
@@ -36,6 +35,7 @@ export async function POST(req: Request) {
       // purchases never disables reconciliation of a payment already created.
       const setting = await admin.from("cliente_payment_settings").select("paypal_client_enabled").eq("id", "default").maybeSingle();
       if (setting.error || setting.data?.paypal_client_enabled !== true) throw new PayPalError("Las compras con tarjeta no están disponibles en este momento. Contacta con tu central.", 503);
+      const config = paypalConfig(paypalAccountForNewClientPurchase());
       const id = body.attemptId, token = randomUUID();
       let payload;
       let amount: number;
@@ -60,7 +60,11 @@ export async function POST(req: Request) {
       const inserted = await admin.from(PAYPAL_TABLE).insert({ id, cliente_id: cliente.id, worker_id: null,
         checkout_kind: "client_purchase", purchaser_auth_user_id: user.id, environment: config.environment,
         public_token: token, amount, currency: "EUR", pack_id: packId, pack_name: payload.pack_name,
-        purchase_payload: payload, create_payload: createPayload }).select("*").single();
+        // The account is part of the original server-built snapshot. Retries
+        // recover this exact row even if the activation switch changes later.
+        purchase_payload: { ...payload, ...(config.account === "client_business_v1" ? {
+          paypal_account: config.account, paypal_merchant_id: config.merchantId,
+        } : {}) }, create_payload: createPayload }).select("*").single();
       if (inserted.error && inserted.error.code !== "23505") throw inserted.error;
       const recovered = inserted.data ? null : await admin.from(PAYPAL_TABLE).select("*").eq("id", body.attemptId).maybeSingle();
       if (recovered?.error) throw recovered.error;
@@ -68,13 +72,15 @@ export async function POST(req: Request) {
       if (!attempt || !owns(attempt) || attempt.pack_id !== packId) throw new PayPalError("No se pudo recuperar esta compra. Reintenta con la misma operación.", 409);
     }
 
+    const config = paypalConfigForAttempt(attempt);
     if (!attempt.order_id) {
       // PayPal deduplicates creation for six hours. Outside that window we
       // cannot infer that a network timeout meant no order was created.
       if (attempt.status !== "pending" || Date.now() - Date.parse(attempt.created_at) > 5 * 60 * 60 * 1000)
         throw new PayPalError("Esta compra necesita comprobarse con la central antes de crear otro pago.", 409);
-      const order = await paypalRequest("/v2/checkout/orders", attempt.create_payload, `create-${attempt.id}`);
+      const order = await paypalRequest("/v2/checkout/orders", attempt.create_payload, `create-${attempt.id}`, config.account);
       if (!/^[A-Z0-9]+$/.test(order.id || "")) throw new PayPalError("PayPal no devolvió una referencia válida.");
+      if (config.account === "client_business_v1") validateOrder({ ...attempt, order_id: order.id }, order);
       const url = `${origin}/pago-tarjeta?ref=${attempt.public_token}`;
       const saved = await admin.from(PAYPAL_TABLE).update({ order_id: order.id, approval_url: url, remote_status: order.status })
         .eq("id", attempt.id).is("order_id", null);

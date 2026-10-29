@@ -1,9 +1,27 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import { getActiveClientPaymentProvider, getClientWebPaymentsEnabled } from "@/lib/server/client-payment-settings";
+import { diagnoseCustomerPayPalConfiguration, PayPalError } from "@/lib/server/paypal-crm";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+export async function POST(req: Request) {
+  const headers = { "Cache-Control": "private, no-store" };
+  try {
+    const gate = await requireAdmin(req);
+    if (!gate.ok) return NextResponse.json({ ok: false, error: "Acceso reservado a administración." },
+      { status: gate.error === "FORBIDDEN" ? 403 : 401, headers });
+    const body = await req.json().catch(() => null);
+    if (body?.action !== "diagnose_paypal_customer") return NextResponse.json({ ok: false, error: "Diagnóstico no válido." }, { status: 400, headers });
+    // Fixed server account, independent from the activation selector. This path
+    // never reads payment rows or invokes creation, reconciliation or capture.
+    return NextResponse.json({ ok: true, ...await diagnoseCustomerPayPalConfiguration() }, { headers });
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error instanceof PayPalError ? error.message : "No se pudo comprobar PayPal cliente. Inténtalo de nuevo." },
+      { status: error instanceof PayPalError ? error.status : 503, headers });
+  }
+}
 
 export async function GET(req: Request) {
   try {

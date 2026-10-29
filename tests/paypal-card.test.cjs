@@ -11,7 +11,9 @@ function harness(){
  const admin={from:()=>{const filters=[];const q={select:()=>q,eq:(k,v)=>{filters.push([k,v]);return q;},
  maybeSingle:async()=>({data:filters.every(([k,v])=>row[k]===v)?row:null})};return q;}};
  class PayPalError extends Error{constructor(m,status){super(m);this.status=status;}}
- const helpers={PAYPAL_TABLE:'crm_paypal_orders',PayPalError,clientPayPalOriginAllowed:originHelpers.clientPayPalOriginAllowed,paypalConfig:()=>({environment:'live',origin:'https://panel.test',client:'PUBLIC_CLIENT_ID',secret:'NEVER_RETURN'}),
+ const config={account:'legacy',environment:'live',origin:'https://panel.test',client:'PUBLIC_CLIENT_ID',secret:'NEVER_RETURN'};
+ const helpers={PAYPAL_TABLE:'crm_paypal_orders',PayPalError,clientPayPalOriginAllowed:originHelpers.clientPayPalOriginAllowed,paypalConfig:()=>config,
+ paypalPublicOrigin:()=>config.origin,paypalConfigForAttempt:a=>{if(a.environment!==config.environment)throw new PayPalError('Wrong environment',409);return config;},
  paypalAdmin:()=>admin,reconcilePayPal:async(_,a,capture)=>{calls.push(['reconcile',capture]);return a;},
  validateOrder:(a,o)=>{assert.equal(a.order_id,o.id);},
  paypalRequest:async url=>{calls.push(['request',url]);return url.includes('generate-token')?{client_token:'CLIENT_TOKEN'}:order();}};
@@ -24,7 +26,7 @@ test('Card link requires an exact public token, matching environment and origin'
  const h=harness();assert.equal((await h.post('session',{},'https://evil.test')).status,403);
  assert.equal((await h.post('session',{ref:'bad'})).status,400);
  assert.equal((await h.post('session',{ref:'00000000-0000-4000-8000-000000000098'})).status,404);
- h.row.environment='sandbox';assert.equal((await h.post()).status,404);assert.equal(h.calls.length,0);
+ h.row.environment='sandbox';assert.equal((await h.post()).status,409);assert.equal(h.calls.length,0);
 });
 test('Session returns only checkout metadata and client token; does not capture',async()=>{
  const h=harness(),r=await h.post(),data=await r.json();assert.equal(r.status,200);assert.equal(data.amount,22);

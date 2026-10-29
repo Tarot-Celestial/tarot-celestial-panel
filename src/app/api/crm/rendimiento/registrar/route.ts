@@ -245,7 +245,7 @@ export async function GET(req: Request) {
     if (new URL(req.url).searchParams.get("mode") === "collections") {
       const { data, error } = await admin.from("crm_paypal_orders")
         .select("id,amount,currency,pack_id,pack_name,completed_at,order_id")
-        .eq("cliente_id", clienteId).eq("environment", paypalConfig().environment)
+        .eq("cliente_id", clienteId).eq("environment", paypalConfig("legacy").environment)
         .eq("checkout_kind", "crm_collection").eq("status", "completed").eq("currency", "EUR")
         .not("capture_id", "is", null).is("payment_id", null)
         .order("completed_at", { ascending: false }).limit(100);
@@ -538,7 +538,7 @@ export async function POST(req: Request) {
       existing_payment_id: existingPaymentId || null,
       paypal_collection_order_id: paypalCollectionOrderId || null,
       paypal_collection_source: paypalCollectionSource || null,
-      expected_paypal_environment: normalizedPaymentMethod === "paypal_manual" ? paypalConfig().environment : null,
+      expected_paypal_environment: normalizedPaymentMethod === "paypal_manual" ? paypalConfig("legacy").environment : null,
       separate_payment_confirmed: paypalCollectionSource === "external" || body?.separate_payment_confirmed === true,
       operation_id: operationId || null,
       cliente_id: clienteId,

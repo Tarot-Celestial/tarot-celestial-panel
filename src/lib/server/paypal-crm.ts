@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
 export const PAYPAL_TABLE = "crm_paypal_orders";
+export type PayPalAccount = "legacy" | "client_business_v1";
 // The established staff checkout uses the Vercel alias. Client self-service also
 // runs on the verified customer domain; never trust an arbitrary request Origin.
 export function clientPayPalOriginAllowed(origin: string | null, configuredOrigin: string) {
@@ -34,27 +35,60 @@ function configuredValue(name: string) {
   if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1).trim();
   return value;
 }
-function paypalAuthConfig() {
-  const environment = configuredValue("PAYPAL_ENVIRONMENT");
-  if (environment !== "sandbox" && environment !== "live") throw new PayPalError("Configura PAYPAL_ENVIRONMENT (sandbox o live).", 503);
-  const client = configuredValue("PAYPAL_CLIENT_ID"), secret = configuredValue("PAYPAL_CLIENT_SECRET");
-  for (const [name, value] of [["PAYPAL_CLIENT_ID", client], ["PAYPAL_CLIENT_SECRET", secret]]) {
+function checkedPayPalAccount(account: unknown): PayPalAccount {
+  if (account !== "legacy" && account !== "client_business_v1") throw new PayPalError("La cuenta PayPal de esta operación no está configurada. Contacta con tu central.", 503);
+  return account;
+}
+export function paypalAccountForNewClientPurchase(): PayPalAccount {
+  return checkedPayPalAccount(configuredValue("PAYPAL_CUSTOMER_CHECKOUT_ACCOUNT") || "legacy");
+}
+export function paypalAccountForAttempt(attempt: any): PayPalAccount {
+  // Missing markers always mean the original account, including old customer
+  // purchases. Never infer an account from checkout_kind or today's switch.
+  const marker = attempt.purchase_payload?.paypal_account;
+  const account = marker === undefined ? "legacy" : checkedPayPalAccount(marker);
+  if (account === "client_business_v1" && (attempt.checkout_kind !== "client_purchase" ||
+      typeof attempt.purchase_payload?.paypal_merchant_id !== "string" || !attempt.purchase_payload.paypal_merchant_id.trim()))
+    throw new PayPalError("La cuenta PayPal guardada en esta compra no es válida. Contacta con tu central.", 409);
+  return account;
+}
+function paypalAuthConfig(account: PayPalAccount = "legacy") {
+  checkedPayPalAccount(account);
+  const prefix = account === "legacy" ? "PAYPAL" : "PAYPAL_CUSTOMER";
+  const environment = configuredValue(`${prefix}_ENVIRONMENT`);
+  if (environment !== "sandbox" && environment !== "live") throw new PayPalError(`Configura ${prefix}_ENVIRONMENT (sandbox o live).`, 503);
+  const client = configuredValue(`${prefix}_CLIENT_ID`), secret = configuredValue(`${prefix}_CLIENT_SECRET`);
+  for (const [name, value] of [[`${prefix}_CLIENT_ID`, client], [`${prefix}_CLIENT_SECRET`, secret]]) {
     if (!value) throw new PayPalError(`Falta ${name} en este despliegue. Guarda la variable y redespliega.`, 503);
     if (/\s|[\u200B-\u200F\uFEFF]|\\[rn]/u.test(value)) throw new PayPalError(`${name} contiene espacios o saltos dentro del valor. Copia de nuevo el dato completo con el botón de PayPal.`, 503);
     if (/[•*…]/u.test(value) || value.includes("...")) throw new PayPalError(`${name} parece un valor oculto o recortado. Usa el botón de copiar de PayPal.`, 503);
   }
-  if (client === secret) throw new PayPalError("PAYPAL_CLIENT_ID y PAYPAL_CLIENT_SECRET contienen el mismo valor. Son dos datos distintos de la misma aplicación PayPal.", 503);
-  return { environment, client, secret, api: environment === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com" };
+  if (client === secret) throw new PayPalError(`${prefix}_CLIENT_ID y ${prefix}_CLIENT_SECRET contienen el mismo valor. Son dos datos distintos de la misma aplicación PayPal.`, 503);
+  return { account, environment, client, secret, api: environment === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com" };
 }
-export function paypalConfig() {
-  const auth = paypalAuthConfig();
-  const webhook = configuredValue("PAYPAL_WEBHOOK_ID");
-  if (!webhook) throw new PayPalError("Falta configurar PAYPAL_WEBHOOK_ID.", 503);
+export function paypalPublicOrigin() {
   let base: URL;
   try { base = new URL(configuredValue("PAYPAL_PUBLIC_BASE_URL")); }
   catch { throw new PayPalError("Configura PAYPAL_PUBLIC_BASE_URL con el dominio HTTPS del panel.", 503); }
   if (base.protocol !== "https:" || base.hostname === "invalid.invalid" || base.username || base.password) throw new PayPalError("Configura PAYPAL_PUBLIC_BASE_URL con el dominio HTTPS del panel.", 503);
-  return { ...auth, webhook, origin: base.origin };
+  return base.origin;
+}
+export function paypalConfig(account: PayPalAccount = "legacy") {
+  const auth = paypalAuthConfig(account);
+  const prefix = account === "legacy" ? "PAYPAL" : "PAYPAL_CUSTOMER";
+  const webhook = configuredValue(`${prefix}_WEBHOOK_ID`);
+  if (!webhook) throw new PayPalError(`Falta configurar ${prefix}_WEBHOOK_ID.`, 503);
+  const merchantId = account === "client_business_v1" ? configuredValue("PAYPAL_CUSTOMER_MERCHANT_ID") : undefined;
+  if (account === "client_business_v1" && (!merchantId || /\s|[\u200B-\u200F\uFEFF]/u.test(merchantId)))
+    throw new PayPalError("Configura PAYPAL_CUSTOMER_MERCHANT_ID con el identificador de la nueva cuenta PayPal.", 503);
+  return { ...auth, webhook, merchantId, origin: paypalPublicOrigin() };
+}
+export function paypalConfigForAttempt(attempt: any) {
+  const config = paypalConfig(paypalAccountForAttempt(attempt));
+  if (attempt.environment !== config.environment) throw new PayPalError("Este cobro pertenece a otro entorno de PayPal.", 409);
+  if (config.account === "client_business_v1" && attempt.purchase_payload.paypal_merchant_id !== config.merchantId)
+    throw new PayPalError("La cuenta PayPal configurada no coincide con la guardada en esta compra.", 409);
+  return config;
 }
 export function paypalAdmin() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -86,8 +120,60 @@ export async function testPayPalConnection() {
   await paypalAccessToken(config);
   return { environment: config.environment, diagnostic_version: "PP-AUTH-2", message: `Conexión de autenticación correcta · ${config.environment.toUpperCase()} · PP-AUTH-2. No se ha creado ni cobrado ningún pago. Falta comprobar el circuito de compra y webhook.` };
 }
-export async function paypalRequest(path: string, body?: unknown, requestId?: string): Promise<any> {
-  const config = paypalConfig();
+
+/** Admin preflight only: OAuth plus one read of this app's webhook. No orders. */
+export async function diagnoseCustomerPayPalConfiguration() {
+  const account = "client_business_v1" as const;
+  const config = paypalAuthConfig(account);
+  const accessToken = await paypalAccessToken(config);
+  const webhookId = configuredValue("PAYPAL_CUSTOMER_WEBHOOK_ID");
+  const merchantId = configuredValue("PAYPAL_CUSTOMER_MERCHANT_ID");
+  const expectedUrl = "https://clientestarotcelestial.es/api/webhooks/paypal-cliente";
+  const requiredEvents = ["CHECKOUT.ORDER.APPROVED", "PAYMENT.CAPTURE.COMPLETED", "PAYMENT.CAPTURE.PENDING", "PAYMENT.CAPTURE.DECLINED", "PAYMENT.CAPTURE.DENIED"];
+  const merchantConfigured = !!merchantId && !/\s|[\u200B-\u200F\uFEFF]/u.test(merchantId);
+  const result = {
+    account, environment: config.environment, diagnostic_version: "PP-CUSTOMER-1",
+    active_for_new_purchases: configuredValue("PAYPAL_CUSTOMER_CHECKOUT_ACCOUNT") === account,
+    oauth_verified: true, merchant_configured: merchantConfigured, merchant_verified: false,
+    payment_flow_verified: false, checks_passed: false,
+    webhook: { configured: !!webhookId, accessible: false, id_matches: false, url_matches: false,
+      expected_url: expectedUrl, missing_events: [...requiredEvents] },
+    message: "",
+  };
+  if (!webhookId || !/^[A-Za-z0-9_-]{1,128}$/.test(webhookId)) {
+    result.message = "Autenticación de PayPal cliente correcta. Falta configurar un PAYPAL_CUSTOMER_WEBHOOK_ID válido en este despliegue. No se ha creado ni cobrado ningún pago.";
+    return result;
+  }
+  let response: Response;
+  try {
+    response = await fetch(`${config.api}/v1/notifications/webhooks/${encodeURIComponent(webhookId)}`, {
+      method: "GET", cache: "no-store", signal: AbortSignal.timeout(12000),
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+    });
+  } catch {
+    result.message = "Autenticación de PayPal cliente correcta. No se pudo consultar el webhook por un fallo de red o tiempo de espera. No se ha creado ni cobrado ningún pago.";
+    return result;
+  }
+  if (!response.ok) {
+    // Never return provider response bodies, arbitrary descriptions or tokens.
+    result.message = `Autenticación de PayPal cliente correcta. No se pudo consultar el webhook con esta aplicación (HTTP ${response.status}). Revisa que su ID pertenezca a esta app y entorno. No se ha creado ni cobrado ningún pago.`;
+    return result;
+  }
+  const webhook = await response.json().catch(() => null);
+  const subscribed = new Set<string>(Array.isArray(webhook?.event_types)
+    ? webhook.event_types.filter((event: any) => event?.status !== "DISABLED").map((event: any) => event?.name) : []);
+  result.webhook.accessible = true;
+  result.webhook.id_matches = webhook?.id === webhookId;
+  result.webhook.url_matches = webhook?.url === expectedUrl;
+  result.webhook.missing_events = requiredEvents.filter(event => !subscribed.has(event));
+  result.checks_passed = merchantConfigured && result.webhook.id_matches && result.webhook.url_matches && !result.webhook.missing_events.length;
+  result.message = result.checks_passed
+    ? "Autenticación de PayPal cliente correcta. El ID, la URL y los cinco eventos del webhook coinciden. No se ha creado ni cobrado ningún pago. Falta verificar la titularidad del Merchant ID, la entrega de eventos y el recorrido completo de pago."
+    : "Autenticación de PayPal cliente correcta. Hay configuración pendiente: revisa el Merchant ID y las comprobaciones del webhook. No se ha creado ni cobrado ningún pago.";
+  return result;
+}
+export async function paypalRequest(path: string, body?: unknown, requestId?: string, account: PayPalAccount = "legacy"): Promise<any> {
+  const config = paypalConfig(account);
   const accessToken = await paypalAccessToken(config);
   const response = await fetch(`${config.api}${path}`, { method: body === undefined ? "GET" : "POST", cache: "no-store", signal: AbortSignal.timeout(15000),
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json", Prefer: "return=representation", ...(requestId ? { "PayPal-Request-Id": requestId } : {}) },
@@ -104,21 +190,24 @@ export async function paypalRequest(path: string, body?: unknown, requestId?: st
   }
   return data;
 }
-export function approvalUrl(order: any): string {
+export function approvalUrl(order: any, account: PayPalAccount = "legacy"): string {
   const href = order.links?.find((l: any) => ["payer-action", "approve"].includes(l.rel))?.href;
   if (!href) throw new PayPalError("PayPal no devolvió el enlace de aprobación.");
   const url = new URL(href);
-  const host = paypalConfig().environment === "live" ? "www.paypal.com" : "www.sandbox.paypal.com";
+  const host = paypalConfig(account).environment === "live" ? "www.paypal.com" : "www.sandbox.paypal.com";
   if (url.protocol !== "https:" || url.hostname !== host || url.username || url.password) throw new PayPalError("Enlace de PayPal no válido.");
   return url.href;
 }
 export function validateOrder(attempt: any, order: any) {
+  const account = paypalAccountForAttempt(attempt);
   const unit = order.purchase_units?.[0];
   if (order.id !== attempt.order_id || order.intent !== "CAPTURE" || order.purchase_units?.length !== 1 ||
       unit.custom_id !== attempt.id || unit.invoice_id !== `TC-${attempt.id}` ||
       unit.amount?.currency_code !== attempt.currency || Number(unit.amount?.value) !== Number(attempt.amount)) {
     throw new PayPalError("La referencia o el importe de PayPal no coincide. Revisión necesaria.");
   }
+  if (account === "client_business_v1" && unit.payee?.merchant_id !== attempt.purchase_payload.paypal_merchant_id)
+    throw new PayPalError("El comercio de PayPal no coincide con el guardado en esta compra. Revisión necesaria.", 409);
   return unit;
 }
 // Applied centrally: staff reconciliation, callbacks and webhooks cannot bypass 3DS.
@@ -145,10 +234,11 @@ async function latestAttempt(admin: any, id: string) {
   return data;
 }
 export async function reconcilePayPal(admin: any, attempt: any, captureApproved = true) {
+  const account = paypalAccountForAttempt(attempt);
   if (attempt.status === "completed" || !attempt.order_id) return attempt;
-  if (attempt.environment !== paypalConfig().environment) throw new PayPalError("Este cobro pertenece a otro entorno de PayPal.", 409);
+  paypalConfigForAttempt(attempt);
   let order;
-  try { order = await paypalRequest(`/v2/checkout/orders/${encodeURIComponent(attempt.order_id)}`); }
+  try { order = await paypalRequest(`/v2/checkout/orders/${encodeURIComponent(attempt.order_id)}`, undefined, undefined, account); }
   catch (error) {
     if (isMissingPayPalOrder(error)) {
       const latest = await latestAttempt(admin, attempt.id);
@@ -173,10 +263,10 @@ export async function reconcilePayPal(admin: any, attempt: any, captureApproved 
       return latest.data;
     }
     attempt = claim.data;
-    try { await paypalRequest(`/v2/checkout/orders/${encodeURIComponent(attempt.order_id)}/capture`, {}, `capture-${attempt.id}`); }
+    try { await paypalRequest(`/v2/checkout/orders/${encodeURIComponent(attempt.order_id)}/capture`, {}, `capture-${attempt.id}`, account); }
     catch (error) {
       // A concurrent callback or a timeout may already have captured this order.
-      order = await paypalRequest(`/v2/checkout/orders/${encodeURIComponent(attempt.order_id)}`);
+      order = await paypalRequest(`/v2/checkout/orders/${encodeURIComponent(attempt.order_id)}`, undefined, undefined, account);
       validateOrder(attempt, order);
       if (order.status !== "COMPLETED") {
         if (error instanceof PayPalError && error.paymentReason && !order.purchase_units?.[0]?.payments?.captures?.length) {
@@ -187,7 +277,7 @@ export async function reconcilePayPal(admin: any, attempt: any, captureApproved 
         throw error;
       }
     }
-    order = await paypalRequest(`/v2/checkout/orders/${encodeURIComponent(attempt.order_id)}`);
+    order = await paypalRequest(`/v2/checkout/orders/${encodeURIComponent(attempt.order_id)}`, undefined, undefined, account);
   }
   const unit = validateOrder(attempt, order);
   const captures = unit.payments?.captures || [];
@@ -224,8 +314,7 @@ export async function reconcilePayPal(admin: any, attempt: any, captureApproved 
 export async function cancelPayPalLink(admin: any, attempt: any, actor: "staff" | "client" = "staff") {
   // No PayPal capture is requested while checking whether cancellation is safe.
   let current = await latestAttempt(admin, attempt.id);
-  if (current.environment !== paypalConfig().environment)
-    throw new PayPalError("Este cobro pertenece a otro entorno de PayPal.", 409);
+  paypalConfigForAttempt(current);
   if (actor === "client" && current.checkout_kind !== "client_purchase")
     throw new PayPalError("Esta operación debe revisarla tu central.", 403);
   if (current.status === "cancelled" && ["CANCELLED_BY_STAFF", "CANCELLED_BY_CLIENT"].includes(current.remote_status)) return current;
@@ -258,13 +347,13 @@ export async function cancelPayPalLink(admin: any, attempt: any, actor: "staff" 
   if (!saved.data) throw new PayPalError("El estado cambió mientras cancelabas. Pulsa Comprobar antes de crear otro cobro.", 409);
   return saved.data;
 }
-export async function verifyPayPalWebhook(req: Request, event: any) {
+export async function verifyPayPalWebhook(req: Request, event: any, account: PayPalAccount = "legacy") {
   const fields = ["auth-algo", "cert-url", "transmission-id", "transmission-sig", "transmission-time"];
   if (fields.some(key => !req.headers.get(`paypal-${key}`))) return false;
   const result = await paypalRequest("/v1/notifications/verify-webhook-signature", {
     auth_algo: req.headers.get("paypal-auth-algo"), cert_url: req.headers.get("paypal-cert-url"),
     transmission_id: req.headers.get("paypal-transmission-id"), transmission_sig: req.headers.get("paypal-transmission-sig"),
-    transmission_time: req.headers.get("paypal-transmission-time"), webhook_id: paypalConfig().webhook, webhook_event: event,
-  });
+    transmission_time: req.headers.get("paypal-transmission-time"), webhook_id: paypalConfig(account).webhook, webhook_event: event,
+  }, undefined, account);
   return result.verification_status === "SUCCESS";
 }
