@@ -34,7 +34,8 @@ function dateTime(value: any) {
 const rankInfo: Record<string, { label: string; next: number | null; perks: string[] }> = {
   bronce: { label: "Bronce", next: 100, perks: ["Acceso al rango mensual Bronce"] },
   plata: { label: "Plata", next: 500, perks: ["Acceso al rango mensual Plata"] },
-  oro: { label: "Oro", next: null, perks: ["Máximo rango mensual actual"] },
+  oro: { label: "Oro", next: 1000, perks: ["Acceso al rango mensual Oro"] },
+  diamante: { label: "Diamante", next: null, perks: ["Rango más alto del programa", "+15 minutos FREE en compras de minutos confirmadas, incluidas promociones; no Oráculo ni registros manuales de llamada"] },
 };
 
 export default function MyClientPurchases({ clientId, client, tarotists, onRefresh, refreshVersion = 0 }: Props) {
@@ -69,7 +70,7 @@ export default function MyClientPurchases({ clientId, client, tarotists, onRefre
   }, [refreshVersion, load]);
 
   const maxMonthly = useMemo(() => Math.max(1, ...(data?.stats?.monthly || []).map((item: any) => Number(item.amount) || 0)), [data]);
-  const rank = String(data?.rank?.current || "").toLowerCase();
+  const rank = String(data?.rank?.effective || data?.rank?.current || "").toLowerCase();
   const rankMeta = rankInfo[rank] || { label: "Sin rango", next: 100, perks: [] };
   const progress = rankMeta.next ? Math.min(100, ((Number(data?.rank?.spent_30d) || 0) / rankMeta.next) * 100) : 100;
 

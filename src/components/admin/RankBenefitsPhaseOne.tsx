@@ -11,6 +11,7 @@ import {
   type RankPackageBenefitConfig,
 } from "@/lib/rank-benefit-config";
 import CrystalEmblem from "@/components/benefits/CrystalEmblem";
+import { freePassPolicyLabel, rankHasFreePasses, type FreePassPolicy } from "@/lib/client-free-passes";
 import styles from "./RankBenefitsAdminPanel.module.css";
 
 type AdminData = {
@@ -22,6 +23,8 @@ type AdminData = {
   deliveries: any[];
   audit: any[];
   business_timezone: string;
+  free_pass_policy?: FreePassPolicy | null;
+  free_pass_policy_available?: boolean;
 };
 
 async function request(method: "GET" | "POST", body?: unknown) {
@@ -91,6 +94,7 @@ export default function RankBenefitsPhaseOne() {
     {!loading && !data && <button className={styles.secondary} onClick={() => void load()}><RefreshCw size={16}/> Reintentar</button>}
 
     {data && <>
+      <RankBenefitsComparison data={data}/>
       <nav className={styles.tabs} aria-label="Rangos">
         {data.ranks.map((item) => <button key={item.rank_key} aria-pressed={selectedRank === item.rank_key} onClick={() => setSelectedRank(item.rank_key)}>{item.label}{item.rank_key === "diamante" ? " 💎" : ""}</button>)}
       </nav>
@@ -102,7 +106,7 @@ export default function RankBenefitsPhaseOne() {
       <section className={styles.rankAdminGrid}>
         <div className={styles.rankAdminMain}>
           {section === "purchase" ? <div className={styles.rankCard} data-rank={selectedRank}>
-            <div className={styles.rankHeader}><CrystalEmblem tone={selectedRank}/><div><h2>{rank?.label || selectedRank}</h2><p className={styles.note}>Los beneficios de esta matriz son adicionales a lo que el pack o promoción promete por sí mismo. El nivel del paquete y el nivel de ruleta son independientes.</p></div></div>
+            <div className={styles.rankHeader}><CrystalEmblem tone={selectedRank}/><div><h2>{rank?.label || selectedRank}</h2><p className={styles.note}>La matriz requiere un nivel de paquete asignado y la entrega activada. Sus Coins y giros solo se entregan a tarifa regular. Las tiradas adicionales de Oráculo pueden aplicarse también a promociones con nivel asignado. Los beneficios propios del paquete se calculan por separado según su tarifa; el nivel del paquete y el de ruleta son independientes.</p></div></div>
             <div className={styles.rankSectionTitle}><span><Gift size={17}/> Beneficios por compra</span><small>Nivel del paquete ≠ nivel de ruleta</small></div>
             <div className={styles.levelTabs}>{([1,2,3] as const).map((value) => <button key={value} type="button" aria-pressed={level === value} onClick={() => setLevel(value)}>Nivel {value}</button>)}</div>
             <PackagesUsingLevel packages={packagesForLevel} />
@@ -134,6 +138,47 @@ export default function RankBenefitsPhaseOne() {
         {historyTab === "deliveries" ? <HistoryRows rows={data.deliveries} kind="delivery"/> : <HistoryRows rows={data.audit} kind="audit"/>}
       </section>
     </>}
+  </section>;
+}
+
+export function RankBenefitsComparison({ data }: { data: AdminData }) {
+  const ranks = data.ranks.filter(row => ["bronce", "plata", "oro", "diamante"].includes(row.rank_key));
+  const passLabel = data.free_pass_policy_available === false ? null : freePassPolicyLabel(data.free_pass_policy);
+  const packageCell = (rank: string, level: number) => {
+    const row = data.matrix?.find(item => item.rank_key === rank && Number(item.package_level) === level);
+    if (!row) return "Sin configuración";
+    return matrixBenefitLabels(row).join(" · ") || "Sin extras configurados";
+  };
+  const generalCell = (row: RankBenefitConfig) => {
+    if (row.is_active === false) return "Entrega general desactivada";
+    return [
+      row.coins_enabled && Number(row.purchase_coins) > 0 ? `+${Number(row.purchase_coins).toLocaleString("es-ES")} Coins` : null,
+      row.roulette_enabled && Number(row.roulette_spins) > 0 ? `+${row.roulette_spins} giro(s) N${row.roulette_level}` : null,
+    ].filter(Boolean).join(" · ") || "Sin extras generales";
+  };
+  const bonus = data.diamond_bonus;
+  return <section className={styles.rankCard} aria-label="Comparación de beneficios por rango">
+    <div className={styles.rankSectionTitle}><span><Gift size={18}/> Qué incluye cada rango</span><small>Configuración guardada</small></div>
+    <p className={styles.note}>Los pases FREE empiezan en Plata y requieren alguna compra confirmada. No se acumulan; una compra nueva no añade pases ni reinicia su ciclo. Los extras de la matriz requieren un nivel asignado y entrega activada: sus Coins y giros solo se entregan a tarifa regular; las tiradas adicionales de Oráculo pueden aplicarse también a promociones con nivel asignado.</p>
+    <div className={`${styles.tableWrap} ${styles.rankComparison}`} tabIndex={0} role="region" aria-label="Tabla de beneficios de Bronce, Plata, Oro y Diamante">
+      <table><thead><tr><th scope="col">Beneficio</th>{ranks.map(rank => <th key={rank.rank_key} scope="col">{rank.label}</th>)}</tr></thead>
+        <tbody>
+          <tr><th scope="row">Pases FREE periódicos</th>{ranks.map(rank => <td key={rank.rank_key} data-rank={rank.rank_key}>{rankHasFreePasses(rank.rank_key) ? passLabel || "Política no disponible" : "No incluidos"}</td>)}</tr>
+          <tr><th scope="row">Acceso a Mi ritual</th>{ranks.map(rank => <td key={rank.rank_key}>{rank.ritual_access ? "Permitido" : "No incluido"}</td>)}</tr>
+          {([1, 2, 3] as const).map(level => <tr key={level}><th scope="row">Extras de paquete nivel {level}</th>{ranks.map(rank => <td key={rank.rank_key}>{packageCell(rank.rank_key, level)}</td>)}</tr>)}
+          <tr><th scope="row">Extras generales sin nivel, a tarifa regular</th>{ranks.map(rank => <td key={rank.rank_key}>{generalCell(rank)}</td>)}</tr>
+          <tr><th scope="row">Bono diario configurado</th>{ranks.map(rank => <td key={rank.rank_key}>{rank.rank_key !== "diamante" ? "No incluido" : !bonus ? "Sin configuración" : !bonus.enabled ? "Desactivado" : <><strong>{bonus.name}</strong><small>{matrixBenefitLabels(bonus).join(" · ") || "Sin recompensas configuradas"}</small></>}</td>)}</tr>
+        </tbody>
+      </table>
+    </div>
+    <p className={styles.comparisonFootnote}>Mi ritual permite consultar los rituales asignados; no regala uno. La matriz por nivel sustituye los extras generales cuando el paquete tiene un nivel asignado. El saldo y los pases utilizados de cada cliente siguen en su ficha.</p>
+    <div className={styles.rankPreview} aria-label="Estado de aplicación de los minutos por rango">
+      <strong>Minutos por rango: configuración y entrega</strong>
+      <span>Plata +10 y Oro +12 en compras a precio regular: configurados, pendientes de aplicación automática. No se presentan como minutos ya acreditados.</span>
+      <span>Diamante +15: entrega automática en compras de minutos confirmadas, incluidas promociones. No se aplica a Oráculo ni a registros manuales de llamada.</span>
+      <span>Nueva tarotista: los 10 minutos de Plata y 12 de Oro requieren reserva y validación de Central; Diamante tiene una entrega automática de 15 minutos.</span>
+      <span>La participación en sorteos activos se asigna desde Central según las condiciones de cada sorteo. El seguimiento energético es atención asistida coordinada por Central; ninguno se activa automáticamente por cambiar de rango.</span>
+    </div>
   </section>;
 }
 
