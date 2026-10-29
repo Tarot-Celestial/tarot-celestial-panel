@@ -159,8 +159,8 @@ function rankMeta(rank: string | null | undefined) {
         "12 min GRATIS con cada nueva tarotista, con reserva y validación de Central",
         "Configurado, pendiente de aplicación automática: +12 min en compras a precio regular",
         "3 pases de 7 minutos cada 30 días, con alguna compra confirmada",
-        "Participación automática en sorteos activos",
-        "Seguimiento energético 1 mes post rituales",
+        "Participación en sorteos activos, gestionada por Central según condiciones",
+        "Seguimiento energético 1 mes post rituales, coordinado por Central",
       ],
     };
   }
@@ -176,7 +176,7 @@ function rankMeta(rank: string | null | undefined) {
         "10 min GRATIS con cada nueva tarotista, con reserva y validación de Central",
         "Configurado, pendiente de aplicación automática: +10 min en compras a precio regular",
         "3 pases de 7 minutos cada 30 días, con alguna compra confirmada",
-        "Seguimiento energético 1 mes post rituales",
+        "Seguimiento energético 1 mes post rituales, coordinado por Central",
       ],
     };
   }

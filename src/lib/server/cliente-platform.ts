@@ -109,18 +109,18 @@ export function currentRankBenefits(rank: string | null | undefined) {
       "+15 minutos GRATIS permanentes en cada compra de minutos confirmada, incluidas promociones; no Oráculo ni registros manuales de llamada",
       "+500 Coins por cada compra de paquete de nivel 1, 2 o 3 a tarifa regular, con la configuración del nivel activada",
       "Acceso a una promoción diaria exclusiva de un solo uso",
-      "Participación automática en sorteos activos (1 número por sorteo)",
+      "Participación en sorteos activos, gestionada por Central según condiciones",
       "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada",
-      "Seguimiento energético durante 1 mes post rituales",
+      "Seguimiento energético durante 1 mes post rituales, coordinado por Central",
     ];
   }
   if (key === "oro") {
     return [
       "12 minutos GRATIS cuando se incorpora una nueva tarotista, con reserva y validación de Central",
       "Configurado, pendiente de aplicación automática: +12 minutos GRATIS en compras a precio regular",
-      "Participación automática en sorteos activos (1 número por sorteo)",
+      "Participación en sorteos activos, gestionada por Central según condiciones",
       "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada",
-      "Seguimiento energético durante 1 mes post rituales",
+      "Seguimiento energético durante 1 mes post rituales, coordinado por Central",
     ];
   }
   if (key === "plata") {
@@ -128,7 +128,7 @@ export function currentRankBenefits(rank: string | null | undefined) {
       "10 minutos GRATIS cuando se incorpora una nueva tarotista, con reserva y validación de Central",
       "Configurado, pendiente de aplicación automática: +10 minutos GRATIS en compras a precio regular",
       "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada",
-      "Seguimiento energético durante 1 mes post rituales",
+      "Seguimiento energético durante 1 mes post rituales, coordinado por Central",
     ];
   }
   return key === "bronce" ? ["Acceso al programa de rangos de clientes"] : [];

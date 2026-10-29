@@ -109,6 +109,17 @@ test('published benefit descriptions distinguish configured Silver/Gold minutes 
   assert.doesNotMatch(diamond, /12 minutos|pendiente de aplicación/);
 });
 
+test('raffles and energetic follow-up describe Central assistance instead of automatic rank delivery', () => {
+  for (const rank of ['oro', 'diamante']) {
+    const labels = benefitExports.currentRankBenefits(rank).join(' ');
+    assert.match(labels, /Participación en sorteos activos, gestionada por Central según condiciones/);
+    assert.doesNotMatch(labels, /Participación automática|1 número por sorteo/);
+  }
+  for (const rank of ['plata', 'oro', 'diamante']) assert.match(benefitExports.currentRankBenefits(rank).join(' '), /Seguimiento energético[^.]*coordinado por Central/);
+  for (const file of ['src/lib/server/cliente-platform.ts', 'src/features/central/MyClientSummary.tsx', 'src/components/crm/CRMClientesPanel.tsx', 'src/app/cliente/rangos/page.tsx']) assert.doesNotMatch(read(file), /Participación automática en sorteos|1 número por sorteo/, file);
+  assert.match(read('src/components/admin/RankBenefitsPhaseOne.tsx'), /seguimiento energético es atención asistida coordinada por Central/);
+});
+
 test('CRM and the central purchase summary recognize Diamond without an obsolete 12-minute promise', () => {
   const crm = read('src/components/crm/CRMClientesPanel.tsx');
   const functionSource = crm.slice(crm.indexOf('function rankMeta('), crm.indexOf('function rankChip('));
