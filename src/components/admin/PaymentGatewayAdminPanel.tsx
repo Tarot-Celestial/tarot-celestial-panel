@@ -6,11 +6,20 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseBrowser();
 
+type CustomerPayPalDiagnosis = {
+  environment: string; active_for_new_purchases: boolean; oauth_verified: boolean;
+  merchant_configured: boolean; checks_passed: boolean; message: string;
+  webhook: { configured: boolean; accessible: boolean; id_matches: boolean; url_matches: boolean; missing_events: string[] };
+};
+
 export default function PaymentGatewayAdminPanel() {
   const [enabled, setEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [checkingPayPal, setCheckingPayPal] = useState(false);
+  const [paypalDiagnosis, setPayPalDiagnosis] = useState<CustomerPayPalDiagnosis | null>(null);
+  const [paypalError, setPayPalError] = useState("");
 
   const authHeaders = useCallback(async () => {
     const { data } = await sb.auth.getSession();
@@ -49,6 +58,19 @@ export default function PaymentGatewayAdminPanel() {
     finally { setSaving(false); }
   }
 
+  async function checkCustomerPayPal() {
+    if (checkingPayPal) return;
+    setCheckingPayPal(true); setPayPalError(""); setPayPalDiagnosis(null);
+    try {
+      const response = await fetch("/api/admin/payment-settings", { method: "POST", cache: "no-store",
+        headers: await authHeaders(), body: JSON.stringify({ action: "diagnose_paypal_customer" }) });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) throw new Error(data?.error || "No se pudo comprobar PayPal cliente.");
+      setPayPalDiagnosis(data);
+    } catch (error) { setPayPalError(error instanceof Error ? error.message : "No se pudo comprobar PayPal cliente."); }
+    finally { setCheckingPayPal(false); }
+  }
+
   return (
     <section
       style={{
@@ -66,9 +88,9 @@ export default function PaymentGatewayAdminPanel() {
           <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: ".14em", color: "#d7b56d" }}>
             PASARELA DE PAGOS WEB
           </div>
-          <h2 style={{ margin: "5px 0 4px" }}>Mollie</h2>
+          <h2 style={{ margin: "5px 0 4px" }}>Pagos del panel cliente</h2>
           <p style={{ margin: 0, opacity: .7, fontSize: 13 }}>
-            Mollie es la única pasarela activa para las compras del panel cliente.
+            Este control permite habilitar las compras online o ponerlas temporalmente en mantenimiento.
           </p>
         </div>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 800 }}>
@@ -96,8 +118,28 @@ export default function PaymentGatewayAdminPanel() {
         <CreditCard size={22} />
         <strong style={{ display: "block", marginTop: 10 }}>{enabled ? "Compras online disponibles" : "Compras online pausadas · Código CLIENTE"}</strong>
         <small style={{ display: "block", marginTop: 5, opacity: .65 }}>
-          Checkout seguro alojado por Mollie · confirmación por webhook antes de acreditar saldo.
+          El saldo se acredita cuando la pasarela confirma el pago.
         </small>
+      </div>
+
+      <div style={{ padding: 16, borderRadius: 16, border: "1px solid rgba(215,181,109,.3)", display: "grid", gap: 10 }}>
+        <strong>Conexión PayPal del panel cliente</strong>
+        <p style={{ margin: 0, opacity: .8, fontSize: 13 }}>Comprueba el acceso y el webhook de la cuenta nueva sin generar pagos. Puedes hacerlo antes de activarla.</p>
+        <button type="button" className="tc-btn" disabled={checkingPayPal} onClick={() => void checkCustomerPayPal()}>
+          {checkingPayPal ? "Comprobando PayPal cliente…" : "Comprobar PayPal del panel cliente"}
+        </button>
+        {paypalError ? <p role="alert" style={{ margin: 0 }}>{paypalError}</p> : null}
+        {paypalDiagnosis ? <div role="status" style={{ fontSize: 13, lineHeight: 1.6 }}>
+          <strong>{paypalDiagnosis.environment.toUpperCase()} · {paypalDiagnosis.checks_passed ? "Configuración comprobada" : "Configuración pendiente"}</strong>
+          <p>{paypalDiagnosis.message}</p>
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            <li>Autenticación: {paypalDiagnosis.oauth_verified ? "correcta" : "pendiente"}.</li>
+            <li>Merchant ID: {paypalDiagnosis.merchant_configured ? "configurado; titularidad pendiente de verificar" : "sin configurar"}.</li>
+            <li>Webhook: {paypalDiagnosis.webhook.accessible ? "accesible con esta app" : "no comprobado"}; ID {paypalDiagnosis.webhook.id_matches ? "correcto" : "pendiente"}; URL {paypalDiagnosis.webhook.url_matches ? "correcta" : "pendiente"}.</li>
+            <li>Eventos: {paypalDiagnosis.webhook.missing_events.length ? `faltan ${paypalDiagnosis.webhook.missing_events.join(", ")}` : "los cinco requeridos están configurados"}.</li>
+            <li>Cuenta seleccionada para compras nuevas: {paypalDiagnosis.active_for_new_purchases ? "cuenta cliente" : "cuenta anterior"}.</li>
+          </ul>
+        </div> : null}
       </div>
     </section>
   );

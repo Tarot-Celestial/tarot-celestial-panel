@@ -120,6 +120,58 @@ export async function testPayPalConnection() {
   await paypalAccessToken(config);
   return { environment: config.environment, diagnostic_version: "PP-AUTH-2", message: `Conexión de autenticación correcta · ${config.environment.toUpperCase()} · PP-AUTH-2. No se ha creado ni cobrado ningún pago. Falta comprobar el circuito de compra y webhook.` };
 }
+
+/** Admin preflight only: OAuth plus one read of this app's webhook. No orders. */
+export async function diagnoseCustomerPayPalConfiguration() {
+  const account = "client_business_v1" as const;
+  const config = paypalAuthConfig(account);
+  const accessToken = await paypalAccessToken(config);
+  const webhookId = configuredValue("PAYPAL_CUSTOMER_WEBHOOK_ID");
+  const merchantId = configuredValue("PAYPAL_CUSTOMER_MERCHANT_ID");
+  const expectedUrl = "https://clientestarotcelestial.es/api/webhooks/paypal-cliente";
+  const requiredEvents = ["CHECKOUT.ORDER.APPROVED", "PAYMENT.CAPTURE.COMPLETED", "PAYMENT.CAPTURE.PENDING", "PAYMENT.CAPTURE.DECLINED", "PAYMENT.CAPTURE.DENIED"];
+  const merchantConfigured = !!merchantId && !/\s|[\u200B-\u200F\uFEFF]/u.test(merchantId);
+  const result = {
+    account, environment: config.environment, diagnostic_version: "PP-CUSTOMER-1",
+    active_for_new_purchases: configuredValue("PAYPAL_CUSTOMER_CHECKOUT_ACCOUNT") === account,
+    oauth_verified: true, merchant_configured: merchantConfigured, merchant_verified: false,
+    payment_flow_verified: false, checks_passed: false,
+    webhook: { configured: !!webhookId, accessible: false, id_matches: false, url_matches: false,
+      expected_url: expectedUrl, missing_events: [...requiredEvents] },
+    message: "",
+  };
+  if (!webhookId || !/^[A-Za-z0-9_-]{1,128}$/.test(webhookId)) {
+    result.message = "Autenticación de PayPal cliente correcta. Falta configurar un PAYPAL_CUSTOMER_WEBHOOK_ID válido en este despliegue. No se ha creado ni cobrado ningún pago.";
+    return result;
+  }
+  let response: Response;
+  try {
+    response = await fetch(`${config.api}/v1/notifications/webhooks/${encodeURIComponent(webhookId)}`, {
+      method: "GET", cache: "no-store", signal: AbortSignal.timeout(12000),
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+    });
+  } catch {
+    result.message = "Autenticación de PayPal cliente correcta. No se pudo consultar el webhook por un fallo de red o tiempo de espera. No se ha creado ni cobrado ningún pago.";
+    return result;
+  }
+  if (!response.ok) {
+    // Never return provider response bodies, arbitrary descriptions or tokens.
+    result.message = `Autenticación de PayPal cliente correcta. No se pudo consultar el webhook con esta aplicación (HTTP ${response.status}). Revisa que su ID pertenezca a esta app y entorno. No se ha creado ni cobrado ningún pago.`;
+    return result;
+  }
+  const webhook = await response.json().catch(() => null);
+  const subscribed = new Set<string>(Array.isArray(webhook?.event_types)
+    ? webhook.event_types.filter((event: any) => event?.status !== "DISABLED").map((event: any) => event?.name) : []);
+  result.webhook.accessible = true;
+  result.webhook.id_matches = webhook?.id === webhookId;
+  result.webhook.url_matches = webhook?.url === expectedUrl;
+  result.webhook.missing_events = requiredEvents.filter(event => !subscribed.has(event));
+  result.checks_passed = merchantConfigured && result.webhook.id_matches && result.webhook.url_matches && !result.webhook.missing_events.length;
+  result.message = result.checks_passed
+    ? "Autenticación de PayPal cliente correcta. El ID, la URL y los cinco eventos del webhook coinciden. No se ha creado ni cobrado ningún pago. Falta verificar la titularidad del Merchant ID, la entrega de eventos y el recorrido completo de pago."
+    : "Autenticación de PayPal cliente correcta. Hay configuración pendiente: revisa el Merchant ID y las comprobaciones del webhook. No se ha creado ni cobrado ningún pago.";
+  return result;
+}
 export async function paypalRequest(path: string, body?: unknown, requestId?: string, account: PayPalAccount = "legacy"): Promise<any> {
   const config = paypalConfig(account);
   const accessToken = await paypalAccessToken(config);
