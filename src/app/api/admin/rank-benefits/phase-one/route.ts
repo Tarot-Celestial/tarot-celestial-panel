@@ -109,7 +109,7 @@ export async function GET(req: Request) {
     const gate = await requireAdmin(req);
     if (!gate.ok) return reply({ ok: false, error: gate.error }, 403);
 
-    const [ranks, matrix, assignments, promotionPacks, bonus, events, audit] = await Promise.all([
+    const [ranks, matrix, assignments, promotionPacks, bonus, events, audit, passPolicy] = await Promise.all([
       gate.admin.from("tc_client_rank_benefits").select("rank_key,label,sort_order,is_active,coins_enabled,purchase_coins,roulette_enabled,roulette_level,roulette_spins,daily_bonus_enabled,ritual_access,revision,updated_at,updated_by").order("sort_order"),
       gate.admin.from("tc_rank_package_benefits").select("*").order("rank_key").order("package_level"),
       gate.admin.from("tc_purchase_package_levels").select("*").order("package_source").order("package_label"),
@@ -117,6 +117,7 @@ export async function GET(req: Request) {
       gate.admin.from("tc_rank_daily_bonus_config").select("*").eq("rank_key", "diamante").maybeSingle(),
       gate.admin.from("tc_client_benefit_events").select("id,cliente_id,payment_id,rank_at_event,benefit_key,benefit_type,package_level,delivery_key,snapshot,created_at").in("benefit_type", ["rank_package", "daily_rank_bonus"]).order("created_at", { ascending: false }).limit(80),
       gate.admin.from("tc_client_benefit_audit").select("*").in("entity", ["rank_package_benefit", "rank_ritual_access", "package_level_assignment", "diamond_daily_bonus"]).order("created_at", { ascending: false }).limit(80),
+      gate.admin.from("crm_free_pass_policy").select("passes,minutes,cycle_days").eq("id", true).maybeSingle(),
     ]);
     for (const result of [ranks, matrix, assignments, promotionPacks, bonus, events, audit]) if (result.error) throw result.error;
 
@@ -152,6 +153,8 @@ export async function GET(req: Request) {
     return reply({
       ok: true,
       business_timezone: "Europe/Madrid",
+      free_pass_policy: passPolicy.error ? null : passPolicy.data,
+      free_pass_policy_available: !passPolicy.error && !!passPolicy.data,
       ranks: (ranks.data || []).map((row: any) => ({ ...row, updated_by_name: namesByActor.get(String(row.updated_by || "")) || null })),
       matrix: (matrix.data || []).map((row: any) => ({ ...row, updated_by_name: namesByActor.get(String(row.updated_by || "")) || null })),
       assignments: (assignments.data || []).map((row: any) => ({ ...row, updated_by_name: namesByActor.get(String(row.updated_by || "")) || null })),

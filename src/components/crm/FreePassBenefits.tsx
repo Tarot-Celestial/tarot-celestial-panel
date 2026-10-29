@@ -3,6 +3,9 @@ import { useRef, useState } from "react";
 import styles from "./CRMNuevaEra.module.css";
 
 export type FreePassStatus = {
+  effective_rank?: string | null;
+  rank_eligible?: boolean;
+  eligibility_reason?: "RANK_NOT_ELIGIBLE" | "NO_CONFIRMED_PURCHASE" | null;
   eligible_until?: string | null;
   eligible: boolean; total: number; available: number; used: number;
   minutes: number; cycle_days: number; cycle_start: string | null; renews_at: string | null;
@@ -20,6 +23,7 @@ export default function FreePassBenefits({ benefits, clienteId, getToken, onRefr
   const pending = useRef<{ request_id: string; cycle_start: string; expected_used: number } | null>(null);
   async function consume() {
     if (locked.current || !getToken || !clienteId || !benefits?.cycle_start) return;
+    if (!pending.current && (!benefits.eligible || benefits.rank_eligible === false || benefits.available < 1)) return;
     locked.current = true; setBusy(true); setMessage("");
     try {
       pending.current ??= { request_id: crypto.randomUUID(), cycle_start: benefits.cycle_start, expected_used: benefits.used };
@@ -44,11 +48,13 @@ export default function FreePassBenefits({ benefits, clienteId, getToken, onRefr
   return <section className={styles.benefits} aria-label="Beneficios del cliente" aria-busy={busy}>
     <div className={styles.eyebrow}>Beneficios del cliente</div>
     {benefits ? <>
-      <div className={styles.passCount}><strong>{benefits.available} <span>/ {benefits.total}</span></strong><span>Pases FREE disponibles</span></div>
+      <div className={styles.passCount}><strong>{benefits.rank_eligible === false ? "No incluidos" : <>{benefits.available} <span>/ {benefits.total}</span></>}</strong><span>Pases FREE disponibles</span></div>
       <p>{benefits.minutes} minutos FREE por pase · Cada {benefits.cycle_days} días</p>
-      {benefits.eligible && <p>Habilitados por una compra en los últimos 4 meses. Comprar de nuevo no añade pases ni reinicia el ciclo.</p>}
-      {!benefits.eligible ? <p>Sin pases habilitados: se necesita una compra confirmada en los últimos 4 meses.</p> : benefits.renews_at ? <p>Renovación: {new Date(benefits.renews_at).toLocaleDateString("es-ES")} · No se acumulan.</p> : null}
-      {getToken && <button type="button" className="tc-btn tc-btn-gold" disabled={busy || (!pending.current && benefits.available < 1)} onClick={() => void consume()}>{busy ? "Confirmando…" : pending.current ? "Comprobar operación" : "Usar 1 pase"}</button>}
+      <p>Disponibles con rango efectivo Plata, Oro o Diamante y alguna compra confirmada. Bronce no incluye estos pases.</p>
+      {benefits.eligible ? <p>Comprar de nuevo no añade pases ni reinicia el ciclo.</p> : <p>{benefits.rank_eligible === false || benefits.eligibility_reason === "RANK_NOT_ELIGIBLE" ? "Tu rango actual no incluye pases FREE." : benefits.eligibility_reason === "NO_CONFIRMED_PURCHASE" ? "Sin pases habilitados: se necesita alguna compra confirmada." : "Sin pases habilitados. Revisa el rango efectivo y las compras confirmadas."}</p>}
+      {benefits.eligible && benefits.renews_at ? <p>Renovación: {new Date(benefits.renews_at).toLocaleDateString("es-ES")} · No se acumulan.</p> : null}
+      {benefits.rank_eligible === false && benefits.used > 0 ? <p>Pases utilizados en el ciclo registrado: {benefits.used}. El historial se conserva.</p> : null}
+      {getToken && <button type="button" className="tc-btn tc-btn-gold" disabled={busy || (!pending.current && (!benefits.eligible || benefits.rank_eligible === false || benefits.available < 1))} onClick={() => void consume()}>{busy ? "Confirmando…" : pending.current ? "Comprobar operación" : "Usar 1 pase"}</button>}
     </> : <p>No se pudieron consultar los pases. Actualiza la ficha para comprobarlos.</p>}
     <div role="status" className={styles.feedback}>{message}</div>
   </section>;

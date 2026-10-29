@@ -12,8 +12,9 @@ export async function POST(req: Request) {
     }
     const { data, error } = await admin.rpc("crm_free_pass_use", { p_cliente_id: body.cliente_id, p_worker_id: worker.id, p_request_id: body.request_id, p_cycle_start: body.cycle_start, p_expected_used: body.expected_used });
     if (error) {
-      const known = ["PASS_STATE_CHANGED", "NO_PASSES", "NO_CONFIRMED_PURCHASE"].some(code => error.message.includes(code));
-      return NextResponse.json({ error: known ? "Los pases han cambiado. Revisa el saldo actualizado antes de continuar." : "No se pudo confirmar el pase. Puedes reintentar la misma operación.", refresh: known }, { status: known ? 409 : 503 });
+      const rankIneligible = error.message.includes("RANK_NOT_ELIGIBLE");
+      const known = rankIneligible || ["PASS_STATE_CHANGED", "NO_PASSES", "NO_CONFIRMED_PURCHASE"].some(code => error.message.includes(code));
+      return NextResponse.json({ error: rankIneligible ? "Los pases FREE están disponibles desde el rango Plata. Actualiza la ficha para revisar el rango efectivo." : known ? "Los pases han cambiado. Revisa el saldo actualizado antes de continuar." : "No se pudo confirmar el pase. Puedes reintentar la misma operación.", refresh: known }, { status: known ? 409 : 503 });
     }
     return NextResponse.json({ ok: true, ...data });
   } catch (error) {

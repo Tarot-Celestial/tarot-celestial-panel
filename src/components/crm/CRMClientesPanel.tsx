@@ -131,6 +131,22 @@ function eur(n: any) {
 }
 function rankMeta(rank: string | null | undefined) {
   const r = String(rank || "").toLowerCase();
+  if (r === "diamante") {
+    return {
+      icon: "💎",
+      label: "Diamante",
+      chipBg: "rgba(165,224,255,.18)",
+      chipBorder: "1px solid rgba(165,224,255,.38)",
+      cardBg: "linear-gradient(135deg, rgba(165,224,255,.18), rgba(165,140,255,.08))",
+      cardBorder: "1px solid rgba(165,224,255,.32)",
+      perks: [
+        "15 min GRATIS con cada nueva tarotista",
+        "+15 min FREE en compras de minutos confirmadas, incluidas promociones; no Oráculo ni registros manuales de llamada",
+        "3 pases de 7 minutos cada 30 días, con alguna compra confirmada",
+        "Acceso a Mi ritual según la configuración del rango",
+      ],
+    };
+  }
   if (r === "oro") {
     return {
       icon: "🥇",
@@ -140,9 +156,9 @@ function rankMeta(rank: string | null | undefined) {
       cardBg: "linear-gradient(135deg, rgba(255,215,120,.18), rgba(255,255,255,.03))",
       cardBorder: "1px solid rgba(255,215,120,.28)",
       perks: [
-        "12 min GRATIS con cada nueva tarotista",
-        "+12 min permanentes en compras a precio regular",
-        "3 pases de 7 minutos cada 30 días, con alguna compra confirmada en los últimos 4 meses",
+        "12 min GRATIS con cada nueva tarotista, con reserva y validación de Central",
+        "Configurado, pendiente de aplicación automática: +12 min en compras a precio regular",
+        "3 pases de 7 minutos cada 30 días, con alguna compra confirmada",
         "Participación automática en sorteos activos",
         "Seguimiento energético 1 mes post rituales",
       ],
@@ -157,9 +173,9 @@ function rankMeta(rank: string | null | undefined) {
       cardBg: "linear-gradient(135deg, rgba(196,210,255,.16), rgba(255,255,255,.03))",
       cardBorder: "1px solid rgba(196,210,255,.26)",
       perks: [
-        "10 min GRATIS con cada nueva tarotista",
-        "+10 min permanentes en compras a precio regular",
-        "3 pases de 7 minutos cada 30 días, con alguna compra confirmada en los últimos 4 meses",
+        "10 min GRATIS con cada nueva tarotista, con reserva y validación de Central",
+        "Configurado, pendiente de aplicación automática: +10 min en compras a precio regular",
+        "3 pases de 7 minutos cada 30 días, con alguna compra confirmada",
         "Seguimiento energético 1 mes post rituales",
       ],
     };
@@ -172,7 +188,7 @@ function rankMeta(rank: string | null | undefined) {
       chipBorder: "1px solid rgba(214,156,110,.30)",
       cardBg: "linear-gradient(135deg, rgba(214,156,110,.16), rgba(255,255,255,.03))",
       cardBorder: "1px solid rgba(214,156,110,.26)",
-      perks: ["3 pases de 7 minutos cada 30 días, con alguna compra confirmada en los últimos 4 meses"],
+      perks: ["Acceso al programa de rangos de clientes"],
     };
   }
   return {

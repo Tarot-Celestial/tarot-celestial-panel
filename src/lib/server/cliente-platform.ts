@@ -106,32 +106,32 @@ export function currentRankBenefits(rank: string | null | undefined) {
     return [
       "Acceso exclusivo a Mi Ritual y seguimiento visual de rituales",
       "15 minutos GRATIS cuando se incorpora una nueva tarotista",
-      "+15 minutos GRATIS permanentes en cada compra",
-      "+500 Coins por cada compra de paquete de nivel 1, 2 o 3",
+      "+15 minutos GRATIS permanentes en cada compra de minutos confirmada, incluidas promociones; no Oráculo ni registros manuales de llamada",
+      "+500 Coins por cada compra de paquete de nivel 1, 2 o 3 a tarifa regular, con la configuración del nivel activada",
       "Acceso a una promoción diaria exclusiva de un solo uso",
       "Participación automática en sorteos activos (1 número por sorteo)",
-      "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada en los últimos 4 meses",
+      "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada",
       "Seguimiento energético durante 1 mes post rituales",
     ];
   }
   if (key === "oro") {
     return [
-      "12 minutos GRATIS cuando se incorpora una nueva tarotista",
-      "+12 minutos GRATIS permanentes en cada compra a precio regular",
+      "12 minutos GRATIS cuando se incorpora una nueva tarotista, con reserva y validación de Central",
+      "Configurado, pendiente de aplicación automática: +12 minutos GRATIS en compras a precio regular",
       "Participación automática en sorteos activos (1 número por sorteo)",
-      "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada en los últimos 4 meses",
+      "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada",
       "Seguimiento energético durante 1 mes post rituales",
     ];
   }
   if (key === "plata") {
     return [
-      "10 minutos GRATIS cuando se incorpora una nueva tarotista",
-      "+10 minutos GRATIS permanentes en cada compra a precio regular",
-      "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada en los últimos 4 meses",
+      "10 minutos GRATIS cuando se incorpora una nueva tarotista, con reserva y validación de Central",
+      "Configurado, pendiente de aplicación automática: +10 minutos GRATIS en compras a precio regular",
+      "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada",
       "Seguimiento energético durante 1 mes post rituales",
     ];
   }
-  return ["3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada en los últimos 4 meses"];
+  return key === "bronce" ? ["Acceso al programa de rangos de clientes"] : [];
 }
 
 
