@@ -1,4 +1,4 @@
-export type RankFreeUsageRank = "plata" | "oro" | "diamante";
+export type RankFreeUsageRank = "sin_rango" | "bronce" | "plata" | "oro" | "diamante";
 
 export type RankFreeOffer = {
   workerId: string;
@@ -11,6 +11,8 @@ export type RankFreeOffer = {
 };
 
 const RANK_FREE_BLOCKS: Record<RankFreeUsageRank, { label: string; minutes: number }> = {
+  sin_rango: { label: "Sin rango", minutes: 7 },
+  bronce: { label: "Bronce", minutes: 7 },
   plata: { label: "Plata", minutes: 10 },
   oro: { label: "Oro", minutes: 12 },
   diamante: { label: "Diamante", minutes: 15 },
@@ -24,7 +26,7 @@ function record(value: unknown): Record<string, unknown> {
 
 export function rankFreeReason(reason: unknown) {
   switch (reason) {
-    case "RANK_NOT_ELIGIBLE": return "Este regalo está disponible desde el rango Plata.";
+    case "RANK_NOT_ELIGIBLE": return "No se pudo confirmar el rango actual para este regalo. Actualiza la ficha antes de continuar.";
     case "ALREADY_USED": return "Este cliente ya utilizó el regalo para conocer a esta tarotista.";
     case "TAROTISTA_INACTIVE": return "Esta tarotista ya no está disponible para el regalo de bienvenida.";
     case "SOURCE_REQUIRED": return "Selecciona una tarotista nueva con un regalo disponible.";
@@ -39,12 +41,10 @@ export function rankFreeReason(reason: unknown) {
 export function rankFreeUsage(value: unknown) {
   const preview = record(value);
   const rawRank = typeof preview.effective_rank === "string" ? preview.effective_rank.trim().toLowerCase() : "";
-  const rank: RankFreeUsageRank | null = rawRank === "plata" || rawRank === "oro" || rawRank === "diamante" ? rawRank : null;
+  const rank: RankFreeUsageRank | null = rawRank === "sin_rango" || rawRank === "bronce" || rawRank === "plata" || rawRank === "oro" || rawRank === "diamante" ? rawRank : null;
   const block = rank ? RANK_FREE_BLOCKS[rank] : null;
   const policyKey = typeof preview.policy_key === "string" ? preview.policy_key.trim() : "";
   const valid = Boolean(block && Number(preview.minutes) === block.minutes && policyKey === "new_tarotista_once_v1");
-  const allowInitialFree = !rank && policyKey === "new_tarotista_once_v1" && Array.isArray(preview.offers) && !preview.reason
-    && (rawRank === "bronce" || rawRank === "sin_rango" || preview.effective_rank === null);
   const seen = new Set<string>();
   const offers: RankFreeOffer[] = [];
   for (const entry of Array.isArray(preview.offers) ? preview.offers : []) {
@@ -63,7 +63,6 @@ export function rankFreeUsage(value: unknown) {
   return {
     rank,
     rankLabel: block?.label || null,
-    allowInitialFree,
     minutes: valid && block ? block.minutes : 0,
     policyKey,
     offers,
@@ -73,5 +72,5 @@ export function rankFreeUsage(value: unknown) {
 }
 
 export function rankFreeOfferLabel(preview: ReturnType<typeof rankFreeUsage>) {
-  return `Usa ${preview.minutes} FREE por rango ${preview.rankLabel}`;
+  return `${preview.minutes} minutos FREE · ${preview.rankLabel}`;
 }

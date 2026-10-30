@@ -131,7 +131,9 @@ export function currentRankBenefits(rank: string | null | undefined) {
       "Seguimiento energético durante 1 mes post rituales, coordinado por Central",
     ];
   }
-  return key === "bronce" ? ["Acceso al programa de rangos de clientes"] : [];
+  const introduction = "7 minutos GRATIS para conocer a cada nueva tarotista disponible, una sola vez por cliente y tarotista; se confirman con Central al registrar la consulta";
+  if (key === "bronce") return ["Acceso al programa de rangos de clientes", introduction];
+  return !key || key === "sin_rango" ? [introduction] : [];
 }
 
 
