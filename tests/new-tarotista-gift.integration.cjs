@@ -86,7 +86,7 @@ before(async()=>{
  monthlyDefinitions=await scalar("select jsonb_object_agg(proname,md5(pg_get_functiondef(oid))) v from pg_proc where proname in ('tc_client_rank_state','crm_free_pass_status','crm_free_pass_use')");
  const historical=await client(),oldRequest=request(historical),oldReceipt=await call(oldRequest);
  preUpgrade={request:oldRequest,receipt:oldReceipt,ledger:await scalar('select to_jsonb(x) v from crm_new_tarotista_gift_uses x where operation_id=$1',[oldRequest.operation_id]),activation:await scalar('select activated_at::text v from crm_new_tarotista_gift_policy where id')};
- await db.exec(read('../supabase/migrations/20261030165808_new_tarotista_gift_all_ranks.sql'));
+ await db.exec(read('../supabase/migrations/20261030171707_new_tarotista_gift_all_ranks.sql'));
 });
 after(async()=>{if(db)await db.close();});
 

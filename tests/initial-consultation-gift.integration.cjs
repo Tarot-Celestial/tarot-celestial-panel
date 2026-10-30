@@ -52,10 +52,10 @@ before(async()=>{
  await db.exec(read('fixtures/new-tarotista-gift-production.sql'));
  await db.exec('create trigger trg_capture_client_first_contact after insert on rendimiento_llamadas for each row execute function capture_client_on_first_valid_contact();');
  await db.exec(read('../supabase/migrations/20261029233813_new_tarotista_intro_call.sql'));
- await db.exec(read('../supabase/migrations/20261030165808_new_tarotista_gift_all_ranks.sql'));
+ await db.exec(read('../supabase/migrations/20261030171707_new_tarotista_gift_all_ranks.sql'));
  await db.query("insert into crm_new_tarotista_releases(tarotista_worker_id,source) values($1,'explicit_rollout')",[id(2)]);
  legacyDefinitions=await scalar("select jsonb_object_agg(proname,md5(pg_get_functiondef(oid))) v from pg_proc where proname in ('crm_register_call_atomic_v8','tc_register_call_minutes','capture_client_on_first_valid_contact','register_client_capture_contact','tc_new_tarotista_gift_offer','tc_register_new_tarotista_gift')");
- await db.exec(read('../supabase/migrations/20261030170054_initial_consultation_free_gift.sql'));
+ await db.exec(read('../supabase/migrations/20261030171715_initial_consultation_free_gift.sql'));
 });
 after(async()=>{if(db)await db.close();});
 
