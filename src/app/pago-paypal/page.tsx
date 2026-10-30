@@ -15,7 +15,7 @@ export default function PayPalResult() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "No se pudo comprobar el pago.");
       setState(data.status);
-      setMessage(data.status === "completed" ? "Tu pago está confirmado y la compra ya se ha registrado. Puedes volver al panel."
+      setMessage(data.status === "completed" ? "Cobro PayPal confirmado. Central registra la compra por separado desde «Registrar llamada»."
         : data.status === "cancelled" ? data.last_error || "Este pago no se ha completado. PayPal no ha facilitado el motivo. Contacta con tu central si necesitas otro enlace."
         : params.get("cancel") === "1" ? "Has salido del proceso de pago. No lo damos por pagado; puedes consultar su estado aquí."
         : "PayPal aún no ha confirmado el cobro. No repitas el pago. Puedes comprobarlo de nuevo en unos instantes.");

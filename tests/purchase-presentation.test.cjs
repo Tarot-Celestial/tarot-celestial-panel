@@ -7,6 +7,9 @@ const text = node => typeof node === 'string' || typeof node === 'number' ? Stri
 function compile(file) { return ts.transpileModule(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText; }
 const presentation = {};
 vm.runInNewContext(compile('src/lib/purchase-presentation.ts'), { exports: presentation });
+const rankFree = {}, initialFree = {};
+vm.runInNewContext(compile('src/lib/client-rank-free-usage.ts'), { exports: rankFree });
+vm.runInNewContext(compile('src/lib/client-initial-free.ts'), { exports: initialFree });
 const clone = value => JSON.parse(JSON.stringify(value));
 
 test('package grouping follows server assignments, keeps every package and never guesses from price or row order', () => {
@@ -47,6 +50,8 @@ function loadComponent(file, fetch) {
       if (name === 'react/jsx-runtime') return require(name);
       if (name === 'lucide-react') return new Proxy({}, { get: (_, name) => String(name) });
       if (name === '@/lib/purchase-presentation') return presentation;
+      if (name === '@/lib/client-rank-free-usage') return rankFree;
+      if (name === '@/lib/client-initial-free') return initialFree;
       if (name === '@/lib/countries') return { getCountryByLabelOrCode: () => ({}), buildInternationalPhone: (_, phone) => phone };
       if (name === '@/lib/activity-codes') return { CALL_CODE_OPTIONS: [{ value: 'FREE', label: 'Free' }, { value: 'NORMAL', label: 'Normal' }] };
       if (name === '@/lib/tc-toast') return { tcToast() {} };

@@ -514,7 +514,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
                   : visualPaymentState === "rejected"
                     ? (payment.remote_status === "expired" ? "PAGO CADUCADO" : ["canceled", "cancelled", "CANCELLED_BY_STAFF"].includes(payment.remote_status || "") ? "PAGO CANCELADO" : "PAGO RECHAZADO")
                     : visualPaymentState === "review" ? "PAGO RECIBIDO · PROCESAMIENTO PENDIENTE"
-                    : visualPaymentState === "processing" ? "PAGO CONFIRMADO · PROCESANDO COMPRA"
+                    : visualPaymentState === "processing" ? "PAGO RECIBIDO · CONFIRMANDO COBRO"
                     : "ESPERANDO PAGO…"}
               </strong>
 
@@ -523,7 +523,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
                   ? `PayPal ha confirmado correctamente el pago de ${money(payment.amount)}.`
                   : visualPaymentState === "rejected"
                     ? `${payment.last_error || `El pago de ${money(payment.amount)} no ha podido completarse.`}`
-                    : ["review", "processing"].includes(visualPaymentState) ? "El dinero ya se ha recibido. No solicites otro pago. Estamos comprobando el registro y los beneficios."
+                    : ["review", "processing"].includes(visualPaymentState) ? "El dinero ya se ha recibido. No solicites otro pago. Estamos guardando la confirmación del cobro."
                     : `Esperando la confirmación de PayPal para el cobro de ${money(payment.amount)}.`}
               </p>
 
