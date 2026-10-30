@@ -1387,6 +1387,27 @@ export default function CRMClientesPanel({
       if (!json?.ok || !json?.cliente) return false;
       if (visibleClientRef.current !== clientId || requestVersion !== fichaFetchVersion.current) return false;
       const current = json.cliente;
+      if (String(current.id || "") !== clientId) return false;
+      // Rank and its rolling totals can change without touching crm_clientes.updated_at.
+      // Copy only server-owned rank fields; editable client details stay in their drafts.
+      const rankPatch: Record<string, unknown> = {};
+      for (const key of [
+        "rango_actual", "rango_efectivo", "rango_automatico", "rango_intervencion",
+        "rango_gasto_mes_anterior", "rango_compras_mes_anterior", "rango_actual_desde", "rango_actual_hasta",
+        "has_manual_override", "override_type", "override_starts_at", "override_expires_at", "override_reason",
+      ]) {
+        if (Object.prototype.hasOwnProperty.call(current, key)) rankPatch[key] = current[key];
+      }
+      if (Object.prototype.hasOwnProperty.call(current, "rango_intervencion")) {
+        const intervention = current.rango_intervencion;
+        Object.assign(rankPatch, {
+          has_manual_override: Boolean(intervention),
+          override_type: intervention?.intervention_type || null,
+          override_starts_at: intervention?.starts_at || null,
+          override_expires_at: intervention?.ends_at || null,
+          override_reason: intervention?.reason || null,
+        });
+      }
       const latest = liveCrmBalance.current;
       const beforeFree = Number(latest.cliente?.minutos_free_pendientes || 0);
       const beforeNormal = Number(latest.cliente?.minutos_normales_pendientes || 0);
@@ -1399,17 +1420,25 @@ export default function CRMClientesPanel({
         setCrmEditMinFree(String(current.minutos_free_pendientes ?? 0));
         setCrmEditMinNormales(String(current.minutos_normales_pendientes ?? 0));
       }
-      // Guardar una copia coherente del saldo del servidor. Las notas no se tocan.
+      // Keep the badge, benefit card and result row on the same server snapshot.
+      // Notes/history and manual minute edits remain governed by their existing guards.
       setCrmClienteFicha((previous: any) => {
         if (previous?.id !== clientId) return previous;
+        const rankChanged = Object.entries(rankPatch).some(([key, value]) => JSON.stringify(previous[key]) !== JSON.stringify(value));
         if (!changed && Number(previous?.puntos || 0) === Number(current.puntos || 0)
-            && previous?.updated_at === current.updated_at) return previous;
-        return { ...previous, free_passes: current.free_passes,
+            && previous?.updated_at === current.updated_at && !rankChanged
+            && JSON.stringify(previous.free_passes) === JSON.stringify(current.free_passes)) return previous;
+        return { ...previous, ...rankPatch, free_passes: current.free_passes,
           puntos: current.puntos,
           minutos_free_pendientes: current.minutos_free_pendientes,
           minutos_normales_pendientes: current.minutos_normales_pendientes,
           updated_at: current.updated_at };
       });
+      if (Object.keys(rankPatch).length) setCrmRows(previous => previous.map(row => {
+        if (String(row.id || "") !== clientId) return row;
+        const rankChanged = Object.entries(rankPatch).some(([key, value]) => JSON.stringify(row[key]) !== JSON.stringify(value));
+        return rankChanged ? { ...row, ...rankPatch } : row;
+      }));
       return true;
     } catch (error) {
       console.error("Error refrescando saldo real del CRM", error);

@@ -16,6 +16,49 @@ export type EffectiveClientRank = {
   };
 };
 
+export type CanonicalClientRank = EffectiveClientRank & { total: number; compras: number };
+
+/** Keep the spend, count and rank intervention from one database snapshot. */
+export async function loadCanonicalClientRank(admin: any, clientId: string): Promise<CanonicalClientRank> {
+  const { data, error } = await admin.rpc("tc_client_rank_state", { p_cliente_id: clientId });
+  if (error) throw new Error("CLIENT_RANK_UNAVAILABLE");
+  const invalid = () => { throw new Error("CLIENT_RANK_INVALID_RESPONSE"); };
+  const validRank = (value: unknown) => value === null ||
+    (typeof value === "string" && ["bronce", "plata", "oro", "diamante"].includes(value));
+  const validDate = (value: unknown) => typeof value === "string" && Number.isFinite(Date.parse(value));
+  if (!data || typeof data !== "object" || Array.isArray(data) ||
+      typeof data.total !== "number" || !Number.isFinite(data.total) || data.total < 0 ||
+      !Number.isSafeInteger(data.compras) || data.compras < 0 ||
+      !validRank(data.automatic) || !validRank(data.effective)) invalid();
+
+  const override = data.override;
+  if (override !== null) {
+    if (!override || typeof override !== "object" || Array.isArray(override) ||
+        typeof override.id !== "string" || !override.id.trim() ||
+        override.rank === null || !validRank(override.rank) ||
+        !["temporary", "permanent", "penalty"].includes(override.intervention_type) ||
+        !validDate(override.starts_at) || (override.ends_at !== null && !validDate(override.ends_at)) ||
+        typeof override.reason !== "string" || (override.notes !== null && typeof override.notes !== "string") ||
+        data.effective !== override.rank) invalid();
+  } else if (data.effective !== data.automatic) invalid();
+
+  return {
+    automatic: data.automatic,
+    effective: data.effective,
+    override: override === null ? null : {
+      id: override.id,
+      rank: override.rank,
+      intervention_type: override.intervention_type,
+      starts_at: override.starts_at,
+      ends_at: override.ends_at,
+      reason: override.reason,
+      notes: override.notes,
+    },
+    total: data.total,
+    compras: data.compras,
+  };
+}
+
 export function normalizeClientRank(value: unknown): ClientRankName {
   const rank = String(value || "").trim().toLowerCase();
   return rank === "bronce" || rank === "plata" || rank === "oro" || rank === "diamante" ? rank : null;
@@ -47,6 +90,7 @@ export async function loadEffectiveClientRank(admin: any, clientId: string, roll
     .lte("starts_at", nowIso)
     .or(`ends_at.is.null,ends_at.gt.${nowIso}`)
     .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(1)
     .maybeSingle();
 

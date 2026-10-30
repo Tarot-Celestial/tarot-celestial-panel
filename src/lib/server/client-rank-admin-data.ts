@@ -1,4 +1,4 @@
-import { buildClienteNameMap, roundMoney } from "@/lib/server/client-ranks";
+import { loadRolling30ClientTotals } from "@/lib/server/client-ranks";
 import { calcClientRank } from "@/lib/server/client-ranks";
 import { normalizeClientRank, type EffectiveClientRank } from "@/lib/server/client-rank-effective";
 
@@ -114,82 +114,7 @@ export async function loadRecentRankTotals(
   sinceIso: string,
   nowIso: string
 ) {
-  const clientIds = clients.map((client) => String(client.id)).filter(Boolean);
-  const byName = buildClienteNameMap(clients);
-  const totals = new Map<string, { total: number; compras: number; pagos: number; llamadas: number }>();
-
-  const add = (clientId: string, amount: number, kind: "payment" | "call") => {
-    if (!clientId || !(amount > 0)) return;
-    const previous = totals.get(clientId) || { total: 0, compras: 0, pagos: 0, llamadas: 0 };
-    previous.total += amount;
-    previous.compras += 1;
-    if (kind === "payment") previous.pagos += 1;
-    else previous.llamadas += 1;
-    totals.set(clientId, previous);
-  };
-
-  for (const idChunk of chunks(clientIds)) {
-    const [paymentsRes, callsByDateRes, callsByCreatedRes] = await Promise.all([
-      admin
-        .from("crm_cliente_pagos")
-        .select("id,cliente_id,importe,created_at,estado")
-        .eq("estado", "completed")
-        .in("cliente_id", idChunk)
-        .gte("created_at", sinceIso)
-        .lte("created_at", nowIso),
-      admin
-        .from("rendimiento_llamadas")
-        .select("id,cliente_id,cliente_nombre,importe,fecha_hora,created_at")
-        .in("cliente_id", idChunk)
-        .gte("fecha_hora", sinceIso)
-        .lte("fecha_hora", nowIso),
-      admin
-        .from("rendimiento_llamadas")
-        .select("id,cliente_id,cliente_nombre,importe,fecha_hora,created_at")
-        .in("cliente_id", idChunk)
-        .gte("created_at", sinceIso)
-        .lte("created_at", nowIso),
-    ]);
-    if (paymentsRes.error) throw paymentsRes.error;
-    if (callsByDateRes.error) throw callsByDateRes.error;
-    if (callsByCreatedRes.error) throw callsByCreatedRes.error;
-
-    for (const row of paymentsRes.data || []) add(String(row.cliente_id || ""), Number(row.importe || 0), "payment");
-
-    const calls = new Map<string, any>();
-    for (const row of [...(callsByDateRes.data || []), ...(callsByCreatedRes.data || [])]) calls.set(String(row.id), row);
-    for (const row of calls.values()) add(String(row.cliente_id || ""), Number(row.importe || 0), "call");
-  }
-
-  // Preserve support for legacy recent calls without client_id, but only inside the 30-day rank window.
-  const [legacyByDate, legacyByCreated] = await Promise.all([
-    admin
-      .from("rendimiento_llamadas")
-      .select("id,cliente_nombre,importe,fecha_hora,created_at")
-      .is("cliente_id", null)
-      .gte("fecha_hora", sinceIso)
-      .lte("fecha_hora", nowIso),
-    admin
-      .from("rendimiento_llamadas")
-      .select("id,cliente_nombre,importe,fecha_hora,created_at")
-      .is("cliente_id", null)
-      .gte("created_at", sinceIso)
-      .lte("created_at", nowIso),
-  ]);
-  if (legacyByDate.error) throw legacyByDate.error;
-  if (legacyByCreated.error) throw legacyByCreated.error;
-  const legacyCalls = new Map<string, any>();
-  for (const row of [...(legacyByDate.data || []), ...(legacyByCreated.data || [])]) legacyCalls.set(String(row.id), row);
-  for (const row of legacyCalls.values()) {
-    const clientId = byName.get(String(row.cliente_nombre || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim()) || "";
-    add(clientId, Number(row.importe || 0), "call");
-  }
-
-  for (const [clientId, info] of totals.entries()) {
-    info.total = roundMoney(info.total);
-    totals.set(clientId, info);
-  }
-  return totals;
+  return loadRolling30ClientTotals(admin, clients, sinceIso, nowIso);
 }
 
 export async function loadEffectiveRanksBatch(admin: any, clients: RankAdminClient[], totals: Map<string, any>) {
@@ -205,7 +130,8 @@ export async function loadEffectiveRanksBatch(admin: any, clients: RankAdminClie
       .eq("active", true)
       .lte("starts_at", nowIso)
       .or(`ends_at.is.null,ends_at.gt.${nowIso}`)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false });
     if (error) {
       if (isMissingRelation(error)) break;
       throw error;
