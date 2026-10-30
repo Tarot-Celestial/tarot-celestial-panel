@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { calcClientRank, loadRolling30ClientTotals } from "@/lib/server/client-ranks";
-import { loadEffectiveClientRank } from "@/lib/server/client-rank-effective";
+import { loadCanonicalClientRank } from "@/lib/server/client-rank-effective";
 import { createClient } from "@supabase/supabase-js";
-import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -94,11 +92,8 @@ export async function GET(req: Request) {
     if (rendimientoErr) throw rendimientoErr;
     if (!data) return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
 
-    const totals30d = await loadRolling30ClientTotals(admin, [data], sinceIso, new Date().toISOString());
-    const rankInfo = totals30d.get(String(data.id)) || { total: 0, compras: 0 };
-
     const [effectiveRank, passResult] = await Promise.all([
-      loadEffectiveClientRank(admin, id, rankInfo.total),
+      loadCanonicalClientRank(admin, id),
       admin.rpc("crm_free_pass_status", { p_cliente_id: id }),
     ]);
 
@@ -110,8 +105,8 @@ export async function GET(req: Request) {
       rango_efectivo: effectiveRank.effective,
       rango_intervencion: effectiveRank.override,
       rango_actual: effectiveRank.effective,
-      rango_gasto_mes_anterior: Number((rankInfo.total || 0).toFixed(2)),
-      rango_compras_mes_anterior: Number(rankInfo.compras || 0),
+      rango_gasto_mes_anterior: effectiveRank.total,
+      rango_compras_mes_anterior: effectiveRank.compras,
       rango_actual_desde: sinceIso.slice(0, 10),
       rango_actual_hasta: new Date().toISOString().slice(0, 10),
     };
