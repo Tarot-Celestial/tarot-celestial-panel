@@ -25,12 +25,16 @@ function harness(options={}){
    {id:id(100),thread_id:id(10),sender_worker_id:id(2),sender_display_name:'Tarotista fixture',body:'Fixture message',created_at:'2026-10-20T10:01:00.000Z',client_message_id:'existing-message'},
   ],
   chat_thread_reads:[],
+  attendance_panel_sessions:[],
+  attendance_state:[],
+  staff_chat_attachments:[],
  };
  const calls=[],writes=[],authCalls=[],connectionCalls=[];
  class Query {
   constructor(table){this.table=table;this.filters=[];this.orders=[];this.cap=Infinity;this.action='select';}
   select(){return this;}
   eq(k,v){this.filters.push(r=>r[k]===v);return this;}
+  is(k,v){return this.eq(k,v);}
   in(k,values){this.filters.push(r=>values.includes(r[k]));return this;}
   lt(k,v){this.filters.push(r=>r[k]<v);return this;}
   or(value){const conditions=value.split(',').map(v=>v.split('.eq.'));this.filters.push(r=>conditions.some(([k,v])=>r[k]===v));return this;}
@@ -41,6 +45,7 @@ function harness(options={}){
   upsert(value){this.action='upsert';this.value=value;return this;}
   async run(single=false){
    calls.push({table:this.table,action:this.action});
+   if(options.failTable===this.table)return {data:null,error:{message:'synthetic unavailable'}};
    let rows=(tables[this.table]||[]).filter(r=>this.filters.every(f=>f(r)));
    if(this.action==='insert'){
     if(options.duplicateMessage&&this.table==='chat_messages')return {data:null,error:{code:'23505'}};
@@ -59,7 +64,7 @@ function harness(options={}){
   then(resolve,reject){return this.run().then(resolve,reject);}
  }
  const db={
-  auth:{getUser:async token=>{authCalls.push(token);return options.invalidAuth?{data:{user:null},error:{message:'bad signature'}}:{data:{user:{id:id(200+(options.actor??1))}},error:null};}},
+  auth:{getUser:async token=>{authCalls.push(token);return options.authError?{data:{user:null},error:options.authError}:options.invalidAuth?{data:{user:null},error:{message:'bad signature'}}:{data:{user:{id:id(200+(options.actor??1))}},error:null};}},
   from:table=>new Query(table),
   rpc:async(name,args)=>{
    calls.push({rpc:name,args});
@@ -74,14 +79,44 @@ function harness(options={}){
   '@/lib/server/panel-attendance':{requireActivePanelSession:async(_db,worker)=>{connectionCalls.push(worker);return options.connected===false?{ok:false,status:423,error:'PANEL_CONNECTION_REQUIRED'}:{ok:true};}},
   'next/server':{NextResponse:{json:(data,init={})=>new Response(JSON.stringify(data),{...init,headers:{'Content-Type':'application/json',...(init.headers||{})}})}},
  };
- function load(file){const exports={};vm.runInNewContext(loadSource(file),{exports,require:name=>{if(!(name in dependencies))throw Error('Unexpected dependency '+name);return dependencies[name];},URL,Request,Response,Headers,Date,crypto,console});return exports;}
+ function load(file){const exports={};vm.runInNewContext(loadSource(file),{exports,require:name=>{if(!(name in dependencies))throw Error('Unexpected dependency '+name);return dependencies[name];},URL,Request,Response,Headers,Date,crypto,console,Buffer,Uint8Array});return exports;}
  dependencies['@/lib/server/staff-chat']=load('src/lib/server/staff-chat.ts');
+ dependencies['@/lib/server/staff-chat-media']=load('src/lib/server/staff-chat-media.ts');
  const messages=load('src/app/api/chat/messages/route.ts'),threads=load('src/app/api/chat/threads/route.ts');
  dependencies['@/app/api/chat/messages/route']=messages;
  dependencies['@/app/api/chat/threads/route']=threads;
  return {tables,calls,writes,authCalls,connectionCalls,helper:dependencies['@/lib/server/staff-chat'],messages,threads,read:load('src/app/api/chat/read/route.ts'),legacy:{messages:load('src/app/api/central/chat/messages/route.ts'),threads:load('src/app/api/central/chat/threads/route.ts'),send:load('src/app/api/central/chat/send/route.ts'),open:load('src/app/api/central/chat/open/route.ts')}};
 }
 function req(url,body,authorization='Bearer signed-fixture-token'){return new Request('https://panel.test'+url,{method:body===undefined?'GET':'POST',headers:authorization?{authorization,'content-type':'application/json'}:{},...(body===undefined?{}:{body:JSON.stringify(body)})});}
+
+test('overview uses live panel sessions instead of stale worker heartbeat and never renews them',async()=>{
+ const h=harness();const future=new Date(Date.now()+600000).toISOString();
+ h.tables.workers.find(w=>w.id===id(2)).state='offline';
+ h.tables.attendance_panel_sessions.push({worker_id:id(2),ended_at:null,expires_at:future});
+ let body=await (await h.threads.GET(req('/api/chat/threads'))).json();
+ assert.equal(body.contacts[0].state,'online');assert.equal(body.threads[0].contact.state,'online');assert.equal(body.contacts[0].presence_expires_at,future);
+ assert.ok(Date.parse(body.presence_checked_at));assert.equal(h.writes.length,0);assert.equal(h.connectionCalls.length,0);
+ h.tables.workers.find(w=>w.id===id(2)).state='online';
+ h.tables.attendance_panel_sessions[0].expires_at=new Date(Date.now()-1).toISOString();
+ body=await (await h.threads.GET(req('/api/chat/threads'))).json();assert.equal(body.contacts[0].state,'offline');
+ h.tables.attendance_state.push({worker_id:id(2),status:'bathroom'});
+ body=await (await h.threads.GET(req('/api/chat/threads'))).json();assert.equal(body.contacts[0].state,'break');
+ h.tables.attendance_panel_sessions[0]={worker_id:id(2),ended_at:new Date().toISOString(),expires_at:future};
+ h.tables.attendance_state[0].status='offline';
+ body=await (await h.threads.GET(req('/api/chat/threads'))).json();assert.equal(body.contacts[0].state,'offline','closed sessions are never online');
+});
+
+test('presence read failure fails overview instead of publishing a false offline snapshot',async()=>{
+ const h=harness({failTable:'attendance_panel_sessions'}),r=await h.threads.GET(req('/api/chat/threads'));
+ assert.equal(r.status,500);assert.equal((await r.json()).error,'CHAT_ERROR');assert.equal(h.writes.length,0);
+});
+
+test('Auth service retryable errors return 503 without pretending token rejection or querying private chat',async()=>{
+ for(const authError of [{name:'AuthRetryableFetchError',status:0},{name:'AuthApiError',status:503},{name:'AuthApiError',status:429}]){
+  const h=harness({authError}),r=await h.threads.GET(req('/api/chat/threads'));
+  assert.equal(r.status,503);assert.equal((await r.json()).error,'CHAT_UNAVAILABLE');assert.equal(h.calls.length,0);assert.equal(h.writes.length,0);
+ }
+});
 test('verified getUser is required: absent and invalid bearer never query chat',async()=>{
  for(const [authorization,invalidAuth] of [[null,false],['Bearer forged-token',true]]){
   const h=harness({invalidAuth}),r=await h.threads.GET(req('/api/chat/threads',undefined,authorization));
@@ -196,4 +231,3 @@ test('legacy inbox retains field names, exact counts and shared contact scoping'
  assert.equal(opened.thread.id,id(10));assert.equal(opened.thread.central_worker_id,id(1));
  const admin=harness({actor:3});assert.equal((await admin.legacy.messages.GET(req('/api/central/chat/messages?thread_id='+id(11)))).status,200);
 });
-

@@ -8,7 +8,7 @@ function load(file, mocks, globals) {
   const source = ts.transpileModule(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
-  vm.runInNewContext(source, { exports, require: name => mocks[name] || require(name), process: { env: {} }, ...globals });
+  vm.runInNewContext(source, { exports, require: name => mocks[name] || (name==='@/hooks/usePanelSessionAccess' ? load('src/hooks/usePanelSessionAccess.ts',mocks,globals) : require(name)), process: { env: {} }, ...globals });
   return exports;
 }
 function clock() {
@@ -29,6 +29,21 @@ function clock() {
     tick(ms) { for (const timer of timers.values()) if (timer.ms === ms) timer.fn(); },
   };
 }
+
+test('shared session access uses server time and never extends expiry on retry or rerender',async()=>{
+ const time=clock(),deviceStart=time.now(),serverStart=deviceStart-3600000;
+ let attendance={online:true,status:'working',sessionId:'fixture',serverNow:new Date(serverStart).toISOString(),expiresAt:new Date(serverStart+600000).toISOString(),error:null};
+ const {usePanelSessionAccess}=load('src/hooks/usePanelSessionAccess.ts',{}, {...time,document:{}});let access,tree;
+ function Probe(){access=usePanelSessionAccess(attendance);return null;}
+ await Renderer.act(async()=>{tree=Renderer.create(React.createElement(Probe));});
+ assert.equal(access.connected,true);assert.equal(access.now,serverStart);
+ time.set(deviceStart+300000);attendance={...attendance,error:'HTTP 503'};
+ await Renderer.act(async()=>tree.update(React.createElement(Probe)));
+ assert.equal(access.now,serverStart+300000);assert.equal(access.connected,true);assert.equal(access.verificationPending,true);
+ time.set(deviceStart+600000);await Renderer.act(async()=>time.tick(1000));
+ assert.equal(access.connected,false);assert.equal(access.expired,true);
+ await Renderer.act(async()=>tree.unmount());
+});
 
 test('gate blocks content and body portals; unlocking restores portal and keyboard availability', async () => {
   const time = clock();
@@ -62,10 +77,23 @@ test('gate blocks content and body portals; unlocking restores portal and keyboa
   await Renderer.act(async () => tree.update(React.createElement(Component, {}, React.createElement('button', {}, 'Editar'))));
   assert.equal(tree.root.findByProps({ 'data-panel-workspace': true }).props.inert, undefined);
   assert.equal(portal.inert, false); assert.equal(content.inert, false);
+  attendance = {...attendance,error:'HTTP 503'};
+  await Renderer.act(async () => tree.update(React.createElement(Component, {}, React.createElement('button', {}, 'Editar'))));
+  assert.equal(tree.root.findByProps({ 'data-panel-workspace': true }).props.inert, undefined,'temporary failure retains an unexpired confirmed session');
+  assert.ok(tree.root.findAllByProps({role:'status'}).some(node=>node.children.join('').includes('Verificando conexión')));
   time.set(time.now() + 600000);
   await Renderer.act(async () => time.tick(1000));
   assert.equal(tree.root.findByProps({ 'data-panel-workspace': true }).props.inert, '');
   assert.equal(refreshes, 1);
+  attendance={...attendance,expiresAt:new Date(time.now()+600000).toISOString(),serverNow:new Date(time.now()).toISOString(),error:'NO_AUTH'};
+  await Renderer.act(async () => tree.update(React.createElement(Component, {}, React.createElement('button', {}, 'Editar'))));
+  assert.equal(tree.root.findByProps({ 'data-panel-workspace': true }).props.inert, '','fatal authentication denial locks even an unexpired cached deadline');
+  attendance={...attendance,error:null,loading:true};
+  await Renderer.act(async () => tree.update(React.createElement(Component, {}, React.createElement('button', {}, 'Editar'))));
+  assert.equal(tree.root.findByProps({ 'data-panel-workspace': true }).props.inert, '','retry cannot restore authority without a newly confirmed snapshot');
+  attendance={...attendance,loading:false,serverNow:new Date(time.now()+1).toISOString()};
+  await Renderer.act(async () => tree.update(React.createElement(Component, {}, React.createElement('button', {}, 'Editar'))));
+  assert.equal(tree.root.findByProps({ 'data-panel-workspace': true }).props.inert, undefined);
   await Renderer.act(async () => tree.unmount());
 });
 

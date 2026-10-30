@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { LockKeyhole, LogIn, LogOut, Clock3 } from 'lucide-react';
 import { useAttendance } from '@/hooks/useAttendance';
+import { usePanelSessionAccess } from '@/hooks/usePanelSessionAccess';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import { isPanelPath } from '@/lib/attendance/panel-session';
 import styles from './PanelAccessGate.module.css';
@@ -15,25 +16,10 @@ export default function PanelAccessGate({ children }: { children: ReactNode }) {
   const contentRef = useRef<HTMLDivElement>(null);
   const consultationRef = useRef<HTMLDivElement>(null);
   const gateRef = useRef<HTMLDivElement>(null);
-  const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const offsetRef = useRef(0);
-  useEffect(() => {
-    if (attendance.serverNow) offsetRef.current = Date.parse(attendance.serverNow)-Date.now();
-  }, [attendance.serverNow]);
-  useEffect(() => {
-    if (!protectedPath) return;
-    const tick = () => setNow(Date.now()+offsetRef.current);
-    tick();
-    const timer = window.setInterval(tick,1000);
-    window.addEventListener('focus',tick);
-    return () => { window.clearInterval(timer); window.removeEventListener('focus',tick); };
-  }, [protectedPath]);
-  const expires = Date.parse(attendance.expiresAt || '');
-  const hasWorkingSession = attendance.online && attendance.status==='working' && !!attendance.sessionId && Number.isFinite(expires);
-  const expired = hasWorkingSession && Number.isFinite(expires) && now>=expires;
-  const locked = protectedPath && (!hasWorkingSession || expired || !!attendance.error);
+  const { connected, expiresAt: expires, now, expired, verificationPending } = usePanelSessionAccess(attendance);
+  const locked = protectedPath && !connected;
   const secondsLeft = Number.isFinite(expires) ? Math.max(0,Math.ceil((expires-now)/1000)) : 0;
   const warning = protectedPath && !locked && secondsLeft<=90;
   const tarotista = attendance.workerRole === 'tarotista';
@@ -46,10 +32,11 @@ export default function PanelAccessGate({ children }: { children: ReactNode }) {
   const consultationTime = consultationActive
     ? new Date(consultationEnd).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' }) : '';
   const showConsultation = protectedPath && tarotista && !locked;
+  const showStatusBar = showConsultation || (protectedPath && verificationPending && !locked);
 
   useEffect(() => {
     const workspace = contentRef.current, controls = consultationRef.current;
-    if (!showConsultation || !workspace || !controls) return;
+    if (!showStatusBar || !workspace || !controls) return;
     const measure = () => workspace.style.setProperty('--panel-consultation-height', `${Math.ceil(controls.getBoundingClientRect().height)}px`);
     measure();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
@@ -59,7 +46,7 @@ export default function PanelAccessGate({ children }: { children: ReactNode }) {
       observer?.disconnect(); window.removeEventListener('resize', measure);
       workspace.style.removeProperty('--panel-consultation-height');
     };
-  }, [showConsultation]);
+  }, [showStatusBar]);
 
   useEffect(() => {
     if (!locked) return;
@@ -119,6 +106,7 @@ export default function PanelAccessGate({ children }: { children: ReactNode }) {
           ? `Declarada por ti hasta las ${consultationTime} (hora de este dispositivo). Si sigues atendiendo, amplía otros 60 minutos.`
           : '¿Atiendes desde otro teléfono? Declara tu consulta para mantener el panel disponible durante 60 minutos.'}</p>
         {message ? <p role="alert">{message}</p> : null}
+        {verificationPending ? <p role="status">Verificando conexión. Se conserva el último estado confirmado hasta que caduque.</p> : null}
       </div>
       <div className={styles.consultationActions}>
         <button type="button" disabled={busy} onClick={() => void changeConsultation('consultation_start')}>{consultationActive ? 'Ampliar 60 min' : 'Estoy en consulta (60 min)'}</button>
@@ -128,9 +116,10 @@ export default function PanelAccessGate({ children }: { children: ReactNode }) {
     </div> : null;
 
   return <>
-    <div ref={contentRef} data-panel-workspace className={locked ? styles.locked : showConsultation ? styles.withConsultation : undefined}
+    <div ref={contentRef} data-panel-workspace className={locked ? styles.locked : showStatusBar ? styles.withConsultation : undefined}
       {...(locked ? { inert: '' } as Record<string,string> : {})} aria-hidden={locked || undefined}>
       {consultationControls}
+      {protectedPath && verificationPending && !showConsultation ? <div ref={consultationRef} className={`${styles.warning} ${styles.consultation} ${styles.verification}`} role="status">Verificando conexión. Se conserva el último estado confirmado hasta que caduque.</div> : null}
       {children}
     </div>
     {locked ? <div ref={gateRef} className={styles.overlay} role="dialog" aria-modal="true" aria-labelledby="panel-connect-title">

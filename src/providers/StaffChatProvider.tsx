@@ -4,13 +4,15 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { usePathname } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import { useAttendance } from '@/hooks/useAttendance';
+import { usePanelSessionAccess } from '@/hooks/usePanelSessionAccess';
 import { isPanelPath } from '@/lib/attendance/panel-session';
 import { chatRequest } from '@/lib/staff-chat-client';
 import { CHAT_SOUND_KEY, CHAT_DEFAULT_VOLUME, chatSoundPreferences, chatVolume, chatUnreadTotal, canReadStaffChat } from '@/lib/staff-chat-alerts';
 
-export type StaffChatContact = { id: string; display_name: string; role: string; team: string | null; state: string };
-export type StaffChatMessage = { id: string; thread_id: string; sender_worker_id: string; sender_display_name: string; text: string; created_at: string; read_at?: string | null; client_message_id?: string | null; pending?: boolean; failed?: boolean };
-export type StaffChatThread = { id: string; central_worker_id?: string | null; tarotist_worker_id?: string | null; last_message_at?: string | null; last_message_preview?: string | null; unread_count: number; contact?: StaffChatContact | null; legacy?: boolean; latest_incoming?: StaffChatMessage | null };
+export type StaffChatContact = { id: string; display_name: string; role: string; team: string | null; state: string; presence_expires_at?: string | null };
+export type StaffChatAttachment = { id: string; kind: 'image' | 'audio'; mime_type: string; file_name: string; size_bytes: number };
+export type StaffChatMessage = { id: string; thread_id: string; sender_worker_id: string; sender_display_name: string; text: string; created_at: string; read_at?: string | null; client_message_id?: string | null; pending?: boolean; failed?: boolean; attachment?: StaffChatAttachment | null };
+export type StaffChatThread = { id: string; central_worker_id?: string | null; central_display_name?: string; tarotist_worker_id?: string | null; last_message_at?: string | null; last_message_preview?: string | null; unread_count: number; contact?: StaffChatContact | null; legacy?: boolean; latest_incoming?: StaffChatMessage | null };
 type Actor = { id: string; role: 'central' | 'tarotista' | 'admin'; display_name: string };
 type Overview = { me: Actor | null; contacts: StaffChatContact[]; threads: StaffChatThread[] };
 type Notice = StaffChatMessage;
@@ -30,6 +32,7 @@ export function StaffChatProvider({ children }: { children: ReactNode }) {
   const path = usePathname();
   const enabled = isPanelPath(path);
   const attendance = useAttendance();
+  const access = usePanelSessionAccess(attendance);
   const [overview, setOverview] = useState<Overview>(EMPTY);
   const [loading, setLoading] = useState(false), [error, setError] = useState(''), [live, setLive] = useState(false);
   const [sound, setSoundState] = useState(true), [volume, setVolumeState] = useState(CHAT_DEFAULT_VOLUME), [audioReady, setAudioReady] = useState(false);
@@ -43,8 +46,9 @@ export function StaffChatProvider({ children }: { children: ReactNode }) {
   const audio = useRef<AudioContext | null>(null), seen = useRef(new Set<string>()), noticeTimer = useRef<number>();
   const desktopNotices = useRef(new Set<Notification>());
   const pending = useRef<Promise<void> | null>(null), queued = useRef(false), startedAt = useRef(Date.now());
+  const presenceOffset = useRef(0);
   activeRef.current = enabled;
-  connected.current = attendance.online && attendance.status === 'working' && !!attendance.sessionId && Date.parse(attendance.expiresAt || '') > Date.now() && !attendance.error;
+  connected.current = access.connected;
 
   const requestOpen = useCallback((threadId: string) => {
     setOpenRequest(current => ({ threadId, version: (current?.version || 0) + 1 }));
@@ -148,7 +152,10 @@ export function StaffChatProvider({ children }: { children: ReactNode }) {
         if (!hydrated.current) setLoading(true);
         const data = await chatRequest('/api/chat/threads');
         if (version !== generation.current || !activeRef.current) return;
-        const next: Overview = { me: data.me || null, contacts: Array.isArray(data.contacts) ? data.contacts : [], threads: Array.isArray(data.threads) ? data.threads : [] };
+        if (!data?.me?.id || !['central', 'tarotista', 'admin'].includes(data.me.role) || !Array.isArray(data.contacts) || !Array.isArray(data.threads)) throw new Error('Chat temporalmente no disponible.');
+        const checkedAt = Date.parse(data.presence_checked_at || '');
+        if (Number.isFinite(checkedAt)) presenceOffset.current = checkedAt - Date.now();
+        const next: Overview = { me: data.me, contacts: data.contacts, threads: data.threads };
         const previous = overviewRef.current;
         overviewRef.current = next; setOverview(next); setError('');
         if (hydrated.current) {
@@ -162,7 +169,14 @@ export function StaffChatProvider({ children }: { children: ReactNode }) {
         }
         hydrated.current = true;
       } catch (reason) {
-        if (version === generation.current && activeRef.current) setError(reason instanceof Error ? reason.message : 'Chat temporalmente no disponible.');
+        if (version === generation.current && activeRef.current) {
+          const failure = reason as { code?: string; status?: number } | null;
+          if (failure?.status === 401 || failure?.status === 403 || ['NO_AUTH', 'IDENTITY_CHANGED', 'NO_WORKER', 'FORBIDDEN'].includes(failure?.code || '')) {
+            overviewRef.current = EMPTY; setOverview(EMPTY); hydrated.current = false;
+            setIncoming(null); setNotice(null); setOpenRequest(null); visibleThreads.current.clear(); seen.current.clear();
+          }
+          setError(reason instanceof Error ? reason.message : 'Chat temporalmente no disponible.');
+        }
       } finally {
         if (version === generation.current) setLoading(false);
       }
@@ -174,6 +188,22 @@ export function StaffChatProvider({ children }: { children: ReactNode }) {
       if (queued.current) { queued.current = false; void refresh(); }
     }
   }, [announce]);
+
+  useEffect(() => {
+    const now = Date.now() + presenceOffset.current;
+    let changed = false;
+    const expire = (contact: StaffChatContact) => {
+      if (contact.state !== 'online' || !contact.presence_expires_at || Date.parse(contact.presence_expires_at) > now) return contact;
+      changed = true; return { ...contact, state: 'offline' };
+    };
+    const previous = overviewRef.current;
+    const contacts = previous.contacts.map(expire);
+    const threads = previous.threads.map(thread => {
+      const contact = thread.contact ? expire(thread.contact) : thread.contact;
+      return contact === thread.contact ? thread : { ...thread, contact };
+    });
+    if (changed) { const next = { ...previous, contacts, threads }; overviewRef.current = next; setOverview(next); }
+  }, [access.now]);
 
   useEffect(() => {
     const apply = () => {
@@ -199,6 +229,7 @@ export function StaffChatProvider({ children }: { children: ReactNode }) {
       const nextUser = session?.user.id || '';
       if (nextUser !== userRef.current) {
         userRef.current = nextUser; generation.current++; hydrated.current = false; startedAt.current = Date.now();
+        pending.current = null; queued.current = false; presenceOffset.current = 0; setError(''); setLoading(false); setLive(false);
         overviewRef.current = EMPTY; setOverview(EMPTY); setIncoming(null); setNotice(null); setOpenRequest(null); seen.current.clear(); visibleThreads.current.clear();
         window.clearTimeout(noticeTimer.current);
         for (const notification of desktopNotices.current) notification.close(); desktopNotices.current.clear();
@@ -211,6 +242,7 @@ export function StaffChatProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!enabled) {
       generation.current++; overviewRef.current = EMPTY; setOverview(EMPTY); hydrated.current = false;
+      pending.current = null; queued.current = false; presenceOffset.current = 0; setError(''); setLoading(false);
       setNotice(null); setIncoming(null); setOpenRequest(null); visibleThreads.current.clear(); seen.current.clear(); setLive(false);
       window.clearTimeout(noticeTimer.current);
       for (const notification of desktopNotices.current) notification.close(); desktopNotices.current.clear();
