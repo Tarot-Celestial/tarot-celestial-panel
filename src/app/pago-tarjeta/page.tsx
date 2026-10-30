@@ -40,7 +40,7 @@ export default function CardPayment() {
     const clientPurchase = data.checkout_kind === "client_purchase";
     const completed = data.status === "completed" && (!clientPurchase || data.credited === true);
     setPhase(completed ? "completed" : data.status === "cancelled" ? "cancelled" : "pending");
-    setMessage(completed ? clientPurchase ? isOraclePurchase(data) ? "Pago realizado. Tu compra del Oráculo ya está disponible." : "Pago realizado. Tus minutos y beneficios ya están añadidos." : "Tu compra está registrada. Gracias por confiar en Tarot Celestial."
+    setMessage(completed ? clientPurchase ? isOraclePurchase(data) ? "Pago realizado. Tu compra del Oráculo ya está disponible." : "Pago realizado. Tus minutos y beneficios ya están añadidos." : "Cobro confirmado. Central registra la compra por separado desde «Registrar llamada»."
       : data.status === "cancelled" ? data.remote_status === "CANCELLED_BY_CLIENT" ? "Has cancelado esta compra. Puedes volver a los precios y elegir otro paquete."
         : data.last_error || "El pago no se ha completado. Consulta con tu banco o con tu central antes de intentarlo de nuevo."
       : clientPurchase && data.status === "completed" ? isOraclePurchase(data) ? "El pago está recibido. Estamos confirmando que tu compra del Oráculo esté disponible. No repitas la compra." : "El pago está recibido. Estamos confirmando que tus minutos y beneficios estén añadidos. No repitas la compra."
