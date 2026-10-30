@@ -12,6 +12,9 @@ export async function verifiedAttendanceWorker(req: Request) {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const auth = await db.auth.getUser(token);
+  if (auth.error && (auth.error.name === 'AuthRetryableFetchError' || auth.error.status === 429 || (auth.error.status || 0) >= 500)) {
+    return { ok: false as const, status: 503, error: 'AUTH_UNAVAILABLE' };
+  }
   if (auth.error || !auth.data.user) return { ok: false as const, status: 401, error: 'NO_AUTH' };
   const result = await db.from('workers').select('id,role,display_name,is_active').eq('user_id', auth.data.user.id).maybeSingle();
   if (result.error) throw result.error;

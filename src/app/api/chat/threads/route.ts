@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { getStaffChatActor, requireStaffChatConnection, requireStaffChatUuid, staffChatError } from "@/lib/server/staff-chat";
+import { getStaffChatActor, loadStaffChatPresence, requireStaffChatConnection, requireStaffChatUuid, staffChatError, type StaffChatPresence } from "@/lib/server/staff-chat";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function publicWorker(worker: any) {
-  return { id: String(worker.id), display_name: String(worker.display_name || "Sin nombre"), role: String(worker.role), team: worker.team ? String(worker.team) : null, state: String(worker.state || "offline") };
+function publicWorker(worker: any, presence: Map<string, StaffChatPresence>) {
+  const state = worker.is_active === false ? null : presence.get(String(worker.id));
+  return { id: String(worker.id), display_name: String(worker.display_name || "Sin nombre"), role: String(worker.role), team: worker.team ? String(worker.team) : null, state: state?.state || 'offline', presence_expires_at: state?.presence_expires_at || null };
 }
 
 export async function GET(req: Request) {
@@ -24,10 +25,11 @@ export async function GET(req: Request) {
     const participantIds = Array.from(new Set((threads || []).flatMap((thread: any) => [thread.central_worker_id, thread.tarotist_worker_id]).filter(Boolean).map(String)));
     const { data: participants, error: participantError } = await db
       .from("workers")
-      .select("id, display_name, role, team, state")
+      .select("id, display_name, role, team, is_active")
       .in("id", participantIds.length ? participantIds : ["00000000-0000-0000-0000-000000000000"]);
     if (participantError) throw participantError;
-    const workerById = new Map((participants || []).map((worker: any) => [String(worker.id), publicWorker(worker)]));
+    const presence = await loadStaffChatPresence(db, [me.id, ...(contacts || []).map((worker: any) => String(worker.id)), ...participantIds]);
+    const workerById = new Map((participants || []).map((worker: any) => [String(worker.id), publicWorker(worker, presence.states)]));
     const unreadByThread = new Map<string, number>();
     const [{ data: unreadRows, error: unreadError }, { data: incomingRows, error: incomingError }] = threadIds.length
       ? await Promise.all([
@@ -45,10 +47,10 @@ export async function GET(req: Request) {
     const normalizedThreads = (threads || []).map((thread: any) => {
       const otherId = me.role === "tarotista" ? thread.central_worker_id : thread.tarotist_worker_id;
       const legacyContact = !otherId && me.role === "tarotista" ? { id: `legacy:${thread.id}`, display_name: "Historial anterior", role: "central", team: null, state: "offline" } : null;
-      return { ...thread, id: String(thread.id), contact: otherId ? workerById.get(String(otherId)) || null : legacyContact, unread_count: unreadByThread.get(String(thread.id)) || 0, latest_incoming: incomingByThread.get(String(thread.id)) || null, legacy: !thread.central_worker_id };
+      return { ...thread, id: String(thread.id), central_display_name: thread.central_worker_id ? workerById.get(String(thread.central_worker_id))?.display_name || 'Central' : 'Historial anterior', contact: otherId ? workerById.get(String(otherId)) || null : legacyContact, unread_count: unreadByThread.get(String(thread.id)) || 0, latest_incoming: incomingByThread.get(String(thread.id)) || null, legacy: !thread.central_worker_id };
     });
     const legacyContacts = normalizedThreads.filter((thread: any) => thread.legacy && thread.contact).map((thread: any) => thread.contact);
-    return NextResponse.json({ ok: true, mode: me.role, me, contacts: [...(contacts || []).map(publicWorker), ...legacyContacts], threads: normalizedThreads, unread_total: normalizedThreads.reduce((total: number, thread: any) => total + Number(thread.unread_count || 0), 0) }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ ok: true, mode: me.role, me: { ...me, ...presence.states.get(me.id) }, presence_checked_at: presence.checkedAt, contacts: [...(contacts || []).map((worker: any) => publicWorker(worker, presence.states)), ...legacyContacts], threads: normalizedThreads, unread_total: normalizedThreads.reduce((total: number, thread: any) => total + Number(thread.unread_count || 0), 0) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const { code, status } = staffChatError(error);
     return NextResponse.json({ ok: false, error: code }, { status, headers: { "Cache-Control": "no-store" } });

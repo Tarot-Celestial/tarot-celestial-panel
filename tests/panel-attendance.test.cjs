@@ -41,6 +41,15 @@ test('attendance identity is verified with getUser and a worker resolved by user
   const gate=await api.verifiedAttendanceWorker(new Request('https://panel.test/api/attendance/me',{headers:{Authorization:'Bearer fixture-token'}}));
   assert.equal(gate.ok,true);assert.deepEqual(calls,[['getUser','fixture-token'],['user_id','auth-user']]);
 });
+
+test('retryable Auth outages are unavailable, while rejected tokens and missing users remain fatal',async()=>{
+ for(const [error,status] of [[{name:'AuthRetryableFetchError',status:0},503],[{name:'AuthApiError',status:503},503],[{name:'AuthApiError',status:429},503],[{name:'AuthApiError',status:401},401],[{name:'AuthApiError',status:403},401],[null,401]]){
+  let queries=0;const db={auth:{getUser:async()=>({data:{user:null},error})},from(){queries++;throw Error('must not query workers');}};
+  const api=load('src/lib/server/panel-attendance.ts',{'@supabase/supabase-js':{createClient:()=>db},'@/lib/server/asterisk-ami':{},'@/lib/attendance/panel-session':helper});
+  const gate=await api.verifiedAttendanceWorker(new Request('https://panel.test/api/attendance/me',{headers:{Authorization:'Bearer fixture-token'}}));
+  assert.equal(gate.ok,false);assert.equal(gate.status,status);assert.equal(gate.error,status===503?'AUTH_UNAVAILABLE':'NO_AUTH');assert.equal(queries,0);
+ }
+});
 test('call checks run only near expiry, coalesce tabs and ignore client call claims',async()=>{
   const id='00000000-0000-0000-0000-000000000001',worker={id:'worker',role:'central',display_name:'Fixture',is_active:true};
   let amiCalls=0,expires=new Date(Date.now()+600000).toISOString();const rpc=[];
