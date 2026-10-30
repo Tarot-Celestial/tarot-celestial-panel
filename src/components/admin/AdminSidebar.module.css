@@ -58,7 +58,8 @@
 .subDot { width: 5px; height: 5px; flex: 0 0 auto; border-radius: 50%; background: #9880b5; }
 .subActive .subDot { background: #ebc8ff; }
 .navButton:focus-visible, .chevron:focus-visible, .subButton:focus-visible { outline: 2px solid #f3d99b; outline-offset: 2px; }
-@media (max-width: 1180px) {
+/* Match panel-theme.css: the sidebar only spans the page at 900px. */
+@media (max-width: 900px) {
   .sidebar { max-height: none; }
   .sidebar .sidebarCard { max-height: none !important; }
   .navigation { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 18px; }
