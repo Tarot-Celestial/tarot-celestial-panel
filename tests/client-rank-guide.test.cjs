@@ -90,6 +90,11 @@ test('rank descriptions preserve purchase benefits and scope new-tarotista gifts
  assert.match(gold,/12 minutos/);assert.match(gold,/precio regular/);assert.doesNotMatch(gold,/500 Coins/);
  assert.match(gold,/una sola vez por cliente y tarotista/);
  assert.match(exports.currentRankBenefits('plata').join(' '),/10 minutos/);
+ for (const rank of ['bronce', 'sin_rango', null]) {
+  const benefits=exports.currentRankBenefits(rank).join(' ');
+  assert.match(benefits,/7 minutos GRATIS para conocer a cada nueva tarotista disponible, una sola vez por cliente y tarotista/);
+  assert.doesNotMatch(benefits,/3 pases/);
+ }
 });
 
 test('Purchase responses and notifications include recorded Diamond FREE minutes, including retries',async()=>{

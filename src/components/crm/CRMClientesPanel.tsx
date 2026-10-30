@@ -188,7 +188,7 @@ function rankMeta(rank: string | null | undefined) {
       chipBorder: "1px solid rgba(214,156,110,.30)",
       cardBg: "linear-gradient(135deg, rgba(214,156,110,.16), rgba(255,255,255,.03))",
       cardBorder: "1px solid rgba(214,156,110,.26)",
-      perks: ["Acceso al programa de rangos de clientes"],
+      perks: ["7 min GRATIS para conocer a cada nueva tarotista disponible, una vez por cliente y tarotista al registrar la consulta", "Acceso al programa de rangos de clientes"],
     };
   }
   return {
@@ -198,7 +198,7 @@ function rankMeta(rank: string | null | undefined) {
     chipBorder: "1px solid rgba(255,255,255,.12)",
     cardBg: "rgba(255,255,255,.03)",
     cardBorder: "1px solid rgba(255,255,255,.08)",
-    perks: ["Sin compras el mes anterior"],
+    perks: ["7 min GRATIS para conocer a cada nueva tarotista disponible, una vez por cliente y tarotista al registrar la consulta", "Sin compras el mes anterior"],
   };
 }
 

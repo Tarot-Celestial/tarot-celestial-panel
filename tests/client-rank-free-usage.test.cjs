@@ -11,10 +11,10 @@ const preview = (rank = 'plata', minutes = 10, changes = {}) => ({
   offers: [{ tarotista_worker_id: worker, tarotista_name: 'Josefa', eligibility_key: worker, eligible: true, reason: null, grant_minutes: minutes, consume_minutes: minutes, ...changes }],
 });
 
-test('the effective Silver, Gold and Diamond rank shows its corresponding FREE block', () => {
-  for (const [rank, label, minutes] of [['plata', 'Plata', 10], ['oro', 'Oro', 12], ['diamante', 'Diamante', 15]]) {
+test('all effective ranks including Bronze and no rank show their separate new-tarotista gift', () => {
+  for (const [rank, label, minutes] of [['sin_rango', 'Sin rango', 7], ['bronce', 'Bronce', 7], ['plata', 'Plata', 10], ['oro', 'Oro', 12], ['diamante', 'Diamante', 15]]) {
     const choice = rankFreeUsage(preview(rank, minutes));
-    assert.equal(rankFreeOfferLabel(choice), `Usa ${minutes} FREE por rango ${label}`);
+    assert.equal(rankFreeOfferLabel(choice), `${minutes} minutos FREE · ${label}`);
     assert.equal(choice.minutes, minutes); assert.equal(choice.available.length, 1);
   }
 });
@@ -39,14 +39,8 @@ test('used and inactive gifts stay unavailable regardless of rank', () => {
   }
 });
 
-test('the initial seven-minute option is hidden for eligible ranks and unknown previews, but preserved for confirmed Bronze or no rank', () => {
-  for (const rank of ['plata', 'oro', 'diamante']) assert.equal(rankFreeUsage({ ...preview(), effective_rank: rank }).allowInitialFree, false);
-  for (const rank of ['bronce', 'sin_rango', null]) assert.equal(rankFreeUsage({ ...preview(), effective_rank: rank, minutes: 0 }).allowInitialFree, true);
-  for (const value of [null, undefined, {}, { effective_rank: null, policy_key: 'new_tarotista_once_v1', offers: [], reason: 'UNAVAILABLE' }]) assert.equal(rankFreeUsage(value).allowInitialFree, false);
-});
-
-test('Bronze, unknown and unconfirmed ranks never silently become Silver', () => {
-  for (const rank of ['bronce', 'sin_rango', undefined, null, '', 'unexpected']) {
+test('unknown and unconfirmed ranks never silently become Bronze or Silver', () => {
+  for (const rank of [undefined, null, '', 'unexpected']) {
     const choice = rankFreeUsage({ ...preview(), effective_rank: rank });
     assert.equal(choice.rank, null); assert.equal(choice.minutes, 0); assert.equal(choice.available.length, 0);
   }

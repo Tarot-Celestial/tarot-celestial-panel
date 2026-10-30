@@ -223,6 +223,13 @@
 .rankGiftChoice { display: grid; gap: 7px; border-color: rgba(215,181,109,.5) !important; background: linear-gradient(145deg,rgba(215,181,109,.15),rgba(139,92,246,.12)) !important; }
 .rankGiftChoice strong { color: #fff0c8; font-size: 16px; }
 .rankGiftChoice small { color: rgba(242,236,255,.78); font-size: 12px; font-weight: 600; }
+.giftChestChoice { grid-template-columns: 52px minmax(0,1fr); align-items: center; column-gap: 14px; }
+.giftChestChoice > span { display: grid; gap: 6px; }
+.giftChestChoice:disabled { opacity: .55; cursor: default; }
+.giftChestChoice:disabled:hover { transform: none; }
+.giftOptions { display: grid; gap: 12px; margin-top: 16px; }
+.giftOptions button { display: grid; gap: 6px; }
+.giftOptions small { font-weight: 500; color: rgba(242,236,255,.7); }
 
 .classificationGrid { display: grid; gap: 12px; margin-top: 18px; }
 .classificationGrid .choiceButton { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; align-items: center; gap: 11px; }

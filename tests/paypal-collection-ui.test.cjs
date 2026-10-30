@@ -11,6 +11,7 @@ test('Real call modal exposes two choices and never fetches confirmed payment ca
     n.endsWith('.css')?{default:new Proxy({},{get:(_,key)=>key})}:
     n==='@/lib/activity-codes'?{CALL_CODE_OPTIONS:[{value:'FREE',label:'Free'}]}:
     n==='@/lib/client-rank-free-usage'?{rankFreeUsage:()=>({offers:[],available:[]})}:
+    n==='@/lib/client-initial-free'?{initialFreeUsage:()=>({eligible:false,minutes:0})}:
     n==='@/lib/tc-toast'?{tcToast:()=>{}}:(()=>{throw Error(n)})()});
  let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(exports.default,{open:true,cliente:{id:'00000000-0000-4000-8000-000000000002',nombre:'Prueba'},tarotistas:[],getToken:async()=>'test',onClose:()=>{}}));});

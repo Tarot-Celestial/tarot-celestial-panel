@@ -23,7 +23,7 @@ vm.runInNewContext(ts.transpileModule(fragment, { compilerOptions: { module: ts.
 test('Bronze, no rank and unknown ranks never promise free passes; Silver and above keep them', () => {
   for (const rank of ['bronce', null, undefined, 'sin_rango', 'unexpected']) {
     assert.equal(policy.rankHasFreePasses(rank), false);
-    assert.doesNotMatch(benefitExports.currentRankBenefits(rank).join(' '), /pases|7 minutos/i);
+    assert.doesNotMatch(benefitExports.currentRankBenefits(rank).join(' '), /pases/i);
   }
   for (const rank of ['plata', 'oro', 'diamante']) {
     assert.equal(policy.rankHasFreePasses(rank), true);
@@ -91,8 +91,10 @@ test('admin comparison shows saved matrix and policy values for all ranks withou
   assert.match(text(view.toJSON()), /No se aplica a Oráculo ni a registros manuales de llamada/);
   assert.match(text(view.toJSON()), /Coins y giros solo se entregan a tarifa regular/);
   assert.match(text(view.toJSON()), /Oráculo pueden aplicarse también a promociones con nivel asignado/);
-  assert.match(text(view.toJSON()), /una consulta de regalo por cliente y por cada nueva tarotista disponible; 10 minutos en Plata, 12 en Oro y 15 en Diamante/);
+  assert.match(text(view.toJSON()), /una consulta de regalo por cliente y por cada nueva tarotista disponible; 7 minutos sin rango o en Bronce, 10 en Plata, 12 en Oro y 15 en Diamante/);
   assert.match(text(view.toJSON()), /El regalo tiene sus propios minutos y mantiene el saldo pendiente del cliente, aunque sea 0/);
+  const introRow = view.root.findAllByType('tr').find(row => text(row).startsWith('Regalo para conocer a una tarotista nueva'));
+  assert.deepEqual(introRow.findAllByType('td').map(cell => text(cell)), [7, 10, 12, 15].map(minutes => minutes + ' min FREE · una vez por cliente y tarotista'));
   act(() => view.update(React.createElement(Comparison, { data: { ...data, free_pass_policy: null, free_pass_policy_available: false } })));
   assert.match(text(view.toJSON()), /Política no disponible/); assert.doesNotMatch(text(view.toJSON()), /3 pases de 7/);
   act(() => view.unmount());
@@ -142,11 +144,13 @@ test('CRM and the central purchase summary recognize Diamond without an obsolete
 
 test('every legacy Bronze description and the client FAQ use the corrected scope', () => {
   const summary = read('src/features/central/MyClientSummary.tsx');
-  assert.doesNotMatch(summary.slice(summary.indexOf('  bronce: {'), summary.indexOf('  plata: {')), /pases|7 minutos/);
+  assert.doesNotMatch(summary.slice(summary.indexOf('  bronce: {'), summary.indexOf('  plata: {')), /pases/);
   const crm = read('src/components/crm/CRMClientesPanel.tsx');
-  assert.doesNotMatch(crm.slice(crm.indexOf('  if (r === "bronce")'), crm.indexOf('  return {\n    icon: "▫️"')), /3 pases|7 minutos/);
+  assert.doesNotMatch(crm.slice(crm.indexOf('  if (r === "bronce")'), crm.indexOf('  return {\n    icon: "▫️"')), /3 pases/);
   for (const file of ['src/lib/server/cliente-platform.ts', 'src/features/central/MyClientSummary.tsx', 'src/components/crm/CRMClientesPanel.tsx', 'src/components/crm/FreePassBenefits.tsx', 'src/app/cliente/rangos/page.tsx']) assert.doesNotMatch(read(file), /pases[^\n]{0,200}(?:4 meses|cuatro meses)/i, file);
-  assert.match(read('src/app/cliente/rangos/page.tsx'), /Bronce no incluye estos pases/);
+  assert.match(read('src/app/cliente/rangos/page.tsx'), /Bronce no incluye estos pases periódicos; sí incluye el regalo de 7 minutos/);
+  assert.match(summary.slice(summary.indexOf('  bronce: {'), summary.indexOf('  plata: {')), /7 minutos GRATIS para conocer a cada nueva tarotista/);
+  assert.match(crm.slice(crm.indexOf('  if (r === "bronce")'), crm.indexOf('function rankChip(')), /7 min GRATIS para conocer a cada nueva tarotista/);
   assert.match(read('src/app/cliente/rangos/page.tsx'), /Coins y giros, incluidos los 500 Coins de Diamante, solo corresponden a tarifa regular/);
 });
 

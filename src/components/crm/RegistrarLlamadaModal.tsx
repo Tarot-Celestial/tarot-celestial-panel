@@ -7,6 +7,7 @@ import styles from "./RegistrarLlamadaModal.module.css";
 import { type FreePassStatus } from "./FreePassBenefits";
 import { tcToast } from "@/lib/tc-toast";
 import { rankFreeOfferLabel, rankFreeReason, rankFreeUsage, type RankFreeOffer } from "@/lib/client-rank-free-usage";
+import { initialFreeReason, initialFreeUsage } from "@/lib/client-initial-free";
 
 type ClienteLite = {
   free_passes?: FreePassStatus | null;
@@ -23,6 +24,7 @@ type TarotistaOpt = {
   id: string;
   display_name?: string | null;
   state?: string | null;
+  is_active?: boolean | null;
 };
 
 type PayPalCollection = {
@@ -297,11 +299,12 @@ function isUuid(value: unknown) {
 
 function friendlySubmitError(error: unknown) {
   const message = String(error || "").trim();
+  if (["INITIAL_FREE_ALREADY_USED", "HAS_PREVIOUS_CONSULTATION", "PREVIOUS_CONSULTATION", "HISTORY_UNAVAILABLE"].includes(message)) return initialFreeReason(message);
   if (["RANK_NOT_ELIGIBLE", "ALREADY_USED", "TAROTISTA_INACTIVE", "SOURCE_REQUIRED", "NO_ELIGIBLE_SOURCE", "POLICY_NOT_CONFIGURED"].includes(message)) return rankFreeReason(message);
   if (message === "GIFT_NOT_AVAILABLE") return "Este regalo ya no está disponible para esta tarotista. Actualiza el registro antes de continuar.";
   if (message === "RANK_CHANGED") return "El rango ha cambiado. Pulsa Atrás y revisa el regalo disponible con el rango actual antes de guardar.";
-  if (message === "RANK_FREE_REGISTER_FAILED") return "No se pudo confirmar el resultado. Reintenta este mismo registro para comprobarlo sin duplicar el regalo.";
-  if (message === "INVALID_RANK_FREE_REQUEST") return "No se pudo validar este regalo. Cierra y vuelve a abrir el registro para actualizar sus datos.";
+  if (["RANK_FREE_REGISTER_FAILED", "INITIAL_FREE_REGISTER_FAILED"].includes(message)) return "No se pudo confirmar el resultado. Reintenta este mismo registro para comprobarlo sin duplicar el regalo.";
+  if (["INVALID_RANK_FREE_REQUEST", "INVALID_INITIAL_FREE_REQUEST"].includes(message)) return "No se pudo validar este regalo. Cierra y vuelve a abrir el registro para actualizar sus datos.";
   if (message === "PAYPAL_COLLECTION_SELECTION_REQUIRED") return "Hay un cobro PayPal pendiente de registrar. Vuelve a Importe cobrado y selecciona el cobro exacto o confirma que se trata de un pago externo distinto.";
   if (["PAYPAL_COLLECTION_ALREADY_REGISTERED", "PAYPAL_COLLECTION_ALREADY_RECORDED", "PAYPAL_COLLECTION_ALREADY_USED"].includes(message)) return "Este cobro PayPal ya está registrado. No vuelvas a crear la compra; usa su saldo pendiente para registrar la llamada.";
   if (message === "OPERATION_CONFLICT") return "Esta operación ya se guardó con otros datos. Cierra el formulario y actualiza la ficha antes de continuar.";
@@ -364,6 +367,10 @@ const CLASIF_OPTIONS = [
   { value: "super_promo_ruleta", label: "Super Promo Ruleta" },
 ] as const;
 
+function GiftChest() {
+  return <svg viewBox="0 0 64 52" width="52" height="44" aria-hidden="true" focusable="false"><path d="M7 23V14C7 5 57 5 57 14v9" fill="#b77c35" stroke="#f0cb72" strokeWidth="2"/><path d="M6 23h52v23H6z" fill="#704626" stroke="#edc56d" strokeWidth="2"/><path d="M17 23V9m30 14V9M17 24v21m30-21v21" stroke="#efc873" strokeWidth="5"/><path d="M5 23h54" stroke="#ffdf8e" strokeWidth="3"/><rect x="27" y="20" width="10" height="13" rx="2" fill="#ffe1a1"/><circle cx="32" cy="26" r="2" fill="#5c3218"/></svg>;
+}
+
 export default function RegistrarLlamadaModal({
   open,
   cliente,
@@ -384,10 +391,11 @@ export default function RegistrarLlamadaModal({
 
   const [liveBalance, setLiveBalance] = useState<{ minutos_free_pendientes: number; minutos_normales_pendientes: number } | null>(null);
   const [rankFreeSnapshot, setRankFreeSnapshot] = useState<{ clienteId: string; preview: unknown } | null>(null);
+  const [initialFreeSnapshot, setInitialFreeSnapshot] = useState<{ clienteId: string; preview: unknown } | null>(null);
   const [rankFreeWorkerId, setRankFreeWorkerId] = useState("");
   const [balanceError, setBalanceError] = useState("");
   const [clienteCompra, setClienteCompra] = useState<"si" | "no" | "">("");
-  const [usoSinCompra, setUsoSinCompra] = useState<"minutos" | "7free" | "rank_free" | "">("");
+  const [usoSinCompra, setUsoSinCompra] = useState<"minutos" | "initial_free" | "rank_free" | "">("");
   const [compraDestino, setCompraDestino] = useState<"usar_todo" | "guardar" | "">("");
   const [guardarFree, setGuardarFree] = useState("0");
   const [guardarNormales, setGuardarNormales] = useState("0");
@@ -415,6 +423,9 @@ export default function RegistrarLlamadaModal({
   const rankFree = useMemo(() => rankFreeUsage(rankFreeSnapshot && rankFreeSnapshot.clienteId === cliente?.id ? rankFreeSnapshot.preview : null), [rankFreeSnapshot, cliente?.id]);
   const selectedRankFree = rankFree.offers.find(offer => offer.workerId === rankFreeWorkerId) || null;
   const isRankFree = clienteCompra === "no" && usoSinCompra === "rank_free";
+  const initialFree = useMemo(() => initialFreeUsage(initialFreeSnapshot && initialFreeSnapshot.clienteId === cliente?.id ? initialFreeSnapshot.preview : null), [initialFreeSnapshot, cliente?.id]);
+  const isInitialFree = clienteCompra === "no" && usoSinCompra === "initial_free";
+  const isFreeGift = isRankFree || isInitialFree;
 
   useEffect(() => {
     modalGenerationRef.current += 1;
@@ -429,6 +440,7 @@ export default function RegistrarLlamadaModal({
     setClienteCompra("");
     setLiveBalance(null);
     setRankFreeSnapshot(null);
+    setInitialFreeSnapshot(null);
     setRankFreeWorkerId("");
     setBalanceError("");
     setUsoSinCompra("");
@@ -462,6 +474,7 @@ export default function RegistrarLlamadaModal({
         if (!cancelled) {
           setLiveBalance(json.balance);
           setRankFreeSnapshot({ clienteId: String(cliente?.id), preview: json.rank_free });
+          setInitialFreeSnapshot({ clienteId: String(cliente?.id), preview: json.initial_free });
         }
       } catch {
         if (!cancelled) setBalanceError("No se pudo consultar el saldo actual. Cierra y vuelve a abrir el registro.");
@@ -513,11 +526,17 @@ export default function RegistrarLlamadaModal({
     ];
 
     if (clienteCompra === "no") {
-      list.push({ key: "uso", title: "¿Qué minutos utiliza en esta consulta?", subtitle: rankFree.rank ? "Elige el regalo de su rango para conocer a una tarotista nueva o utiliza saldo pendiente." : "Elige los minutos disponibles para esta consulta." });
+      list.push({ key: "uso", title: "¿Qué minutos utiliza en esta consulta?", subtitle: "Elige un regalo disponible o utiliza saldo pendiente. Cada regalo tiene sus propias condiciones." });
       if (usoSinCompra === "minutos") {
         list.push({ key: "codigos", title: "¿Qué código de minutos usa?", subtitle: "Puedes registrar hasta dos bloques de minutos." });
       }
-      if (usoSinCompra === "7free" || usoSinCompra === "minutos") {
+      if (usoSinCompra === "rank_free") {
+        list.push({ key: "rank_free_tarotista", title: "Elige la tarotista nueva", subtitle: "El regalo se utiliza una vez con cada nueva tarotista disponible. Selecciona quién atiende esta consulta." });
+      }
+      if (usoSinCompra === "initial_free") {
+        list.push({ key: "initial_free_tarotista", title: "Tarotista de la primera consulta", subtitle: "Selecciona la tarotista real que atiende los 7 minutos de regalo." });
+      }
+      if (usoSinCompra === "minutos") {
         list.push({ key: "tarotista", title: "Tarotista que atiende", subtitle: "Selecciona la tarotista que ha recibido la llamada." });
         if (tarotistaId === CALL_MANUAL_VALUE) {
           list.push({ key: "call_manual", title: "Nombre tarotista CALL", subtitle: "Escribe el nombre manual que quieres guardar en rendimiento." });
@@ -550,14 +569,14 @@ export default function RegistrarLlamadaModal({
 
     list.push({ key: "resumen", title: "Resumen final", subtitle: "Revisa los datos antes de registrar la llamada." });
     return list;
-  }, [clienteCompra, usoSinCompra, compraDestino, tarotistaId, rankFree.rank]);
+  }, [clienteCompra, usoSinCompra, compraDestino, tarotistaId]);
 
   const current = steps[step];
   const minutosConsumidos = useMemo(() => {
     if (isRankFree) return selectedRankFree?.consumeMinutes || 0;
-    if (clienteCompra === "no" && usoSinCompra === "7free") return 7;
+    if (isInitialFree) return initialFree.minutes;
     return toNum(minutos1) + toNum(minutos2);
-  }, [clienteCompra, usoSinCompra, minutos1, minutos2, isRankFree, selectedRankFree]);
+  }, [clienteCompra, usoSinCompra, minutos1, minutos2, isRankFree, selectedRankFree, isInitialFree, initialFree.minutes]);
 
   const tarotistaLabel = useMemo(() => {
     if (isRankFree) return selectedRankFree?.workerName || "—";
@@ -566,7 +585,7 @@ export default function RegistrarLlamadaModal({
     return tarotistas.find((t) => String(t.id) === String(realTarotistaId))?.display_name || "—";
   }, [tarotistaId, marioTarotistaId, tarotistaCallManual, tarotistas, isRankFree, selectedRankFree]);
 
-  const isMarioCall = !isRankFree && tarotistaId === CALL_MARIO_VALUE;
+  const isMarioCall = !isFreeGift && tarotistaId === CALL_MARIO_VALUE;
 
   const balanceValidationError = useMemo(() => {
     if (clienteCompra === "si") return "";
@@ -574,13 +593,9 @@ export default function RegistrarLlamadaModal({
     if (!liveBalance) return "Comprobando saldo actual…";
     if (clienteCompra !== "no") return "";
     if (isRankFree) return selectedRankFree?.eligible ? "" : selectedRankFree ? rankFreeReason(selectedRankFree.reason) : "Pulsa Atrás y selecciona un regalo disponible antes de guardar.";
+    if (isInitialFree) return initialFree.eligible ? "" : initialFree.explanation;
     const availableFree = toNum(liveBalance.minutos_free_pendientes);
     const availableNormal = toNum(liveBalance.minutos_normales_pendientes);
-
-    if (usoSinCompra === "7free") {
-      if (!rankFree.allowInitialFree) return "La consulta inicial de 7 minutos no está disponible en este paso para su rango actual.";
-      return availableFree >= 7 ? "" : "La clienta no dispone de 7 minutos free suficientes para registrar esta consulta.";
-    }
 
     if (usoSinCompra !== "minutos") return "";
     const requestedFree = (codigo1 === "FREE" ? toNum(minutos1) : 0)
@@ -595,7 +610,7 @@ export default function RegistrarLlamadaModal({
       return `Saldo normal insuficiente: disponibles ${fmtMinutes(availableNormal)}, solicitados ${fmtMinutes(requestedNormal)}.`;
     }
     return "";
-  }, [clienteCompra, compraDestino, guardarFree, guardarNormales, usoSinCompra, liveBalance, balanceError, codigo1, codigo2, minutos1, minutos2, isRankFree, selectedRankFree, rankFree.allowInitialFree]);
+  }, [clienteCompra, compraDestino, guardarFree, guardarNormales, usoSinCompra, liveBalance, balanceError, codigo1, codigo2, minutos1, minutos2, isRankFree, selectedRankFree, isInitialFree, initialFree.eligible, initialFree.explanation]);
 
   const tarotistaSelectOptions = useMemo<GameSelectOption[]>(() => [
     { value: CALL_MARIO_VALUE, label: "✦ CALL MARIO · colaborador", special: "mario" },
@@ -610,6 +625,7 @@ export default function RegistrarLlamadaModal({
     value: String(tarotista.id),
     label: `${tarotista.display_name || tarotista.id}${tarotista.state ? ` · ${tarotista.state}` : ""}`,
   })), [tarotistas]);
+  const initialTarotistaOptions = useMemo<GameSelectOption[]>(() => tarotistas.filter(tarotista => isUuid(tarotista.id) && tarotista.is_active !== false).map(tarotista => ({ value: String(tarotista.id), label: tarotista.display_name || tarotista.id })), [tarotistas]);
 
   function changeTarotistaChoice(value: string) {
     setTarotistaId(value);
@@ -632,12 +648,30 @@ export default function RegistrarLlamadaModal({
     setMsg("");
   }
 
+  function chooseInitialFree() {
+    if (!initialFree.eligible) return;
+    setUsoSinCompra("initial_free");
+    setTarotistaId("");
+    setMarioTarotistaId("");
+    setTarotistaCallManual("");
+    setCodigo1("FREE");
+    setMinutos1("0");
+    setCodigo2("");
+    setMinutos2("0");
+    setClasificacion("nada");
+    setMsg("");
+  }
+
   function currentStepIsValid() {
     switch (current?.key) {
       case "compra":
         return clienteCompra === "si" || clienteCompra === "no";
       case "uso":
-        return usoSinCompra === "minutos" || (usoSinCompra === "7free" && rankFree.allowInitialFree) || (usoSinCompra === "rank_free" && Boolean(selectedRankFree?.eligible));
+        return usoSinCompra === "minutos" || (usoSinCompra === "rank_free" && rankFree.available.length > 0) || (usoSinCompra === "initial_free" && initialFree.eligible);
+      case "initial_free_tarotista":
+        return initialFree.eligible && initialTarotistaOptions.some(option => option.value === tarotistaId);
+      case "rank_free_tarotista":
+        return Boolean(selectedRankFree?.eligible);
       case "compra_destino":
         return compraDestino === "usar_todo" || compraDestino === "guardar";
       case "guardar":
@@ -668,7 +702,7 @@ export default function RegistrarLlamadaModal({
       setMsg("⚠️ Completa esta pregunta antes de continuar.");
       return;
     }
-    if ((current?.key === "uso" || current?.key === "codigos") && balanceValidationError) {
+    if ((current?.key === "uso" && !isRankFree || current?.key === "codigos" || current?.key === "rank_free_tarotista" || current?.key === "initial_free_tarotista") && balanceValidationError) {
       setMsg(`⚠️ ${balanceValidationError}`);
       return;
     }
@@ -693,6 +727,10 @@ export default function RegistrarLlamadaModal({
     }
     if (balanceValidationError) {
       setMsg(`⚠️ ${balanceValidationError}`);
+      return;
+    }
+    if (isInitialFree && !initialTarotistaOptions.some(option => option.value === tarotistaId)) {
+      setMsg("Selecciona la tarotista real de la primera consulta antes de guardar.");
       return;
     }
     if (!paypalSourceValid) {
@@ -722,20 +760,20 @@ export default function RegistrarLlamadaModal({
         } : {}),
         guarda_minutos: clienteCompra === "si" && compraDestino === "guardar",
         misma_compra: clienteCompra === "si" && compraDestino === "usar_todo",
-        guardados_free: isRankFree ? 0 : toNum(guardarFree),
-        guardados_normales: isRankFree ? 0 : toNum(guardarNormales),
-        codigo_1: isRankFree ? "FREE" : minutosConsumidos > 0 ? codigo1 : null,
-        minutos_1: isRankFree ? minutosConsumidos : toNum(minutos1),
-        codigo_2: isRankFree ? null : codigo2 || null,
-        minutos_2: isRankFree ? 0 : toNum(minutos2),
+        guardados_free: isFreeGift ? 0 : toNum(guardarFree),
+        guardados_normales: isFreeGift ? 0 : toNum(guardarNormales),
+        codigo_1: isFreeGift ? "FREE" : minutosConsumidos > 0 ? codigo1 : null,
+        minutos_1: isFreeGift ? minutosConsumidos : toNum(minutos1),
+        codigo_2: isFreeGift ? null : codigo2 || null,
+        minutos_2: isFreeGift ? 0 : toNum(minutos2),
         tarotista_worker_id: actualTarotistaWorkerId,
-        tarotista_manual_call: !isRankFree && tarotistaId === CALL_MANUAL_VALUE ? tarotistaCallManual.trim() : null,
+        tarotista_manual_call: !isFreeGift && tarotistaId === CALL_MANUAL_VALUE ? tarotistaCallManual.trim() : null,
         collaborator_source: isMarioCall ? CALL_MARIO_VALUE : null,
         forma_pago: clienteCompra === "si" ? formaPago || null : null,
         paypal_collection_order_id: selectedCollection?.id || null,
         paypal_collection_source: needsPayPalSource ? selectedCollection ? "crm_collection" : collectionChoice === "external" ? "external" : null : null,
         importe: clienteCompra === "si" ? toNum(importe) : 0,
-        clasificacion: isRankFree ? "nada" : clasificacion,
+        clasificacion: isFreeGift ? "nada" : clasificacion,
       };
 
       const r = await fetch("/api/crm/rendimiento/registrar", {
@@ -750,8 +788,13 @@ export default function RegistrarLlamadaModal({
       const j = await safeJson(r);
       if (modalGeneration !== modalGenerationRef.current) return;
       if (!j?._ok || !j?.ok) {
-        if (isRankFree) {
+        if (isFreeGift) {
           if (j?.balance) setLiveBalance(j.balance);
+          if (isInitialFree) {
+            if (j?.initial_free) setInitialFreeSnapshot({ clienteId, preview: j.initial_free });
+            else if (r.status === 409 || r.status === 400) setInitialFreeSnapshot(null);
+            throw new Error(j?.message || j?.error || `HTTP ${j?._status || r.status}`);
+          }
           if (j?.rank_free) setRankFreeSnapshot({ clienteId, preview: j.rank_free });
           else if (["RANK_CHANGED", "ALREADY_USED", "GIFT_NOT_AVAILABLE", "TAROTISTA_INACTIVE", "RANK_NOT_ELIGIBLE", "PAYMENT_OPERATION_CONFLICT"].includes(j?.error)) setRankFreeSnapshot(null);
           if (j?.error === "RANK_CHANGED") setRankFreeWorkerId("");
@@ -847,7 +890,7 @@ export default function RegistrarLlamadaModal({
   const clienteNombre = [cliente.nombre, cliente.apellido].filter(Boolean).join(" ") || "Cliente";
   const freePend = toNum(liveBalance?.minutos_free_pendientes);
   const normalesPend = toNum(liveBalance?.minutos_normales_pendientes);
-  const usedFree = isRankFree ? minutosConsumidos : (codigo1 === "FREE" ? toNum(minutos1) : 0) + (codigo2 === "FREE" ? toNum(minutos2) : 0);
+  const usedFree = isFreeGift ? minutosConsumidos : (codigo1 === "FREE" ? toNum(minutos1) : 0) + (codigo2 === "FREE" ? toNum(minutos2) : 0);
   const usedNormal = minutosConsumidos - usedFree;
   const remainingFree = compraDestino === "guardar" ? toNum(guardarFree) : 0;
   const remainingNormal = compraDestino === "guardar" ? toNum(guardarNormales) : 0;
@@ -895,22 +938,41 @@ export default function RegistrarLlamadaModal({
             {current?.key === "uso" && (
               <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
                 <section className={styles.confirmedPayments} aria-label="Regalo para conocer a una tarotista nueva">
-                  <strong>{rankFree.rankLabel ? `Regalo del rango ${rankFree.rankLabel}` : "Regalo para conocer a una tarotista nueva"}</strong>
+                  <button type="button" disabled={!rankFree.available.length} aria-pressed={isRankFree} className={`${styles.choiceButton} ${styles.rankGiftChoice} ${styles.giftChestChoice} ${isRankFree ? styles.choiceSelected : ""}`} onClick={() => { setUsoSinCompra("rank_free"); setMsg(""); }}>
+                    <GiftChest/><span><strong>Regalo para conocer a una tarotista nueva</strong><small>{rankFree.minutes ? rankFreeOfferLabel(rankFree) : "Comprobando disponibilidad"}</small><small>Una vez por cliente y tarotista · elige quién atiende en el siguiente paso</small></span>
+                  </button>
                   {!rankFreeSnapshot || rankFreeSnapshot.clienteId !== cliente.id ? <p role="status">{balanceError || "Comprobando regalos disponibles…"}</p> : <>
-                    {rankFree.available.map(offer => <button key={offer.workerId} type="button" aria-pressed={isRankFree && rankFreeWorkerId === offer.workerId} className={`${styles.choiceButton} ${styles.rankGiftChoice} ${isRankFree && rankFreeWorkerId === offer.workerId ? styles.choiceSelected : ""}`} onClick={() => chooseRankFree(offer)}>
-                      <strong>{rankFreeOfferLabel(rankFree)}</strong>
-                      <small>Para conocer a {offer.workerName} · una vez por cliente</small>
-                    </button>)}
                     {!rankFree.available.length && <p>{rankFree.explanation}</p>}
-                    {rankFree.offers.filter(offer => !offer.eligible).map(offer => <small key={offer.workerId}>{offer.workerName}: {rankFreeReason(offer.reason)}</small>)}
                   </>}
                   <p>Este regalo tiene sus propios minutos, aunque el saldo pendiente sea 0. No consume los pases periódicos de 7 minutos ni la consulta inicial.</p>
                   <small>Elegir una opción no añade minutos. El regalo y la llamada solo se confirman al pulsar Registrar llamada.</small>
                 </section>
+                <section className={styles.confirmedPayments} aria-label="Regalo de primera consulta">
+                  <button type="button" disabled={!initialFree.eligible} aria-pressed={isInitialFree} className={`${styles.choiceButton} ${styles.rankGiftChoice} ${styles.giftChestChoice} ${isInitialFree ? styles.choiceSelected : ""}`} onClick={chooseInitialFree}>
+                    <GiftChest/><span><strong>Regalo de primera consulta</strong><small>7 minutos FREE · una sola vez por cliente</small><small>Para clientes sin consultas anteriores verificadas</small></span>
+                  </button>
+                  {!initialFreeSnapshot || initialFreeSnapshot.clienteId !== cliente.id ? <p role="status">{balanceError || "Comprobando la primera consulta…"}</p> : !initialFree.eligible ? <p>{initialFree.explanation}</p> : <p>Disponible aunque su saldo sea 0. Elige la tarotista que atiende en el siguiente paso.</p>}
+                  <small>Se confirma al registrar la llamada. Es independiente del regalo de nueva tarotista y de los pases periódicos.</small>
+                </section>
                 <button type="button" aria-pressed={usoSinCompra === "minutos"} className={`${styles.choiceButton} ${usoSinCompra === "minutos" ? styles.choiceSelected : ""}`} onClick={() => { setUsoSinCompra("minutos"); setMsg(""); }} style={{ padding: 16, border: usoSinCompra === "minutos" ? "1px solid rgba(215,181,109,.55)" : undefined, background: usoSinCompra === "minutos" ? "rgba(215,181,109,.14)" : undefined }}>Usar saldo pendiente</button>
-                {rankFree.allowInitialFree ? <button type="button" aria-pressed={usoSinCompra === "7free"} className={`${styles.choiceButton} ${usoSinCompra === "7free" ? styles.choiceSelected : ""}`} onClick={() => { setUsoSinCompra("7free"); setMsg(""); }} style={{ padding: 16, border: usoSinCompra === "7free" ? "1px solid rgba(215,181,109,.55)" : undefined, background: usoSinCompra === "7free" ? "rgba(215,181,109,.14)" : undefined }}>Usar 7 min FREE iniciales</button> : null}
               </div>
             )}
+
+            {current?.key === "rank_free_tarotista" && <div className={styles.giftOptions}>
+              <p>{rankFreeOfferLabel(rankFree)}. El saldo pendiente del cliente se mantiene.</p>
+              {rankFree.available.map(offer => <button key={offer.workerId} type="button" aria-pressed={rankFreeWorkerId === offer.workerId} className={`${styles.choiceButton} ${rankFreeWorkerId === offer.workerId ? styles.choiceSelected : ""}`} onClick={() => chooseRankFree(offer)}><strong>Atender con {offer.workerName}</strong><small>{offer.consumeMinutes} minutos FREE · regalo disponible</small></button>)}
+              {rankFree.offers.filter(offer => !offer.eligible).map(offer => <p key={offer.workerId}>{offer.workerName}: {rankFreeReason(offer.reason)}</p>)}
+            </div>}
+
+            {current?.key === "initial_free_tarotista" && <div className={styles.giftOptions}>
+              <p>La primera consulta utiliza 7 minutos FREE de su propio regalo. El saldo pendiente se mantiene.</p>
+              <label htmlFor="initial-free-tarotista">Tarotista que atiende la primera consulta</label>
+              <select id="initial-free-tarotista" className={`${styles.gameInput} ${styles.gameSelect}`} value={tarotistaId} onChange={event => changeTarotistaChoice(event.target.value)}>
+                <option value="">Selecciona la tarotista real</option>
+                {initialTarotistaOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              {!initialTarotistaOptions.length && <p role="status">No hay tarotistas disponibles. Actualiza la ficha antes de registrar esta consulta.</p>}
+            </div>}
 
             {current?.key === "compra_destino" && (
               <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
@@ -1074,18 +1136,23 @@ export default function RegistrarLlamadaModal({
                     </>}
                     <small>{isManualCollection ? "Cobro manual: no se añaden Coins ni giros de ruleta." : clasificacion === "promo" ? "Compra promocional: no se añaden Coins ni giros de ruleta." : "Los bonos de rango se suman aparte y quedan detallados en la nota final."}</small>
                   </> : isRankFree && selectedRankFree ? <>
-                    <span>Regalo para conocer a {selectedRankFree.workerName} · rango {rankFree.rankLabel} · una vez por cliente y tarotista.</span>
+                    <span>Regalo para conocer a {selectedRankFree.workerName} · {rankFree.rankLabel} · una vez por cliente y tarotista.</span>
                     <span>Se utilizan {selectedRankFree.consumeMinutes} minutos FREE del regalo de bienvenida. Su saldo pendiente se mantiene.</span>
                     <span>Consumo ahora: {selectedRankFree.consumeMinutes} FREE con {selectedRankFree.workerName}.</span>
                     {balanceValidationError ? <strong role="alert">{balanceValidationError}</strong> : <strong>Saldo previsto al guardar: {freePend} FREE + {normalesPend} normales.</strong>}
                     <small>La llamada contará con sus {selectedRankFree.consumeMinutes} minutos FREE en el rendimiento de {selectedRankFree.workerName}. No es una compra ni utiliza un pase de 7 minutos.</small>
-                  </> : isRankFree ? <strong role="alert">{balanceValidationError}</strong> : <>
+                  </> : isRankFree ? <strong role="alert">{balanceValidationError}</strong> : isInitialFree ? <>
+                    <span>Regalo de primera consulta · una sola vez por cliente.</span>
+                    <span>Consumo ahora: 7 FREE con {tarotistaLabel}. El regalo tiene sus propios minutos.</span>
+                    {balanceValidationError ? <strong role="alert">{balanceValidationError}</strong> : <strong>Saldo previsto al guardar: {freePend} FREE + {normalesPend} normales.</strong>}
+                    <small>La llamada contará con 7 minutos FREE en el rendimiento de {tarotistaLabel}. No es una compra ni consume el regalo de nueva tarotista o los pases periódicos.</small>
+                  </> : <>
                     {balanceValidationError ? <strong role="alert">{balanceValidationError} No se descontarán minutos hasta corregir los bloques.</strong> : <>
                       <span>Se descuentan {minutosConsumidos} min de esta llamada.</span>
                       <strong>Saldo previsto: {freePend + normalesPend - minutosConsumidos} min</strong>
                     </>}
                   </>}
-                  <small>{isRankFree ? "Al guardar se vuelve a comprobar el rango, la tarotista y que el regalo no se haya usado. El regalo, el consumo y la llamada se confirman juntos." : "La base de datos comprueba el saldo real al guardar. Los premios nuevos se registran aparte."}</small>
+                  <small>{isRankFree ? "Al guardar se vuelve a comprobar el rango, la tarotista y que el regalo no se haya usado. El regalo, el consumo y la llamada se confirman juntos." : isInitialFree ? "Al guardar se vuelve a comprobar que sea la primera consulta y que el regalo no se haya usado. El regalo, el consumo y la llamada se confirman juntos." : "La base de datos comprueba el saldo real al guardar. Los premios nuevos se registran aparte."}</small>
                 </div>
                 <div className="tc-card" style={{ borderRadius: 18, padding: 14, background: "rgba(255,255,255,.03)" }}>
                   <div className="tc-sub">Cliente</div>
@@ -1094,7 +1161,7 @@ export default function RegistrarLlamadaModal({
                 <div className="tc-card" style={{ borderRadius: 18, padding: 14, background: "rgba(255,255,255,.03)" }}>
                   <div className="tc-sub">Tipo</div>
                   <div style={{ marginTop: 4 }}>
-                    {clienteCompra === "si" ? "Compra minutos" : isRankFree ? "Regalo por rango · nueva tarotista" : usoSinCompra === "7free" ? "Usa 7 free iniciales" : "Usa minutos pendientes"}
+                    {clienteCompra === "si" ? "Compra minutos" : isRankFree ? "Regalo para conocer a una tarotista nueva" : isInitialFree ? "Regalo de primera consulta · 7 FREE" : "Usa minutos pendientes"}
                   </div>
                 </div>
                 <div className="tc-card" style={{ borderRadius: 18, padding: 14, background: "rgba(255,255,255,.03)" }}>
@@ -1114,7 +1181,7 @@ export default function RegistrarLlamadaModal({
                       Quedan pendientes: {fmtMinutes(guardarFree)} FREE · {fmtMinutes(guardarNormales)} normales
                     </div>
                   )}
-                  {isRankFree ? <div className="tc-sub" style={{ marginTop: 8 }}>Código: {minutosConsumidos} FREE</div> : (toNum(minutos1) > 0 || toNum(minutos2) > 0) && (
+                  {isFreeGift ? <div className="tc-sub" style={{ marginTop: 8 }}>Código: {minutosConsumidos} FREE</div> : (toNum(minutos1) > 0 || toNum(minutos2) > 0) && (
                     <div className="tc-sub" style={{ marginTop: 8 }}>
                       Códigos: {toNum(minutos1) > 0 ? `${fmtMinutes(minutos1)} ${codigo1}` : ""}{toNum(minutos2) > 0 ? ` · ${fmtMinutes(minutos2)} ${codigo2}` : ""}
                     </div>
@@ -1163,7 +1230,7 @@ export default function RegistrarLlamadaModal({
             {current?.key !== "resumen" ? (
               <button type="button" className={`${styles.gameButton} ${styles.primaryButton}`} onClick={next}>Siguiente</button>
             ) : (
-              <button type="button" className={`${styles.gameButton} ${styles.primaryButton}`} onClick={submit} disabled={loading || (isRankFree && Boolean(balanceValidationError))}>{loading ? "Guardando..." : "Registrar llamada"}</button>
+              <button type="button" className={`${styles.gameButton} ${styles.primaryButton}`} onClick={submit} disabled={loading || (isFreeGift && Boolean(balanceValidationError))}>{loading ? "Guardando..." : "Registrar llamada"}</button>
             )}
           </div>
         </div>

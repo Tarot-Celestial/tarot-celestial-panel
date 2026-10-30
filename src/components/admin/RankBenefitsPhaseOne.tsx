@@ -163,6 +163,7 @@ export function RankBenefitsComparison({ data }: { data: AdminData }) {
     <div className={`${styles.tableWrap} ${styles.rankComparison}`} tabIndex={0} role="region" aria-label="Tabla de beneficios de Bronce, Plata, Oro y Diamante">
       <table><thead><tr><th scope="col">Beneficio</th>{ranks.map(rank => <th key={rank.rank_key} scope="col">{rank.label}</th>)}</tr></thead>
         <tbody>
+          <tr><th scope="row">Regalo para conocer a una tarotista nueva</th>{ranks.map(rank => <td key={rank.rank_key}>{({ bronce: 7, plata: 10, oro: 12, diamante: 15 } as Record<string, number>)[rank.rank_key]} min FREE · una vez por cliente y tarotista</td>)}</tr>
           <tr><th scope="row">Pases FREE periódicos</th>{ranks.map(rank => <td key={rank.rank_key} data-rank={rank.rank_key}>{rankHasFreePasses(rank.rank_key) ? passLabel || "Política no disponible" : "No incluidos"}</td>)}</tr>
           <tr><th scope="row">Acceso a Mi ritual</th>{ranks.map(rank => <td key={rank.rank_key}>{rank.ritual_access ? "Permitido" : "No incluido"}</td>)}</tr>
           {([1, 2, 3] as const).map(level => <tr key={level}><th scope="row">Extras de paquete nivel {level}</th>{ranks.map(rank => <td key={rank.rank_key}>{packageCell(rank.rank_key, level)}</td>)}</tr>)}
@@ -176,7 +177,7 @@ export function RankBenefitsComparison({ data }: { data: AdminData }) {
       <strong>Minutos por rango: configuración y entrega</strong>
       <span>Plata +10 y Oro +12 en compras a precio regular: configurados, pendientes de aplicación automática. No se presentan como minutos ya acreditados.</span>
       <span>Diamante +15: entrega automática en compras de minutos confirmadas, incluidas promociones. No se aplica a Oráculo ni a registros manuales de llamada.</span>
-      <span>Nueva tarotista: una consulta de regalo por cliente y por cada nueva tarotista disponible; 10 minutos en Plata, 12 en Oro y 15 en Diamante. Central la confirma al registrar la consulta. El regalo tiene sus propios minutos y mantiene el saldo pendiente del cliente, aunque sea 0. No consume los pases periódicos de 7 minutos.</span>
+      <span>Nueva tarotista: una consulta de regalo por cliente y por cada nueva tarotista disponible; 7 minutos sin rango o en Bronce, 10 en Plata, 12 en Oro y 15 en Diamante. Central la confirma al registrar la consulta. El regalo tiene sus propios minutos y mantiene el saldo pendiente del cliente, aunque sea 0. No consume los pases periódicos de 7 minutos.</span>
       <span>La participación en sorteos activos se asigna desde Central según las condiciones de cada sorteo. El seguimiento energético es atención asistida coordinada por Central; ninguno se activa automáticamente por cambiar de rango.</span>
     </div>
   </section>;

@@ -9,7 +9,7 @@ const MESSAGES: Record<string, string> = {
   ALREADY_USED: "Este cliente ya utilizó el regalo para conocer a esta tarotista.",
   GIFT_NOT_AVAILABLE: "Esta tarotista no tiene un regalo de bienvenida disponible.",
   TAROTISTA_INACTIVE: "Esta tarotista ya no está disponible para el regalo.",
-  RANK_NOT_ELIGIBLE: "Este regalo está disponible desde el rango Plata.",
+  RANK_NOT_ELIGIBLE: "No se pudo confirmar el rango para este regalo. Actualiza el registro.",
   PAYMENT_OPERATION_CONFLICT: "Esta operación ya se utilizó con otros datos. Actualiza el registro.",
   INVALID_RANK_FREE_REQUEST: "Revisa los datos del regalo de bienvenida.",
   CLIENTE_NO_ENCONTRADO: "No encontramos la ficha del cliente.",
@@ -39,7 +39,7 @@ export async function handleNewTarotistaGiftCall(db: any, worker: GiftWorker, bo
   const expectedMinutes = body?.rank_free_expected_minutes;
   if (![clientId, tarotistaId, operationId].every(x => UUID.test(x))
       || body.rank_free_eligibility_key !== tarotistaId
-      || !["plata", "oro", "diamante"].includes(expectedRank)
+      || !["sin_rango", "bronce", "plata", "oro", "diamante"].includes(expectedRank)
       || !Number.isInteger(expectedMinutes) || expectedMinutes < 1 || expectedMinutes > 60
       || body.cliente_compra_minutos || body.usa_7_free || body.captado || body.recuperado
       || Number(body.importe || 0) !== 0

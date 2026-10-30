@@ -134,10 +134,15 @@ function money(value?: number, currency = "EUR") {
 
 
 const rankInfo: Record<string, { label: string; next: number | null; perks: string[] }> = {
+  sin_rango: {
+    label: "Sin rango",
+    next: 100,
+    perks: ["7 minutos GRATIS para conocer a cada nueva tarotista disponible, una sola vez por cliente y tarotista; se confirman con Central al registrar la consulta"],
+  },
   bronce: {
     label: "Bronce",
     next: 100,
-    perks: ["Acceso al programa de rangos de clientes"],
+    perks: ["7 minutos GRATIS para conocer a cada nueva tarotista disponible, una sola vez por cliente y tarotista; se confirman con Central al registrar la consulta", "Acceso al programa de rangos de clientes"],
   },
   plata: {
     label: "Plata",
@@ -224,7 +229,7 @@ export default function MyClientSummary({ clientId, lastPurchaseAt, summary, onR
 
   const currentMonth = purchaseOverview?.stats?.current_month || null;
   const rank = String(purchaseOverview?.rank?.effective || purchaseOverview?.rank?.current || "").toLowerCase();
-  const rankMeta = rankInfo[rank] || { label: "Sin rango", next: 100, perks: [] };
+  const rankMeta = rankInfo[rank] || rankInfo.sin_rango;
   const rankSpent = Number(purchaseOverview?.rank?.spent_30d || 0);
   const rankProgress = rankMeta.next ? Math.min(100, (rankSpent / rankMeta.next) * 100) : 100;
   const rankOverride = purchaseOverview?.rank?.override || null;

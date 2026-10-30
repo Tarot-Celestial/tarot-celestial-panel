@@ -3,7 +3,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {PGlite}=require('@electric-sql/pglite');
 const read=p=>fs.readFileSync(path.join(__dirname,p),'utf8');
 const id=n=>'10000000-0000-4000-8000-'+String(n).padStart(12,'0');
-let db,seq=100,legacyDefinitions,legacyDiamondDefinition;
+let db,seq=100,legacyDefinitions,legacyDiamondDefinition,monthlyDefinitions,preUpgrade;
 const legacyClients=[];
 const scalar=async(q,p=[]) => (await db.query(q,p)).rows[0].v;
 const preview=c=>scalar('select tc_new_tarotista_gift_preview($1) v',[c]);
@@ -21,7 +21,7 @@ async function hire(active=true){
 }
 const request=(c,rank='plata',tarotista=id(2),op=id(seq++))=>({
  operation_id:op,cliente_id:c,tarotista_worker_id:tarotista,rank_free_expected_rank:rank,
- rank_free_expected_minutes:{plata:10,oro:12,diamante:15}[rank],rank_free_eligibility_key:tarotista
+ rank_free_expected_minutes:{sin_rango:7,bronce:7,plata:10,oro:12,diamante:15}[rank],rank_free_eligibility_key:tarotista
 });
 const call=(p,user=id(11))=>scalar('select tc_register_new_tarotista_gift($1,$2::jsonb) v',[user,JSON.stringify(p)]);
 before(async()=>{
@@ -40,6 +40,16 @@ before(async()=>{
  create table worker_xp_events(id uuid primary key default gen_random_uuid(),worker_id uuid,action_key text,reference_id text,status text,created_at timestamptz default now());
  create table crm_client_capture_assignments(client_id uuid primary key,business text,created_by_worker_id uuid,candidate_worker_id uuid,responsible_worker_id uuid,first_contact_id uuid,first_contact_at timestamptz,status text,captured_by_worker_id uuid,captured_at timestamptz,updated_at timestamptz,xp_event_id uuid);
  create table crm_client_capture_audit(client_id uuid,action text,previous_responsible_worker_id uuid,new_responsible_worker_id uuid,actor_worker_id uuid,reason text,metadata jsonb);
+ create table crm_free_pass_policy(id boolean primary key,passes integer,minutes integer,cycle_days integer);
+ create table crm_free_pass_uses(request_id uuid primary key,cliente_id uuid,cycle_start timestamptz,slot integer,minutes integer,worker_id uuid,created_at timestamptz default now(),unique(cliente_id,cycle_start,slot));
+ insert into crm_free_pass_policy values(true,3,7,30);
+ create table client_benefit_rules(id uuid primary key default gen_random_uuid(),name text,description text,rank text check(rank in ('bronce','plata','oro','diamante')),event text,claim_mode text default 'automatic',scope text default 'regular',active boolean,free_minutes integer,coins integer,oracle_credits integer,roulette_spins integer,revision integer default 1,updated_at timestamptz default now(),archived_at timestamptz);
+ insert into client_benefit_rules(id,name,description,rank,event,active) values
+ ('${id(30)}','Primera consulta con nueva tarotista','10 minutos FREE','plata','information',true),
+ ('${id(31)}','Primera consulta con nueva tarotista','12 minutos FREE','oro','information',true),
+ ('${id(32)}','Primera consulta con nueva tarotista','12 minutos FREE','diamante','information',false),
+ ('${id(33)}','Pases de consulta','Monthly policy unchanged','bronce','information',false),
+ ('${id(34)}','Primera consulta con nueva tarotista','Purchase rule unchanged','bronce','purchase',true);
  -- The payment-selection adapter is a contract double. Gifts explicitly have no payment;
  -- canonical v8, minute accounting, rank, capture and Diamond triggers run unchanged.
  create function tc_register_call_with_payment(p jsonb) returns jsonb language plpgsql as $$
@@ -71,21 +81,29 @@ before(async()=>{
  legacyDiamondDefinition=await scalar("select md5(pg_get_functiondef('tc_diamond_new_tarotista_gift()'::regprocedure)) v");
  await db.exec(read('../supabase/migrations/20261029233813_new_tarotista_intro_call.sql'));
  await db.query("insert into workers(id,user_id,role,is_active,display_name,email,created_at) values($1,$2,'tarotista',true,'Test Launch','launch@example.invalid',clock_timestamp())",[id(2),id(12)]);
+ // Install the actual current monthly-pass RPCs, without unrelated description updates.
+ await db.exec(read('../supabase/migrations/20261029132055_free_pass_silver_minimum.sql').split('-- Keep historical rule IDs')[0]);
+ monthlyDefinitions=await scalar("select jsonb_object_agg(proname,md5(pg_get_functiondef(oid))) v from pg_proc where proname in ('tc_client_rank_state','crm_free_pass_status','crm_free_pass_use')");
+ const historical=await client(),oldRequest=request(historical),oldReceipt=await call(oldRequest);
+ preUpgrade={request:oldRequest,receipt:oldReceipt,ledger:await scalar('select to_jsonb(x) v from crm_new_tarotista_gift_uses x where operation_id=$1',[oldRequest.operation_id]),activation:await scalar('select activated_at::text v from crm_new_tarotista_gift_policy where id')};
+ await db.exec(read('../supabase/migrations/20261030165808_new_tarotista_gift_all_ranks.sql'));
 });
 after(async()=>{if(db)await db.close();});
 
-test('zero balance Silver/Gold/Diamond gift grants and consumes actual FREE minutes atomically',async()=>{
- for(const [rank,minutes] of [['plata',10],['oro',12],['diamante',15]]){
-  const c=await client(rank),p=request(c,rank);
+test('all five gift ranks grant and consume real FREE minutes from zero balance without 7FREE capture',async()=>{
+ for(const [rank,minutes] of [['sin_rango',7],['bronce',7],['plata',10],['oro',12],['diamante',15]]){
+  const c=await client(rank==='sin_rango'?null:rank),p=request(c,rank);
   const offer=(await preview(c)).offers.find(o=>o.tarotista_worker_id===id(2));
-  assert.equal(offer.eligible,true);assert.equal(offer.grant_minutes,minutes);
+  assert.equal(offer.eligible,true);assert.equal(offer.grant_minutes,minutes);assert.equal(offer.effective_rank,rank);
   const r=await call(p);
   assert.deepEqual(await balance(c),[0,37]);assert.equal(r.rank_free.grant_minutes,minutes);
   assert.equal(r.rendimiento.tiempo,minutes);assert.equal(r.rendimiento.codigo_1,'FREE');
   assert.equal(r.rendimiento.minutos_1,minutes);assert.equal(r.rendimiento.usa_7_free,false);
   assert.equal(r.rendimiento.captado,false);assert.equal(r.rendimiento.cliente_compra_minutos,false);
   assert.equal(r.minute_accounting.rank_free_granted,minutes);assert.equal(r.minute_accounting.used_free,minutes);
-  assert.equal(await scalar("select count(*)::int v from crm_cliente_pagos where cliente_id=$1",[c]),1);
+  assert.equal(await scalar("select count(*)::int v from crm_cliente_pagos where cliente_id=$1",[c]),rank==='sin_rango'?0:1);
+  assert.equal(await scalar('select effective_rank v from crm_new_tarotista_gift_uses where cliente_id=$1',[c]),rank);
+  if(rank==='sin_rango')assert.equal(await scalar("select tc_client_rank_state($1)->>'effective' v",[c]),null);
   assert.equal(await scalar("select count(*)::int v from worker_xp_events"),0);
   assert.equal(await scalar("select status v from crm_client_capture_assignments where client_id=$1",[c]),'pending');
   assert.equal(await scalar("select count(*)::int v from crm_client_notes where cliente_id=$1 and event_data ? 'rank_free'",[c]),1);
@@ -106,6 +124,49 @@ test('one client x tarotist, operation replay and changed intent are distinct',a
  assert.equal((await call(p)).duplicate_prevented,true);
  assert.equal(await scalar('select count(*)::int v from crm_new_tarotista_gift_uses where cliente_id=$1',[c]),1);
 });
+test('Bronze and no-rank retain zero monthly passes while introductory gifts work once per tarotist',async()=>{
+ for(const rank of ['sin_rango','bronce']){
+  const c=await client(rank==='sin_rango'?null:rank),p=request(c,rank);
+  const monthly=await scalar('select crm_free_pass_status($1) v',[c]);
+  assert.equal(monthly.eligible,false);assert.equal(monthly.rank_eligible,false);assert.equal(monthly.available,0);
+  await assert.rejects(scalar('select crm_free_pass_use($1,$2,$3,now(),0) v',[c,id(1),id(seq++)]),/RANK_NOT_ELIGIBLE/);
+  const [first,replay]=await Promise.all([call(p),call(p)]);
+  assert.equal(first.rendimiento.id,replay.rendimiento.id);assert.equal(replay.duplicate_prevented,true);
+  assert.equal(first.rank_free.consume_minutes,7);assert.equal(first.rendimiento.usa_7_free,false);
+  await assert.rejects(call({...p,operation_id:id(seq++)}),/ALREADY_USED/);
+  await db.query("insert into client_rank_overrides(client_id,assigned_rank,active,starts_at) values($1,'plata',true,now()-interval '1 minute')",[c]);
+  await assert.rejects(call(request(c,'plata')),/ALREADY_USED/);
+  assert.equal((await call(p)).duplicate_prevented,true);
+  const other=await hire();assert.equal((await call(request(c,'plata',other))).rank_free.consume_minutes,10);
+  assert.deepEqual(await balance(c),[0,37]);
+  assert.equal(await scalar('select count(*)::int v from crm_free_pass_uses where cliente_id=$1',[c]),0);
+ }
+ for(const rank of ['plata','oro','diamante']){
+  const c=await client(rank),monthly=await scalar('select crm_free_pass_status($1) v',[c]);
+  assert.equal(monthly.eligible,true);assert.equal(monthly.available,3);assert.equal(monthly.minutes,7);
+ }
+ assert.deepEqual(await scalar("select jsonb_object_agg(proname,md5(pg_get_functiondef(oid))) v from pg_proc where proname in ('tc_client_rank_state','crm_free_pass_status','crm_free_pass_use')"),monthlyDefinitions);
+});
+test('upgrade preserves the existing receipt, ledger, activation and operation replay exactly',async()=>{
+ assert.deepEqual(await scalar('select to_jsonb(x) v from crm_new_tarotista_gift_uses x where operation_id=$1',[preUpgrade.request.operation_id]),preUpgrade.ledger);
+ assert.deepEqual(await scalar('select result v from crm_call_operations where operation_id=$1',[preUpgrade.request.operation_id]),preUpgrade.receipt);
+ assert.deepEqual(await call(preUpgrade.request),{...preUpgrade.receipt,duplicate_prevented:true});
+ assert.equal(await scalar('select activated_at::text v from crm_new_tarotista_gift_policy where id'),preUpgrade.activation);
+ assert.deepEqual(await scalar('select rank_minutes v from crm_new_tarotista_gift_policy where id'),{sin_rango:7,bronce:7,plata:10,oro:12,diamante:15});
+});
+test('informational gift descriptions match 7/10/12/15 without enabling another grant or changing global ranks',async()=>{
+ const info=await scalar("select jsonb_agg(to_jsonb(r) order by rank) v from client_benefit_rules r where name='Primera consulta con nueva tarotista' and event='information'");
+ assert.equal(info.length,4);
+ for(const row of info){
+  assert.ok(row.description.startsWith({bronce:7,plata:10,oro:12,diamante:15}[row.rank]+' minutos FREE'));
+  assert.equal(row.free_minutes,null);assert.equal(row.coins,null);assert.equal(row.oracle_credits,null);assert.equal(row.roulette_spins,null);
+ }
+ assert.equal(info.find(x=>x.rank==='diamante').active,false);
+ assert.equal(info.find(x=>x.rank==='bronce').claim_mode,'claim');
+ assert.equal(await scalar('select description v from client_benefit_rules where id=$1',[id(33)]),'Monthly policy unchanged');
+ assert.equal(await scalar('select description v from client_benefit_rules where id=$1',[id(34)]),'Purchase rule unchanged');
+ assert.equal(await scalar("select count(*)::int v from tc_client_rank_benefits where rank_key='sin_rango'"),0);
+});
 test('a separate newly launched tarotist can be met once, but historic reactivation does not launch',async()=>{
  const c=await client(),p=request(c);await call(p);
  const next=await hire();await call(request(c,'plata',next));
@@ -117,10 +178,14 @@ test('a separate newly launched tarotist can be met once, but historic reactivat
  await db.query("insert into crm_new_tarotista_releases(tarotista_worker_id,source) values($1,'explicit_rollout')",[id(3)]);
  assert.equal((await preview(c)).offers.find(x=>x.tarotista_worker_id===id(3)).eligible,true);
 });
-test('Bronze/no rank, stale rank, forged identity and inactive workers cannot grant',async()=>{
+test('stale rank, forged identity and inactive workers cannot grant',async()=>{
  for(const rank of ['bronce',null]){
-  const c=await client(rank);await assert.rejects(call(request(c)),/RANK_NOT_ELIGIBLE/);assert.deepEqual(await balance(c),[0,37]);
+  const lower=await client(rank);
+  await assert.rejects(call(request(lower,'plata')),/RANK_CHANGED/);
+  await assert.rejects(call({...request(lower,'bronce'),rank_free_expected_rank:'unknown'}),/INVALID_RANK_FREE_REQUEST/);
+  assert.deepEqual(await balance(lower),[0,37]);
  }
+ const bronze=await client('bronce');await assert.rejects(call(request(bronze,'sin_rango')),/RANK_CHANGED/);
  const c=await client('oro');await assert.rejects(call(request(c,'plata')),/RANK_CHANGED/);
  await assert.rejects(call(request(c,'oro'),id(14)),/FORBIDDEN/);
  await assert.rejects(call(request(c,'oro'),id(12)),/FORBIDDEN/);

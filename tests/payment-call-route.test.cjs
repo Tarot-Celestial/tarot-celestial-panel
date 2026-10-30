@@ -27,6 +27,8 @@ function harness(){
   '@supabase/supabase-js':{createClient:()=>admin},
   '@/lib/server/auth-fast':{},'@/lib/server/client-promotions':{loadActivePromotion:async()=>{h.promotionReads++;return h.promotion||null;},promotionPackageSnapshot:(promotion,pack)=>({...pack,promotion_id:promotion.id,promotion_name:promotion.name,package_id:pack.id,package_name:pack.name})},
   '@/lib/server/paypal-crm':{paypalConfig:()=>({environment:'sandbox'})},
+  '@/lib/server/new-tarotista-gift':{newTarotistaGiftPreview:async()=>({offers:[]}),handleNewTarotistaGiftCall:()=>{throw Error('Unexpected introduction gift');}},
+  '@/lib/server/initial-consultation-gift':{initialConsultationGiftPreview:async()=>({policy_key:'initial_consultation_once_v1',eligible:false,minutes:7,reason:'PRIOR_CONSULTATION'}),handleInitialConsultationGiftCall:()=>{throw Error('Unexpected initial gift');}},
   '@/lib/server/cliente-minute-packs':{CLIENTE_MINUTE_PACKS:[{id:'pack_80',nombre:'80 minutos',priceUsd:49,oracleCredits:1},{id:'pack_120',nombre:'120 minutos',priceUsd:69,oracleCredits:2},{id:'pack_180',nombre:'180 minutos',priceUsd:99,oracleCredits:3}]},
   '@/lib/ruleta':{rouletteLevelForPurchaseAmount:amount=>amount>0&&amount<27?1:amount>=27&&amount<37?2:amount>=49&&amount<=99?3:null},
  }[n]||(()=>{throw Error(n)})())});
