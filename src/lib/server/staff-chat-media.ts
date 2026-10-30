@@ -63,7 +63,11 @@ export async function reserveStaffMedia(db: any, me: StaffChatActor, body: any) 
   }
   const storage = db.storage.from(STAFF_MEDIA_BUCKET);
   const { data: exists, error: existsError } = await storage.exists(objectPath);
-  if (existsError) throw new Error("MEDIA_STORAGE_UNAVAILABLE");
+  // storage-js returns data:false WITH an error for a missing object's HEAD
+  // (400/404). Other failures must not be mistaken for an unused upload path.
+  const existsStatus = Number(existsError?.status ?? existsError?.originalError?.status ?? existsError?.statusCode);
+  const missingObject = exists === false && [400, 404].includes(existsStatus);
+  if (existsError && !missingObject) throw new Error("MEDIA_STORAGE_UNAVAILABLE");
   if (exists) return { ok: true, attachment_id: input.id, bucket: STAFF_MEDIA_BUCKET, path: objectPath, already_uploaded: true };
   const { data, error: signingError } = await storage.createSignedUploadUrl(objectPath, { upsert: false });
   if (signingError || !data?.token) throw new Error("MEDIA_STORAGE_UNAVAILABLE");

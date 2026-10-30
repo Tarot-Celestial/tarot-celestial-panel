@@ -86,6 +86,43 @@ test('upload retry keeps the object and token is never issued with upsert',async
  const three=await (await h.upload.POST(h.req(h.input))).json();assert.equal(three.already_uploaded,true);assert.equal(three.token,undefined);
  assert.equal((await h.upload.POST(h.req({...h.input,size_bytes:25}))).status,409);
 });
+test('real storage-js treats HEAD 400/404 as missing and signs a non-upsert upload; replay keeps one reservation',async()=>{
+ for(const missingStatus of [400,404]){
+  const h=harness(),requests=[];
+  let status=missingStatus;
+  const {createClient}=require('@supabase/supabase-js');
+  const client=createClient('https://fixture.invalid','fixture-key',{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},global:{fetch:async(url,options)=>{
+   requests.push({method:options.method,url:String(url),headers:new Headers(options.headers)});
+   if(options.method==='HEAD')return new Response(null,{status});
+   assert.equal(options.method,'POST');assert.ok(String(url).includes('/object/upload/sign/'));
+   return new Response(JSON.stringify({url:new URL(url).pathname.replace('/storage/v1','')+'?token=fixture-token'}),{status:200,headers:{'content-type':'application/json'}});
+  }}});
+  h.db.storage=client.storage;
+  const first=await h.upload.POST(h.req(h.input));assert.equal(first.status,200,String(missingStatus));
+  const signed=await first.json();assert.equal(signed.already_uploaded,false);assert.equal(signed.attachment_id,h.input.client_upload_id);assert.equal(signed.token,'fixture-token');
+  const retry=await h.upload.POST(h.req(h.input));assert.equal(retry.status,200);assert.equal(h.rows.length,1);
+  assert.equal(requests.filter(r=>r.method==='POST').length,2);
+  assert.equal(requests.filter(r=>r.method==='POST').every(r=>r.headers.get('x-upsert')!=='true'),true);
+  status=200;
+  const afterUpload=await (await h.upload.POST(h.req(h.input))).json();assert.equal(afterUpload.already_uploaded,true);assert.equal(afterUpload.token,undefined);
+  assert.equal(h.rows.length,1);assert.equal(requests.filter(r=>r.method==='POST').length,2);
+ }
+});
+test('real storage-js unauthorized, forbidden, rate-limit, server and network errors never authorize an upload',async()=>{
+ for(const failure of [401,403,429,503,'network']){
+  const h=harness(),requests=[];
+  const {createClient}=require('@supabase/supabase-js');
+  const client=createClient('https://fixture.invalid','fixture-key',{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},global:{fetch:async(url,options)=>{
+   requests.push({method:options.method,url:String(url)});
+   if(failure==='network')throw new TypeError('Fixture network unavailable');
+   return new Response(null,{status:failure});
+  }}});
+  h.db.storage=client.storage;
+  const response=await h.upload.POST(h.req(h.input));assert.equal(response.ok,false,String(failure));
+  const result=await response.json();assert.equal(result.ok,false);assert.equal(result.token,undefined);
+  assert.equal(requests.some(r=>r.method!=='HEAD'),false,String(failure));assert.equal(h.messages.length,0);
+ }
+});
 test('actual content and byte size are verified before delivery; another sender cannot attach',async()=>{
  const h=harness(),up=await h.ready(),body={thread_id:id(10),client_message_id:'media-1',attachment_id:up.attachment_id,text:''};
  h.objects.set(up.path,{bytes:Buffer.alloc(png.length,60),mime:'image/png'});
