@@ -220,6 +220,10 @@
   box-shadow: 0 0 0 2px rgba(215,181,109,.08), 0 14px 32px rgba(0,0,0,.2), 0 0 26px rgba(215,181,109,.08);
 }
 
+.rankGiftChoice { display: grid; gap: 7px; border-color: rgba(215,181,109,.5) !important; background: linear-gradient(145deg,rgba(215,181,109,.15),rgba(139,92,246,.12)) !important; }
+.rankGiftChoice strong { color: #fff0c8; font-size: 16px; }
+.rankGiftChoice small { color: rgba(242,236,255,.78); font-size: 12px; font-weight: 600; }
+
 .classificationGrid { display: grid; gap: 12px; margin-top: 18px; }
 .classificationGrid .choiceButton { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; align-items: center; gap: 11px; }
 .classificationGrid .choiceButton > span:nth-child(2) { display: grid; gap: 3px; }

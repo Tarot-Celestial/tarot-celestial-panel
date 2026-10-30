@@ -8,6 +8,7 @@ import OperationalInbox from "@/components/central/OperationalInbox";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { loadPanelIdentity, panelPathForRole, panelSessionRejected, redirectToLogin } from "@/lib/panel-access";
 import { useAttendance } from "@/hooks/useAttendance";
+import { useTarotistaLiveStats } from "@/hooks/useTarotistaLiveStats";
 import StaffDirectChatPanel from "@/components/chat/StaffDirectChatPanel";
 import { useStaffChat } from "@/providers/StaffChatProvider";
 import TarotistaInvoiceDashboard from "@/components/tarotista/TarotistaInvoiceDashboard";
@@ -250,7 +251,6 @@ export default function Tarotista() {
   const [tab, setTab] = useState<TabKey>("resumen");
 
   const [month, setMonth] = useState(monthKeyNow());
-  const [stats, setStats] = useState<any>(null);
   const [rank, setRank] = useState<any>(null);
   const [msg, setMsg] = useState<string>("");
   const [dataRefreshing, setDataRefreshing] = useState(false);
@@ -263,6 +263,16 @@ export default function Tarotista() {
   const [ackNote, setAckNote] = useState<string>("");
 
   const [myWorkerId, setMyWorkerId] = useState<string>("");
+  const [panelUserId, setPanelUserId] = useState("");
+  const authUserRef = useRef<string | null>(null);
+  const panelReadEpoch = useRef(0);
+  const currentMonthRef = useRef(month);
+  currentMonthRef.current = month;
+  const { stats, refresh: refreshStats } = useTarotistaLiveStats({
+    client: sb, enabled: ok, userId: panelUserId, workerId: myWorkerId, month,
+    polling: ["resumen", "rangos", "bonos", "facturas"].includes(tab)
+      && attendance.online && attendance.status === "working",
+  });
   const [tarotistaLevel, setTarotistaLevel] = useState<1 | 2>(1);
 
   const [clLoading, setClLoading] = useState(false);
@@ -522,9 +532,26 @@ export default function Tarotista() {
 
   useEffect(() => {
     const { data: sub } = sb.auth.onAuthStateChange((event, session) => {
+      const nextUserId = String(session?.user?.id || "");
+      const previousUserId = authUserRef.current;
+      authUserRef.current = nextUserId;
+      if (previousUserId !== null && previousUserId !== nextUserId) {
+        panelReadEpoch.current += 1;
+        setOk(false);
+        setPanelUserId("");
+        setMyWorkerId("");
+        setRank(null);
+        setInvoice(null);
+        setInvoiceLines([]);
+        setInvoiceInsights(null);
+        setIncidents([]);
+        setDataRefreshing(false);
+        setRankingRefreshing(false);
+        if (nextUserId) setAccessAttempt(value => value + 1);
+      }
       if (event === "SIGNED_OUT" && !session) window.location.href = "/login";
     });
-    return () => sub.subscription.unsubscribe();
+    return () => { panelReadEpoch.current += 1; sub.subscription.unsubscribe(); };
   }, []);
 
   useEffect(() => {
@@ -544,6 +571,12 @@ export default function Tarotista() {
           window.location.replace(panelPathForRole(me.role));
           return;
         }
+        const identityUserId = String((me.user as { id?: string } | undefined)?.id || "");
+        const identityWorkerId = String(me.id || "");
+        if (!identityUserId || !identityWorkerId || (authUserRef.current !== null && authUserRef.current !== identityUserId)) return;
+        authUserRef.current = identityUserId;
+        setPanelUserId(identityUserId);
+        setMyWorkerId(identityWorkerId);
         setMonth(getMonthFromUrl());
         setOk(true);
       } catch (error) {
@@ -650,18 +683,16 @@ export default function Tarotista() {
   }
 
   async function refresh(forMonth?: string) {
+    const epoch = panelReadEpoch.current;
+    const m = forMonth || month;
+    const current = () => panelReadEpoch.current === epoch && currentMonthRef.current === m;
     try {
       setDataRefreshing(true);
       setMsg("");
       const token = await getTokenSafe();
       if (!token) return;
 
-      const m = forMonth || month;
-      setMonth(m);
-
-      const sRes = await fetch(`/api/stats/monthly?month=${encodeURIComponent(m)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const sJ = await refreshStats(m);
       const rRes = await fetch(`/api/rankings/monthly?month=${encodeURIComponent(m)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -672,17 +703,14 @@ export default function Tarotista() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      const sJ = await safeJson(sRes);
       const rnkJ = await safeJson(rRes);
       const incJ = await safeJson(incRes);
       const invJ = await safeJson(invRes);
 
-      setStats(sJ);
+      if (!current()) return;
       setRank(rnkJ);
 
-      const wid = sJ?.worker?.id ? String(sJ.worker.id) : "";
-      if (wid) setMyWorkerId(wid);
-      setTarotistaLevel(Number(sJ?.worker?.tarotista_level || 1) === 2 ? 2 : 1);
+      if (sJ) setTarotistaLevel(Number(sJ.worker?.tarotista_level || 1) === 2 ? 2 : 1);
 
       if (incJ?._ok && incJ?.ok) setIncidents(incJ.incidents || []);
       else setIncidents([]);
@@ -702,32 +730,35 @@ export default function Tarotista() {
       if (incJ && incJ.ok === false) setMsg((p) => `${p ? p + " · " : ""}⚠️ Incidencias: ${incJ.error || "error"}`);
       if (invJ && invJ.ok === false) setMsg((p) => `${p ? p + " · " : ""}⚠️ Factura: ${invJ.error || "error"}`);
     } catch (e: any) {
-      setMsg(`❌ ${e?.message || "Error"}`);
+      if (current()) setMsg(`❌ ${e?.message || "Error"}`);
     } finally {
-      setDataRefreshing(false);
+      if (current()) setDataRefreshing(false);
     }
   }
 
   async function refreshRanking(forMonth?: string, silent = false) {
+    const epoch = panelReadEpoch.current;
+    const m = forMonth || month;
+    const current = () => panelReadEpoch.current === epoch && currentMonthRef.current === m;
     if (!silent) setRankingRefreshing(true);
     try {
       const token = await getTokenSafe();
       if (!token) return;
-      const m = forMonth || month;
       const res = await fetch(`/api/rankings/monthly?month=${encodeURIComponent(m)}`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
       const json = await safeJson(res);
+      if (!current()) return;
       if (!json?._ok || !json?.ok) {
         if (!silent) setMsg(`⚠️ Ranking: ${json?.error || `HTTP ${json?._status}`}`);
         return;
       }
       setRank(json);
     } catch (error: any) {
-      if (!silent) setMsg(`⚠️ Ranking: ${error?.message || "Error al actualizar"}`);
+      if (!silent && current()) setMsg(`⚠️ Ranking: ${error?.message || "Error al actualizar"}`);
     } finally {
-      if (!silent) setRankingRefreshing(false);
+      if (!silent && current()) setRankingRefreshing(false);
     }
   }
 
@@ -739,26 +770,29 @@ export default function Tarotista() {
   }
 
   async function refreshInvoiceOnly() {
+    const epoch = panelReadEpoch.current;
+    const m = month;
+    const current = () => panelReadEpoch.current === epoch && currentMonthRef.current === m;
     try {
       setMsg("");
       const token = await getTokenSafe();
       if (!token) return;
       const headers = { Authorization: `Bearer ${token}` };
-      const [statsResponse, invoiceResponse, incidentsResponse] = await Promise.all([
-        fetch(`/api/stats/monthly?month=${encodeURIComponent(month)}`, { headers }),
+      const [statsJson, invoiceResponse, incidentsResponse] = await Promise.all([
+        refreshStats(m),
         fetch(`/api/invoices/my?month=${encodeURIComponent(month)}`, { headers }),
         fetch(`/api/incidents/my?month=${encodeURIComponent(month)}`, { headers }),
       ]);
-      const [statsJson, invoiceJson, incidentsJson] = await Promise.all([safeJson(statsResponse), safeJson(invoiceResponse), safeJson(incidentsResponse)]);
-      if (!statsJson?._ok || !statsJson?.ok) throw new Error(statsJson?.error || "No se pudieron actualizar las métricas");
+      const [invoiceJson, incidentsJson] = await Promise.all([safeJson(invoiceResponse), safeJson(incidentsResponse)]);
+      if (!current()) return;
+      if (!statsJson?.ok) throw new Error("No se pudieron actualizar las métricas");
       if (!invoiceJson?._ok || !invoiceJson?.ok) throw new Error(invoiceJson?.error || "No se pudo actualizar la factura");
-      setStats(statsJson);
       setInvoice(invoiceJson.invoice || null);
       setInvoiceLines(invoiceJson.lines || []);
       setInvoiceInsights(invoiceJson.insights || null);
       if (incidentsJson?._ok && incidentsJson?.ok) setIncidents(incidentsJson.incidents || []);
     } catch (error: any) {
-      setMsg(`⚠️ Factura: ${error?.message || "Error"}`);
+      if (current()) setMsg(`⚠️ Factura: ${error?.message || "Error"}`);
     }
   }
 
@@ -1020,6 +1054,10 @@ export default function Tarotista() {
     loadAttendanceMe(true);
     loadMyOutbound(true);
   }, [ok]);
+
+  useEffect(() => {
+    if (stats?.worker?.id === myWorkerId) setTarotistaLevel(Number(stats.worker.tarotista_level || 1) === 2 ? 2 : 1);
+  }, [stats, myWorkerId]);
 
   useEffect(() => {
     if (!ok) return;

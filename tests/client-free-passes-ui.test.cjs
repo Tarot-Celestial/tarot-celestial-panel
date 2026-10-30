@@ -91,6 +91,8 @@ test('admin comparison shows saved matrix and policy values for all ranks withou
   assert.match(text(view.toJSON()), /No se aplica a Oráculo ni a registros manuales de llamada/);
   assert.match(text(view.toJSON()), /Coins y giros solo se entregan a tarifa regular/);
   assert.match(text(view.toJSON()), /Oráculo pueden aplicarse también a promociones con nivel asignado/);
+  assert.match(text(view.toJSON()), /una consulta de regalo por cliente y por cada nueva tarotista disponible; 10 minutos en Plata, 12 en Oro y 15 en Diamante/);
+  assert.match(text(view.toJSON()), /El regalo tiene sus propios minutos y mantiene el saldo pendiente del cliente, aunque sea 0/);
   act(() => view.update(React.createElement(Comparison, { data: { ...data, free_pass_policy: null, free_pass_policy_available: false } })));
   assert.match(text(view.toJSON()), /Política no disponible/); assert.doesNotMatch(text(view.toJSON()), /3 pases de 7/);
   act(() => view.unmount());
@@ -100,10 +102,10 @@ test('published benefit descriptions distinguish configured Silver/Gold minutes 
   for (const rank of ['plata', 'oro']) {
     const labels = benefitExports.currentRankBenefits(rank);
     assert.ok(labels.some(label => /Configurado, pendiente de aplicación automática/.test(label) && /precio regular/.test(label)));
-    assert.ok(labels.some(label => /nueva tarotista.*reserva y validación de Central/.test(label)));
+    assert.ok(labels.some(label => /nueva tarotista disponible, una sola vez por cliente y tarotista.*Central al registrar la consulta/.test(label)));
   }
   const diamond = benefitExports.currentRankBenefits('diamante').join(' ');
-  assert.match(diamond, /15 minutos GRATIS cuando se incorpora una nueva tarotista/);
+  assert.match(diamond, /15 minutos GRATIS para conocer a cada nueva tarotista disponible, una sola vez por cliente y tarotista/);
   assert.match(diamond, /compra de minutos confirmada, incluidas promociones; no Oráculo ni registros manuales de llamada/);
   assert.match(diamond, /500 Coins[^.]*tarifa regular[^.]*configuración del nivel activada/);
   assert.doesNotMatch(diamond, /12 minutos|pendiente de aplicación/);

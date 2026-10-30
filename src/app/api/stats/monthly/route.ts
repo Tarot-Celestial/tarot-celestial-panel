@@ -4,11 +4,10 @@ import { NextResponse } from 'next/server';
 import {
   normalizeMonthKey,
   roundMoney,
-  workerFromRequest,
 } from '@/lib/server/auth-worker';
 import { aggregateRendimientoByTarotista, listRendimientoRowsByIso, listTarotistaWorkers } from '@/lib/server/rendimiento-metrics';
 import { brandFromRequest, filterRowsByBrand } from '@/lib/server/brand-filter';
-import { getAdminClient } from '@/lib/server/auth-worker';
+import { verifiedAttendanceWorker } from '@/lib/server/panel-attendance';
 import { loadOfficialPayments, totalOfficialRevenue } from '@/lib/server/economic-payments';
 import { fullMonthComparison, madridTodayKey, monthToDateComparison } from '@/lib/server/madrid-reporting-period';
 import { loadTarotistaRankConfig, resolveTarotistaRankState, type TarotistaRankConfig } from '@/lib/server/tarotista-ranks';
@@ -89,8 +88,13 @@ function buildSnapshot(month: string, rendimientoRows: any[], workers: any[], ru
 
 export async function GET(req: Request) {
   try {
-    const me = await workerFromRequest(req);
-    if (!me) return NextResponse.json({ ok: false, error: 'NO_AUTH' }, { status: 401 });
+    const actor = await verifiedAttendanceWorker(req);
+    if (!actor.ok) return NextResponse.json({ ok: false, error: actor.error }, { status: actor.status });
+    const admin = actor.db;
+    const profile = await admin.from('workers').select('team,tarotista_level').eq('id', actor.worker.id).maybeSingle();
+    if (profile.error) throw profile.error;
+    if (!profile.data) return NextResponse.json({ ok: false, error: 'FORBIDDEN' }, { status: 403 });
+    const me = { ...actor.worker, ...profile.data };
 
     const url = new URL(req.url);
     const month = normalizeMonthKey(url.searchParams.get('month'));
@@ -100,7 +104,6 @@ export async function GET(req: Request) {
     const period = usesMtdComparison ? monthToDateComparison(todayKey) : fullMonthComparison(month);
     const includePrevious = me.role === 'admin' || me.role === 'central';
     const brand = brandFromRequest(req);
-    const admin = getAdminClient();
     const [rules, rankConfig] = await Promise.all([
       loadBonusRules(admin),
       loadTarotistaRankConfig(admin),

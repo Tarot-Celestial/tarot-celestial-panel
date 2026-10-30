@@ -143,7 +143,7 @@ const rankInfo: Record<string, { label: string; next: number | null; perks: stri
     label: "Plata",
     next: 500,
     perks: [
-      "10 minutos GRATIS cuando se incorpora una nueva tarotista, con reserva y validación de Central",
+      "10 minutos GRATIS para conocer a cada nueva tarotista disponible, una sola vez por cliente y tarotista; se confirman con Central al registrar la consulta",
       "Configurado, pendiente de aplicación automática: +10 minutos GRATIS en compras a precio regular",
       "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada",
       "Seguimiento energético durante 1 mes post rituales, coordinado por Central",
@@ -153,7 +153,7 @@ const rankInfo: Record<string, { label: string; next: number | null; perks: stri
     label: "Oro",
     next: 1000,
     perks: [
-      "12 minutos GRATIS cuando se incorpora una nueva tarotista, con reserva y validación de Central",
+      "12 minutos GRATIS para conocer a cada nueva tarotista disponible, una sola vez por cliente y tarotista; se confirman con Central al registrar la consulta",
       "Configurado, pendiente de aplicación automática: +12 minutos GRATIS en compras a precio regular",
       "Participación en sorteos activos, gestionada por Central según condiciones",
       "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada",
@@ -165,7 +165,7 @@ const rankInfo: Record<string, { label: string; next: number | null; perks: stri
     next: null,
     perks: [
       "Acceso exclusivo a Mi Ritual y seguimiento visual de rituales",
-      "15 minutos GRATIS cuando se incorpora una nueva tarotista",
+      "15 minutos GRATIS para conocer a cada nueva tarotista disponible, una sola vez por cliente y tarotista; se confirman con Central al registrar la consulta",
       "+15 minutos GRATIS en compras de minutos confirmadas, incluidas promociones; no Oráculo ni registros manuales de llamada",
       "Participación en sorteos activos, gestionada por Central según condiciones",
       "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada",

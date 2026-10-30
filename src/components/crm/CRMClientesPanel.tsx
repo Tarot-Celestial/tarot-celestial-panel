@@ -140,7 +140,7 @@ function rankMeta(rank: string | null | undefined) {
       cardBg: "linear-gradient(135deg, rgba(165,224,255,.18), rgba(165,140,255,.08))",
       cardBorder: "1px solid rgba(165,224,255,.32)",
       perks: [
-        "15 min GRATIS con cada nueva tarotista",
+        "15 min GRATIS para conocer a cada nueva tarotista disponible, una vez por cliente y tarotista al registrar la consulta",
         "+15 min FREE en compras de minutos confirmadas, incluidas promociones; no Oráculo ni registros manuales de llamada",
         "3 pases de 7 minutos cada 30 días, con alguna compra confirmada",
         "Acceso a Mi ritual según la configuración del rango",
@@ -156,7 +156,7 @@ function rankMeta(rank: string | null | undefined) {
       cardBg: "linear-gradient(135deg, rgba(255,215,120,.18), rgba(255,255,255,.03))",
       cardBorder: "1px solid rgba(255,215,120,.28)",
       perks: [
-        "12 min GRATIS con cada nueva tarotista, con reserva y validación de Central",
+        "12 min GRATIS para conocer a cada nueva tarotista disponible, una vez por cliente y tarotista al registrar la consulta",
         "Configurado, pendiente de aplicación automática: +12 min en compras a precio regular",
         "3 pases de 7 minutos cada 30 días, con alguna compra confirmada",
         "Participación en sorteos activos, gestionada por Central según condiciones",
@@ -173,7 +173,7 @@ function rankMeta(rank: string | null | undefined) {
       cardBg: "linear-gradient(135deg, rgba(196,210,255,.16), rgba(255,255,255,.03))",
       cardBorder: "1px solid rgba(196,210,255,.26)",
       perks: [
-        "10 min GRATIS con cada nueva tarotista, con reserva y validación de Central",
+        "10 min GRATIS para conocer a cada nueva tarotista disponible, una vez por cliente y tarotista al registrar la consulta",
         "Configurado, pendiente de aplicación automática: +10 min en compras a precio regular",
         "3 pases de 7 minutos cada 30 días, con alguna compra confirmada",
         "Seguimiento energético 1 mes post rituales, coordinado por Central",

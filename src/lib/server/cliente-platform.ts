@@ -105,7 +105,7 @@ export function currentRankBenefits(rank: string | null | undefined) {
   if (key === "diamante") {
     return [
       "Acceso exclusivo a Mi Ritual y seguimiento visual de rituales",
-      "15 minutos GRATIS cuando se incorpora una nueva tarotista",
+      "15 minutos GRATIS para conocer a cada nueva tarotista disponible, una sola vez por cliente y tarotista; se confirman con Central al registrar la consulta",
       "+15 minutos GRATIS permanentes en cada compra de minutos confirmada, incluidas promociones; no Oráculo ni registros manuales de llamada",
       "+500 Coins por cada compra de paquete de nivel 1, 2 o 3 a tarifa regular, con la configuración del nivel activada",
       "Acceso a una promoción diaria exclusiva de un solo uso",
@@ -116,7 +116,7 @@ export function currentRankBenefits(rank: string | null | undefined) {
   }
   if (key === "oro") {
     return [
-      "12 minutos GRATIS cuando se incorpora una nueva tarotista, con reserva y validación de Central",
+      "12 minutos GRATIS para conocer a cada nueva tarotista disponible, una sola vez por cliente y tarotista; se confirman con Central al registrar la consulta",
       "Configurado, pendiente de aplicación automática: +12 minutos GRATIS en compras a precio regular",
       "Participación en sorteos activos, gestionada por Central según condiciones",
       "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada",
@@ -125,7 +125,7 @@ export function currentRankBenefits(rank: string | null | undefined) {
   }
   if (key === "plata") {
     return [
-      "10 minutos GRATIS cuando se incorpora una nueva tarotista, con reserva y validación de Central",
+      "10 minutos GRATIS para conocer a cada nueva tarotista disponible, una sola vez por cliente y tarotista; se confirman con Central al registrar la consulta",
       "Configurado, pendiente de aplicación automática: +10 minutos GRATIS en compras a precio regular",
       "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada",
       "Seguimiento energético durante 1 mes post rituales, coordinado por Central",
