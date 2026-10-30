@@ -5,6 +5,7 @@ import { loadActivePromotion, promotionPackageSnapshot } from "@/lib/server/clie
 import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
 import { paypalConfig } from "@/lib/server/paypal-crm";
 import { CLIENTE_MINUTE_PACKS } from "@/lib/server/cliente-minute-packs";
+import { handleNewTarotistaGiftCall, newTarotistaGiftPreview } from "@/lib/server/new-tarotista-gift";
 
 export const runtime = "nodejs";
 
@@ -259,7 +260,8 @@ export async function GET(req: Request) {
         .select("minutos_free_pendientes,minutos_normales_pendientes,updated_at").eq("id", clienteId).maybeSingle();
       if (error) throw error;
       if (!data) return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
-      return NextResponse.json({ ok: true, balance: data }, { headers: { "Cache-Control": "private, no-store, no-cache, max-age=0, must-revalidate", "Pragma": "no-cache", "Vary": "Authorization" } });
+      const rankFree = await newTarotistaGiftPreview(admin, clienteId);
+      return NextResponse.json({ ok: true, balance: data, rank_free: rankFree }, { headers: { "Cache-Control": "private, no-store, no-cache, max-age=0, must-revalidate", "Pragma": "no-cache", "Vary": "Authorization" } });
     }
     if (new URL(req.url).searchParams.get("mode") === "payments") {
       return NextResponse.json({ ok: false, error: "PAYPAL_COLLECTION_SELECTION_REMOVED" }, { status: 410 });
@@ -316,6 +318,10 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => ({}));
+    if (body?.uso_tipo === "rank_free") {
+      // A separate atomic path; never run payment classification or the later capture callback.
+      return handleNewTarotistaGiftCall(adminClient(), me, body);
+    }
     const requestedClienteId = String(body?.cliente_id || "").trim();
     if (!requestedClienteId) return NextResponse.json({ ok: false, error: "CLIENTE_REQUIRED" }, { status: 400 });
     if (!isUuid(requestedClienteId)) {

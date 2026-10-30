@@ -176,7 +176,7 @@ export function RankBenefitsComparison({ data }: { data: AdminData }) {
       <strong>Minutos por rango: configuración y entrega</strong>
       <span>Plata +10 y Oro +12 en compras a precio regular: configurados, pendientes de aplicación automática. No se presentan como minutos ya acreditados.</span>
       <span>Diamante +15: entrega automática en compras de minutos confirmadas, incluidas promociones. No se aplica a Oráculo ni a registros manuales de llamada.</span>
-      <span>Nueva tarotista: los 10 minutos de Plata y 12 de Oro requieren reserva y validación de Central; Diamante tiene una entrega automática de 15 minutos.</span>
+      <span>Nueva tarotista: una consulta de regalo por cliente y por cada nueva tarotista disponible; 10 minutos en Plata, 12 en Oro y 15 en Diamante. Central la confirma al registrar la consulta. El regalo tiene sus propios minutos y mantiene el saldo pendiente del cliente, aunque sea 0. No consume los pases periódicos de 7 minutos.</span>
       <span>La participación en sorteos activos se asigna desde Central según las condiciones de cada sorteo. El seguimiento energético es atención asistida coordinada por Central; ninguno se activa automáticamente por cambiar de rango.</span>
     </div>
   </section>;

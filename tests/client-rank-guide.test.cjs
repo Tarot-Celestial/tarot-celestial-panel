@@ -75,19 +75,20 @@ test('database errors never become a zero balance or invented package extras',as
  const result=await endpoint({matrixFailure:true}).api.GET(new Request('http://local',{headers:{authorization:'Bearer valid'}}));
  const body=await result.json();assert.equal(body.state.total,650);assert.equal(body.ranks[0].package_benefits,null);assert.equal(body.warnings.length,1);
 });
-test('Diamond benefits change without changing Gold or Silver',()=>{
+test('rank descriptions preserve purchase benefits and scope new-tarotista gifts to one consultation',()=>{
  const source=fs.readFileSync(path.join(__dirname,'../src/lib/server/cliente-platform.ts'),'utf8');
  const fragment=source.slice(source.indexOf('export function currentRankBenefits('),source.indexOf('const CRM_MONTH_TAGS'));
  const exports={};
  vm.runInNewContext(ts.transpileModule(fragment,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports});
  const diamond=exports.currentRankBenefits('diamante').join(' ');
- assert.match(diamond,/15 minutos GRATIS cuando se incorpora/);
+ assert.match(diamond,/15 minutos GRATIS para conocer a cada nueva tarotista disponible, una sola vez por cliente y tarotista/);
  assert.ok(diamond.includes('+15 minutos GRATIS permanentes en cada compra'));
  assert.ok(diamond.includes('+500 Coins por cada compra de paquete de nivel 1, 2 o 3'));
  assert.match(diamond,/promoción diaria exclusiva de un solo uso/);
  assert.doesNotMatch(diamond,/12 minutos|precio regular/);
  const gold=exports.currentRankBenefits('oro').join(' ');
  assert.match(gold,/12 minutos/);assert.match(gold,/precio regular/);assert.doesNotMatch(gold,/500 Coins/);
+ assert.match(gold,/una sola vez por cliente y tarotista/);
  assert.match(exports.currentRankBenefits('plata').join(' '),/10 minutos/);
 });
 
