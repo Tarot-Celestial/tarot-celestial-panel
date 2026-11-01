@@ -9,8 +9,7 @@ export function whatsappGatewayConfig() {
   const secret = String(process.env.WHATSAPP_GATEWAY_SECRET || "").trim();
   const mode: WhatsAppSessionMode =
     String(process.env.WHATSAPP_SESSION_MODE || "shared").trim().toLowerCase() === "per-worker" ? "per-worker" : "shared";
-  const bridge = process.env.WHATSAPP_GATEWAY_MODE === 'bridge';
-  return { url, secret, mode, bridge, configured: Boolean(secret && (url || bridge)) };
+  return { url, secret, mode, configured: Boolean(url && secret) };
 }
 
 /**
@@ -24,12 +23,8 @@ export function whatsappSessionId(worker: { id: string | number }) {
 }
 
 export async function whatsappGatewayFetch(path: string, init: { method?: "GET" | "POST"; body?: unknown } = {}) {
-  const { url, secret, configured, bridge } = whatsappGatewayConfig();
+  const { url, secret, configured } = whatsappGatewayConfig();
   if (!configured) return { status: 503, json: { ok: false, error: "GATEWAY_NOT_CONFIGURED" } };
-  if (bridge) {
-    try { return await (await import('./whatsapp-local-bridge')).whatsappBridgeFetch(path,init); }
-    catch { return {status:503,json:{ok:false,error:'BRIDGE_UNAVAILABLE'}}; }
-  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20_000);

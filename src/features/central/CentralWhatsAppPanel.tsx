@@ -101,15 +101,12 @@ function dayLabel(ts: number) {
 function friendlyError(code: string | undefined) {
   switch (code) {
     case "GATEWAY_NOT_CONFIGURED":
-      return "La conexión de WhatsApp todavía no está preparada. Solicita al administrador que active el conector del PC.";
+      return "El servicio de WhatsApp aún no está configurado (faltan WHATSAPP_GATEWAY_URL y WHATSAPP_GATEWAY_SECRET).";
     case "GATEWAY_UNREACHABLE":
     case "GATEWAY_TIMEOUT":
-    case "LOCAL_GATEWAY_OFFLINE":
-    case "LOCAL_GATEWAY_UNAVAILABLE":
-    case "BRIDGE_UNAVAILABLE":
-      return "No se puede comprobar la conexión de WhatsApp. Mantén encendido y con internet el PC que la sostiene.";
+      return "No se puede contactar con el servicio de WhatsApp. Comprueba que el gateway está encendido.";
     case "UNAUTHORIZED":
-      return "No se pudo verificar la conexión de WhatsApp. El administrador debe revisar su configuración.";
+      return "El secreto del gateway no coincide con el del panel.";
     case "NOT_CONNECTED":
       return "WhatsApp se ha desconectado. Vuelve a vincularlo.";
     case "NOT_ON_WHATSAPP":
@@ -119,7 +116,6 @@ function friendlyError(code: string | undefined) {
     case "FORBIDDEN":
       return "Tu usuario no tiene permiso para usar WhatsApp en el panel.";
     case "NO_AUTH":
-    case "AUTH_INVALID":
       return "Tu sesión ha caducado. Vuelve a entrar en el panel.";
     default:
       return code ? `No se pudo completar la acción (${code}).` : "No se pudo completar la acción.";
@@ -154,7 +150,6 @@ export default function CentralWhatsAppPanel() {
   const sb = useMemo(() => supabaseBrowser(), []);
   const [status, setStatus] = useState<StatusPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [readError, setReadError] = useState<{ chatId: string; message: string } | null>(null);
   const [busy, setBusy] = useState<"start" | "logout" | "send" | null>(null);
   const [chats, setChats] = useState<Chat[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -169,14 +164,7 @@ export default function CentralWhatsAppPanel() {
   const mountedRef = useRef(false);
   const lastRevRef = useRef<string | null>(null);
   const selectedRef = useRef<string | null>(null);
-  const chatsRef = useRef<Chat[]>([]);
-  const chatsRequestRef = useRef(0);
-  const messagesRequestRef = useRef(0);
-  const readingRef = useRef(new Set<string>());
   const autoStartRef = useRef(false);
-  const pollingRef = useRef(false);
-  const statusMutationRef = useRef(false);
-  const statusVersionRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
 
@@ -187,90 +175,53 @@ export default function CentralWhatsAppPanel() {
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
       if (!token) throw new Error("NO_AUTH");
-      const controller = new AbortController();
-      const timeout = init.method === "POST" && !path.startsWith("read&") ? null : window.setTimeout(() => controller.abort(), 28_000);
-      try {
-        const response = await fetch(`/api/central/whatsapp?action=${path}`, {
-          method: init.method || "GET",
-          cache: "no-store",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
-          },
-          body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
-          signal: controller.signal,
-        });
-        const json = await response.json().catch(() => ({ ok: false, error: `HTTP_${response.status}` }));
-        if (!response.ok || !json?.ok) throw new Error(json?.error || `HTTP_${response.status}`);
-        return json;
-      } catch (error) {
-        if (controller.signal.aborted) throw new Error("GATEWAY_TIMEOUT");
-        throw error;
-      } finally { if (timeout !== null) window.clearTimeout(timeout); }
+      const response = await fetch(`/api/central/whatsapp?action=${path}`, {
+        method: init.method || "GET",
+        cache: "no-store",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
+        },
+        body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+      });
+      const json = await response.json().catch(() => ({ ok: false, error: `HTTP_${response.status}` }));
+      if (!response.ok || !json?.ok) throw new Error(json?.error || `HTTP_${response.status}`);
+      return json;
     },
     [sb]
   );
 
   const loadChats = useCallback(async () => {
-    const version = statusVersionRef.current;
-    const request = ++chatsRequestRef.current;
     const json = await api("chats");
-    if (mountedRef.current && version === statusVersionRef.current && request === chatsRequestRef.current) {
-      const next = Array.isArray(json.chats) ? json.chats : [];
-      chatsRef.current = next;
-      setChats(next);
-      setReadError(previous => previous && next.some((chat: Chat) => chat.id === previous.chatId && chat.unread === 0) ? null : previous);
-    }
+    if (mountedRef.current) setChats(Array.isArray(json.chats) ? json.chats : []);
   }, [api]);
-
-  const markRead = useCallback(
-    async (chatId: string) => {
-      if (!mountedRef.current || selectedRef.current !== chatId || document.visibilityState !== "visible"
-        || readingRef.current.has(chatId) || !chatsRef.current.find(chat => chat.id === chatId)?.unread) return;
-      const version = statusVersionRef.current;
-      readingRef.current.add(chatId);
-      let confirmed = false;
-      try {
-        await api(`read&jid=${encodeURIComponent(chatId)}`, { method: "POST" });
-        if (!mountedRef.current || version !== statusVersionRef.current) return;
-        confirmed = true;
-        // Notify the global watcher only after the gateway confirms the read.
-        // Obtain current counts instead of clearing a newer arrival optimistically.
-        window.dispatchEvent(new Event("tc-whatsapp-changed"));
-        await loadChats();
-        if (mountedRef.current && version === statusVersionRef.current) setReadError(previous => previous?.chatId === chatId ? null : previous);
-      } catch (e: any) {
-        if (mountedRef.current && version === statusVersionRef.current) setReadError({ chatId, message: confirmed
-          ? `La lectura se confirmó, pero no se pudo actualizar el contador. ${friendlyError(e?.message)}`
-          : `No se pudo confirmar la lectura. El chat sigue pendiente. ${friendlyError(e?.message)}` });
-      } finally { readingRef.current.delete(chatId); }
-    },
-    [api, loadChats]
-  );
 
   const loadMessages = useCallback(
     async (chatId: string, showLoading = false) => {
-      const version = statusVersionRef.current;
-      const request = ++messagesRequestRef.current;
       if (showLoading) setMessagesLoading(true);
       try {
         const json = await api(`messages&jid=${encodeURIComponent(chatId)}&limit=150`);
-        if (mountedRef.current && selectedRef.current === chatId && version === statusVersionRef.current && request === messagesRequestRef.current) {
-          const next = Array.isArray(json.messages) ? json.messages : [];
-          setMessages(next);
-          if (next.length) await markRead(chatId);
-        }
+        if (mountedRef.current && selectedRef.current === chatId) setMessages(Array.isArray(json.messages) ? json.messages : []);
       } finally {
-        if (mountedRef.current && selectedRef.current === chatId && request === messagesRequestRef.current) setMessagesLoading(false);
+        if (mountedRef.current && showLoading) setMessagesLoading(false);
       }
     },
-    [api, markRead]
+    [api]
+  );
+
+  const markRead = useCallback(
+    async (chatId: string) => {
+      setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, unread: 0 } : c)));
+      try {
+        await api(`read&jid=${encodeURIComponent(chatId)}`, { method: "POST" });
+      } catch {
+        // No es grave: el contador se corregirá en el siguiente refresco.
+      }
+    },
+    [api]
   );
 
   const start = useCallback(async () => {
-    if (statusMutationRef.current) return;
-    statusMutationRef.current = true;
-    statusVersionRef.current += 1;
     setBusy("start");
     setError(null);
     try {
@@ -279,20 +230,14 @@ export default function CentralWhatsAppPanel() {
     } catch (e: any) {
       if (mountedRef.current) setError(friendlyError(e?.message));
     } finally {
-      statusMutationRef.current = false;
       if (mountedRef.current) setBusy(null);
     }
   }, [api]);
 
-  const pollStatus = useCallback(async (refreshSelected = false) => {
-    if (pollingRef.current || statusMutationRef.current) return;
-    pollingRef.current = true;
-    const version = statusVersionRef.current;
-    let sessionChecked = false;
+  const pollStatus = useCallback(async () => {
     try {
       const json: StatusPayload = await api("status");
-      if (!mountedRef.current || version !== statusVersionRef.current) return;
-      sessionChecked = true;
+      if (!mountedRef.current) return;
       setStatus(json);
       setError(null);
 
@@ -302,23 +247,19 @@ export default function CentralWhatsAppPanel() {
         void start();
       }
 
-      if (json.state === "connected" && json.rev && (json.rev !== lastRevRef.current || (refreshSelected && selectedRef.current))) {
+      if (json.state === "connected" && json.rev && json.rev !== lastRevRef.current) {
+        lastRevRef.current = json.rev;
         await loadChats();
         const current = selectedRef.current;
         if (current) await loadMessages(current);
-        lastRevRef.current = json.rev;
       }
       if (json.state !== "connected") lastRevRef.current = null;
     } catch (e: any) {
-      if (!mountedRef.current || version !== statusVersionRef.current) return;
+      if (!mountedRef.current) return;
       const code = String(e?.message || "");
-      // A failed status read cannot keep advertising a previously connected session.
-      if (!sessionChecked) {
-        setStatus({ ok: false, error: code });
-        lastRevRef.current = null;
-      }
+      setStatus((prev) => (code === "GATEWAY_NOT_CONFIGURED" ? { ok: false, error: code } : prev));
       setError(friendlyError(code));
-    } finally { pollingRef.current = false; }
+    }
   }, [api, loadChats, loadMessages, start]);
 
   useEffect(() => {
@@ -328,22 +269,17 @@ export default function CentralWhatsAppPanel() {
       if (document.visibilityState === "visible") void pollStatus();
     }, STATUS_POLL_MS);
     const onVisible = () => {
-      if (document.visibilityState === "visible") void pollStatus(true);
+      if (document.visibilityState === "visible") void pollStatus();
     };
     document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
-    window.addEventListener("online", onVisible);
     return () => {
       mountedRef.current = false;
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
-      window.removeEventListener("online", onVisible);
     };
   }, [pollStatus]);
 
-  // Only selecting a chat loads it. A successful visible message read may then
-  // acknowledge unread messages; opening the WhatsApp section alone never does.
+  // Al abrir un chat: cargar mensajes y marcarlo como leído.
   useEffect(() => {
     if (!selectedId) {
       setMessages([]);
@@ -352,8 +288,17 @@ export default function CentralWhatsAppPanel() {
     stickToBottomRef.current = true;
     setMessages([]);
     void loadMessages(selectedId, true).catch((e) => setError(friendlyError(e?.message)));
+    const chat = chats.find((c) => c.id === selectedId);
+    if (chat?.unread) void markRead(selectedId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
+
+  // Si llega un mensaje nuevo al chat abierto, se marca como leído.
+  useEffect(() => {
+    if (!selectedId || document.visibilityState !== "visible") return;
+    const chat = chats.find((c) => c.id === selectedId);
+    if (chat?.unread) void markRead(selectedId);
+  }, [chats, markRead, selectedId]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -361,30 +306,23 @@ export default function CentralWhatsAppPanel() {
   }, [messages]);
 
   const logout = useCallback(async () => {
-    if (statusMutationRef.current) return;
     const ok = window.confirm(
       "¿Cerrar la sesión de WhatsApp en el panel?\n\nSe desvinculará este número y aparecerá un QR nuevo para conectar otro."
     );
     if (!ok) return;
-    statusMutationRef.current = true;
-    statusVersionRef.current += 1;
     setBusy("logout");
     setError(null);
     try {
       const json = await api("logout", { method: "POST", body: { restart: true } });
       if (!mountedRef.current) return;
       setStatus(json);
-      chatsRef.current = [];
       setChats([]);
       setSelectedId(null);
       setMessages([]);
-      setReadError(null);
       lastRevRef.current = null;
-      window.dispatchEvent(new Event("tc-whatsapp-changed"));
     } catch (e: any) {
       if (mountedRef.current) setError(friendlyError(e?.message));
     } finally {
-      statusMutationRef.current = false;
       if (mountedRef.current) setBusy(null);
     }
   }, [api]);
@@ -404,7 +342,6 @@ export default function CentralWhatsAppPanel() {
     setDraft("");
     try {
       await api("send", { method: "POST", body: { jid: chatId, text } });
-      window.dispatchEvent(new Event("tc-whatsapp-changed"));
       await Promise.all([loadMessages(chatId), loadChats()]);
     } catch (e: any) {
       if (!mountedRef.current) return;
@@ -432,7 +369,6 @@ export default function CentralWhatsAppPanel() {
     setError(null);
     try {
       const json = await api("send", { method: "POST", body: { phone, text } });
-      window.dispatchEvent(new Event("tc-whatsapp-changed"));
       await loadChats();
       if (!mountedRef.current) return;
       setNewChatOpen(false);
@@ -460,9 +396,8 @@ export default function CentralWhatsAppPanel() {
 
   const selectedChat = chats.find((c) => c.id === selectedId) || null;
   const totalUnread = chats.reduce((sum, c) => sum + (c.unread || 0), 0);
-  const state = status?.ok ? status.state : undefined;
+  const state = status?.state;
   const notConfigured = status?.error === "GATEWAY_NOT_CONFIGURED";
-  const selectedReadError = readError?.chatId === selectedId ? readError : null;
 
   const badge = notConfigured
     ? { cls: styles.off, label: "Sin configurar" }
@@ -472,8 +407,6 @@ export default function CentralWhatsAppPanel() {
         ? { cls: styles.wait, label: "Esperando QR" }
         : state === "connecting"
           ? { cls: styles.wait, label: "Conectando…" }
-          : status?.ok === false
-            ? { cls: styles.off, label: "Sin confirmar" }
           : status
             ? { cls: styles.off, label: "Desconectado" }
             : { cls: styles.wait, label: "Comprobando…" };
@@ -491,7 +424,6 @@ export default function CentralWhatsAppPanel() {
               ? `Conectado como ${status.me.name || "WhatsApp"}${status.me.phone ? ` · ${formatPhone(status.me.phone)}` : ""}`
               : "Atiende y responde a las clientas desde el panel."}
           </p>
-          <p>Mantén encendido y con internet el PC que sostiene esta conexión. El mismo número se usará para las bienvenidas de Captación.</p>
         </div>
         <div className={styles.toolbar}>
           <span className={`${styles.badge} ${badge.cls}`}>
@@ -507,11 +439,10 @@ export default function CentralWhatsAppPanel() {
         </div>
       </header>
 
-      {(selectedReadError || error) && (
+      {error && (
         <div className={styles.error} role="alert">
-          <TriangleAlert size={16} /> <span>{selectedReadError?.message || error}</span>
-          {selectedReadError && <button type="button" onClick={() => void loadMessages(selectedReadError.chatId, true).catch(e => setError(friendlyError(e?.message)))} disabled={messagesLoading}>Reintentar lectura</button>}
-          <button type="button" onClick={() => { setError(null); setReadError(null); }} aria-label="Cerrar aviso">
+          <TriangleAlert size={16} /> <span>{error}</span>
+          <button type="button" onClick={() => setError(null)} aria-label="Cerrar aviso">
             <X size={14} />
           </button>
         </div>
@@ -521,8 +452,10 @@ export default function CentralWhatsAppPanel() {
         <div className={styles.card}>
           <h3>Falta conectar el servicio de WhatsApp</h3>
           <p>
-            El administrador debe activar el conector de WhatsApp en el PC. Después podrás escanear aquí el QR con el móvil del número que quieras usar.
+            Este apartado necesita el gateway de WhatsApp (carpeta <code>whatsapp-gateway</code> del proyecto) desplegado en un servidor
+            siempre encendido, y estas variables en Vercel:
           </p>
+          <pre>{`WHATSAPP_GATEWAY_URL=https://tu-gateway.ejemplo.com\nWHATSAPP_GATEWAY_SECRET=el-mismo-secreto-del-gateway`}</pre>
         </div>
       )}
 
@@ -540,7 +473,7 @@ export default function CentralWhatsAppPanel() {
             ) : (
               <div className={styles.qrPlaceholder}>
                 <QrCode size={46} />
-                <span>{status?.ok === false ? "No se pudo comprobar la sesión. Revisa la conexión del PC." : reasonText(status?.reason)}</span>
+                <span>{reasonText(status?.reason)}</span>
               </div>
             )}
           </div>
@@ -556,7 +489,8 @@ export default function CentralWhatsAppPanel() {
               </li>
             </ol>
             <p className={styles.hint}>
-              Si el QR caduca, genera uno nuevo. La sesión se conserva al cambiar de pestaña. Para cambiar de número, pulsa <strong>Cerrar sesión</strong> y escanea el nuevo QR con el otro móvil.
+              El código se renueva solo cada pocos segundos. Para cambiar de número más adelante, pulsa <strong>Cerrar sesión</strong> y
+              escanea el nuevo QR con el otro móvil.
             </p>
             {state !== "qr" && state !== "connecting" && (
               <button type="button" className={styles.primaryButton} onClick={start} disabled={busy !== null || !status}>
@@ -606,7 +540,7 @@ export default function CentralWhatsAppPanel() {
               <div className={styles.empty}>Cargando chats recientes… {Math.round(status.historyProgress)}%</div>
             )}
             {chats.length === 0 && (status?.historyProgress == null || status.historyProgress >= 100) && (
-              <div className={styles.empty}>Aún no hay chats. Los mensajes nuevos aparecerán aquí cuando se sincronicen.</div>
+              <div className={styles.empty}>Aún no hay chats. Los mensajes nuevos aparecerán aquí al instante.</div>
             )}
 
             <ul>

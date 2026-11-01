@@ -9,13 +9,10 @@ import CentralStatsCards, { type CentralStatsData } from "@/features/central/Cen
 import CentralDailyOverview, { type CentralDailyOverviewData, type RecentNotification, type RecentNotificationType } from "@/features/central/CentralDailyOverview";
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
 import CentralCompanion from "@/features/central/assistant/CentralCompanion";
-import type { PetId } from "@/lib/central-assistant";
-import type { CaptacionAttentionSnapshot } from "@/lib/captacion-attention";
 import CentralDateSelector from "@/features/central/CentralDateSelector";
 import { CentralThemeProvider } from "@/features/central/CentralTheme";
 import { useCentralXpData } from "@/features/central/useCentralXpData";
 import { useCentralFidelityData } from "@/features/central/useCentralFidelityData";
-import { useSocialAttention } from "@/features/central/useSocialAttention";
 import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
 import ClientRecoveryPanel from "@/features/central/ClientRecoveryPanel";
 import type { MyClientsView } from "@/features/central/MyClientsList";
@@ -29,7 +26,7 @@ import nextDynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import AttendanceIncidentCenter from "@/components/attendance/AttendanceIncidentCenter";
 import { supabaseBrowser } from "@/lib/supabase-browser";
-import { loadPanelIdentity, panelPathForRole, panelSessionRejected, redirectToLogin } from "@/lib/panel-access";
+import { loadPanelIdentity, panelPathForRole, redirectToLogin } from "@/lib/panel-access";
 import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/tc-events";
 import { useAttendance } from "@/hooks/useAttendance";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
@@ -40,7 +37,7 @@ import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationW
 import OperatorPanel from "@/components/panel/OperatorPanel";
 import OperationalInbox from "@/components/central/OperationalInbox";
 import StaffDirectChatPanel from "@/components/chat/StaffDirectChatPanel";
-import { BarChart3, BadgeEuro, Bell, CalendarDays, CheckSquare, Facebook, Gift, Headphones, Instagram, LayoutDashboard, Megaphone, MessageCircle, ShieldCheck, ShoppingBag, Sparkles, Star, Users, UsersRound, RotateCcw } from "lucide-react";
+import { BarChart3, BadgeEuro, Bell, CalendarDays, CheckSquare, Gift, Headphones, LayoutDashboard, Megaphone, MessageCircle, ShieldCheck, ShoppingBag, Sparkles, Star, Users, UsersRound, RotateCcw } from "lucide-react";
 
 const sb = supabaseBrowser();
 const tabLoading = () => <section className="tc-card" role="status"><div className="tc-sub">Preparando tu apartado…</div></section>;
@@ -57,7 +54,6 @@ const HabitualesPanel = nextDynamic(() => import("@/components/habituales/Habitu
 const RendimientoPanel = nextDynamic(() => import("@/components/rendimiento/RendimientoPanel"), { loading: tabLoading });
 const CentralTeamLivePanel = nextDynamic(() => import("@/features/central/CentralTeamLivePanel"), { loading: tabLoading });
 const CentralWhatsAppPanel = nextDynamic(() => import("@/features/central/CentralWhatsAppPanel"), { ssr: false, loading: tabLoading });
-const CentralInstagramPanel = nextDynamic(() => import("@/features/central/CentralInstagramPanel"), { ssr: false, loading: tabLoading });
 const CentralRafflePanel = nextDynamic(() => import("@/features/central/CentralRafflePanel"), {
   ssr: false,
   loading: () => <section className="tc-card"><div className="tc-sub">Preparando el sorteo…</div></section>,
@@ -89,8 +85,6 @@ const TABS = [
   "habituales",
   "ranking",
   "whatsapp",
-  "instagram",
-  "facebook",
 ] as const;
 
 type TabKey = typeof TABS[number];
@@ -128,8 +122,6 @@ const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
     ],
   },
   { key: "whatsapp", label: "WhatsApp", icon: MessageCircle, kicker: "Chats con clientas" },
-  { key: "instagram", label: "Instagram", icon: Instagram, kicker: "@tarotcelestialof" },
-  { key: "facebook", label: "Facebook", icon: Facebook, kicker: "Tarot Celestial" },
   { key: "crm", label: "CRM", icon: Users },
   { key: "sorteo", label: "Sorteo", icon: Gift },
   { key: "captacion", label: "Captación", icon: Megaphone },
@@ -264,21 +256,7 @@ function toRecentNotification(item: CentralNotification): RecentNotification {
 
 function CentralPage() {
   const [ok, setOk] = useState(false);
-  const [accessError, setAccessError] = useState<string | null>(null);
-  const [accessAttempt, setAccessAttempt] = useState(0);
   const [tab, setTab] = useState<TabKey>("panel");
-  const [summaryPet, setSummaryPet] = useState<PetId|null>(null);
-  const [companionOpenRequest, setCompanionOpenRequest] = useState(0);
-  const [captacionAttention, setCaptacionAttention] = useState({ count: 0, error: "", brand: "celestial" });
-  const handleCaptacionAttention = useCallback((next: CaptacionAttentionSnapshot) => {
-    setCaptacionAttention(previous => previous.count === next.count && previous.error === next.error && previous.brand === next.brand
-      ? previous : { count: next.count, error: next.error, brand: next.brand });
-  }, []);
-  const [whatsappAttention, setWhatsAppAttention] = useState({ count: 0, error: "" });
-  const handleWhatsAppAttention = useCallback((next: { count: number; error: string }) => {
-    setWhatsAppAttention(previous => previous.count === next.count && previous.error === next.error
-      ? previous : { count: next.count, error: next.error });
-  }, []);
   const notificationFeed = useCentralNotificationsFeed();
   const myInvoiceFeed = useMyInvoice(ok && (tab === "mi-factura" || tab === "central"));
   const searchParams = useSearchParams();
@@ -368,8 +346,8 @@ function CentralPage() {
     availableCoins: xpData?.coin_exchange.coin_balance || 0,
   };
 
-  const dailyActivity = xpData?.daily_activity.date === selectedDate ? xpData.daily_activity : undefined;
-  const realDailyActions = xpFeed.busy && !dailyActivity
+  const dailyActivity = xpData?.daily_activity;
+  const realDailyActions = xpFeed.busy
     ? [{ id: "daily-loading", label: "Cargando resumen de la fecha seleccionada…", rewardXp: 0 }]
     : dailyActivity?.activities.length
     ? dailyActivity.activities.map((activity) => {
@@ -399,7 +377,7 @@ function CentralPage() {
           detail: `${time} · ${description}${activity.origin ? ` · ${activity.origin}` : ""}`,
         };
       })
-    : [{ id: "daily-empty", label: "No hay actividad registrada en esta fecha", rewardXp: 0 }];
+    : [{ id: "daily-empty", label: "Todavía no hay actividad registrada hoy", rewardXp: 0 }];
 
   const centralDailyOverview: CentralDailyOverviewData = {
     dailySummary: {
@@ -410,15 +388,8 @@ function CentralPage() {
       dailyXp: dailyActivity?.total_xp || 0,
       dateLabel: selectedDate === todayKey ? "hoy" : "ese día",
       actions: realDailyActions,
-      performance: dailyActivity?.performance,
-      loading: !dailyActivity && !xpFeed.error,
-      error: xpFeed.error || undefined,
     },
     missions: (xpData?.missions?.active||[]).map(mission=>({id:mission.id,name:mission.name,description:mission.description,progress:mission.progress,target:mission.target_count,rewardXp:mission.xp_reward,completed:mission.completed,claimed:mission.claimed,periodKey:mission.period_key})),
-    notificationsLoading: notificationFeed.loading,
-    missionsUnavailable: xpData?.missions?.available === false,
-    notificationsError: notificationFeed.error || undefined,
-    notificationTotal: notificationFeed.summary.pending,
     notifications: notificationFeed.items
       .filter((item) => item.state !== "resolved")
       .slice()
@@ -429,7 +400,6 @@ function CentralPage() {
 
   const [connectedOperator, setConnectedOperator] = useState<any>(null);
   const themeWorkerId = String(connectedOperator?.worker?.id || connectedOperator?.id || connectedOperator?.user?.id || "");
-  const socialAttention = useSocialAttention(ok, themeWorkerId);
 
   useEffect(() => {
     if (!ok || tab !== "central") return;
@@ -614,6 +584,7 @@ function CentralPage() {
   const attendance = useAttendance();
   const attOnline = attendance.online;
   const attStatus = attendance.status;
+  const attBeatRef = useRef<any>(null);
 
   // ✅ outbound calls (central)
   const [obDate, setObDate] = useState(dayKeyNow());
@@ -667,7 +638,6 @@ function CentralPage() {
 
   useEffect(() => {
     let active = true;
-    setAccessError(null);
     (async () => {
       try {
         const me = await loadPanelIdentity(sb);
@@ -679,15 +649,11 @@ function CentralPage() {
         setOk(true);
       } catch (error) {
         if (!active) return;
-        if (panelSessionRejected(error)) {
-          redirectToLogin(error instanceof Error ? error.message : "session");
-          return;
-        }
-        setAccessError(error instanceof Error ? error.message : "No se pudo verificar el acceso. Vuelve a intentarlo.");
+        redirectToLogin(error instanceof Error ? error.message : "session");
       }
     })();
     return () => { active = false; };
-  }, [accessAttempt]);
+  }, []);
 
   useEffect(() => {
     if (!ok) return;
@@ -787,7 +753,94 @@ function CentralPage() {
     }
   }
 
-  // Attendance activity/heartbeat is shared by OpsProvider across all staff pages.
+  async function postAttendanceEvent(event_type: "online" | "offline" | "heartbeat", metaExtra: any = {}) {
+    try {
+      setAttMsg("");
+      setAttLoading(true);
+
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+
+      const res = await fetch("/api/attendance/event", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_type,
+          meta: { path: window.location.pathname, ...metaExtra },
+        }),
+      });
+
+      const j = await safeJson(res);
+
+      if (!j?._ok || !j?.ok) {
+        const err = String(j?.error || `HTTP ${j?._status}`);
+        if (err === "OUTSIDE_SHIFT") setAttMsg("⛔ Estás fuera de tu turno. No puedes conectarte ahora.");
+        else setAttMsg(`❌ ${err}`);
+        await loadAttendanceMe(true);
+        return;
+      }
+
+      if (event_type === "online") {
+        await fetch("/api/attendance/event", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event_type: "heartbeat",
+            meta: { path: window.location.pathname, immediate: true },
+          }),
+        }).catch(() => {});
+      }
+
+      await loadAttendanceMe(true);
+      setAttMsg("✅ Listo");
+      setTimeout(() => setAttMsg(""), 1000);
+    } catch (e: any) {
+      setAttMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      setAttLoading(false);
+    }
+  }
+
+  // ✅ Heartbeat SOLO si está online real
+  useEffect(() => {
+    if (!ok) return;
+
+    if (attBeatRef.current) {
+      clearInterval(attBeatRef.current);
+      attBeatRef.current = null;
+    }
+
+    if (!attOnline) return;
+
+    let stopped = false;
+
+    const start = async () => {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+
+      const ping = async () => {
+        if (stopped) return;
+        await fetch("/api/attendance/event", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ event_type: "heartbeat", meta: { path: window.location.pathname } }),
+        }).catch(() => {});
+      };
+
+      await ping();
+      attBeatRef.current = setInterval(ping, 30_000);
+    };
+
+    start();
+
+    return () => {
+      stopped = true;
+      if (attBeatRef.current) clearInterval(attBeatRef.current);
+      attBeatRef.current = null;
+    };
+  }, [ok, attOnline]);
 
   async function refreshRanking() {
     setRankMsg("");
@@ -1206,28 +1259,15 @@ function CentralPage() {
   }
 
   const centralNavItems = useMemo(
-    () => CENTRAL_NAV.map((item) => item.key === "notificaciones" ? { ...item, badge: notificationCount }
-      : item.key === "captacion" ? { ...item, badge: captacionAttention.count, badgeStale: !!captacionAttention.error,
-        kicker: captacionAttention.error ? "Recuento sin actualizar" : captacionAttention.count > 0 ? "Nuevos · atender ahora" : undefined }
-      : item.key === "whatsapp" ? { ...item, badge: whatsappAttention.count, badgeStale: !!whatsappAttention.error,
-        kicker: whatsappAttention.error ? "Recuento sin actualizar" : whatsappAttention.count > 0 ? "Mensajes sin leer" : item.kicker }
-      : item.key === "instagram" || item.key === "facebook" ? { ...item, badge: socialAttention[item.key].count, badgeStale: !!socialAttention[item.key].error,
-        kicker: socialAttention[item.key].error ? "Recuento sin actualizar" : socialAttention[item.key].configured === false ? "Sin conectar" : socialAttention[item.key].count > 0 ? "Pendientes de revisar" : item.kicker } : item),
-    [notificationCount, captacionAttention, whatsappAttention, socialAttention.instagram, socialAttention.facebook]
+    () => CENTRAL_NAV.map((item) => item.key === "notificaciones" ? { ...item, badge: notificationCount } : item),
+    [notificationCount]
   );
 
-  if (!ok) return (
-    <div style={{ padding: 40, minHeight: "100vh", display: "grid", placeItems: "center", color: "rgba(255,255,255,.92)" }}>
-      {accessError ? <div role="alert" style={{ maxWidth: 520, textAlign: "center" }}>
-        <p>{accessError}</p>
-        <button type="button" onClick={() => setAccessAttempt(attempt => attempt + 1)} style={{ marginTop: 16, padding: "12px 20px", borderRadius: 12, background: "#e5c276", color: "#23172f" }}>Reintentar acceso</button>
-      </div> : "Verificando acceso…"}
-    </div>
-  );
+  if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
   return (
     <CentralThemeProvider workerId={themeWorkerId} rank={xpProgress?.tier?.key}>
-      {ok && <CentralCompanion tab={tab} workerId={themeWorkerId} captacionEnabled={ok} whatsappEnabled={ok} onCaptacionAttentionChange={handleCaptacionAttention} onWhatsAppAttentionChange={handleWhatsAppAttention} onPetChange={setSummaryPet} openRequest={companionOpenRequest} clientId={tab === 'mis-clientas' ? searchParams?.get('cliente') : null} onOpenReservation={(id) => openReservaFromPopup({id})} onNavigate={(nextTab, clientId) => {
+      {ok && <CentralCompanion tab={tab} workerId={themeWorkerId} clientId={tab === 'mis-clientas' ? searchParams?.get('cliente') : null} onOpenReservation={(id) => openReservaFromPopup({id})} onNavigate={(nextTab, clientId) => {
         if (!TABS.includes(nextTab as TabKey) || HIDDEN_TELEPHONIST_TABS.has(nextTab as TabKey)) return;
         setTab(nextTab as TabKey);
         const params = new URLSearchParams(searchParams?.toString() || "");
@@ -1250,8 +1290,6 @@ function CentralPage() {
 
         <main className="tc-main" data-companion-section={tab}>
           <CentralProgressHeader
-            title={tab === "central" ? "Resumen de tu turno" : CENTRAL_NAV.flatMap(item => [item, ...(item.children || [])]).find(item => item.key === tab)?.label || "Tu central"}
-            subtitle={tab === "central" ? "Toda tu actividad, en un vistazo." : "Tu espacio de trabajo · Tarot Celestial"}
             progress={centralProgress}
             profile={centralProfile}
             onSync={() => { void xpFeed.load(); void fidelityFeed.load(); window.dispatchEvent(new Event("tc-my-clients-refresh")); }}
@@ -1315,9 +1353,6 @@ function CentralPage() {
               />
               <CentralDailyOverview
                 data={centralDailyOverview}
-                companionPet={summaryPet || undefined}
-                operatorName={centralProfile.name}
-                onOpenCompanion={() => setCompanionOpenRequest(value => value + 1)}
                 onViewAllMissions={() => handleSidebarTabChange("tu-sistema-xp-niveles")}
                 onClaimMission={xpFeed.claimMission}
                 onViewAllNotifications={() => handleSidebarTabChange("notificaciones")}
@@ -1567,13 +1602,10 @@ function CentralPage() {
           )}
 
           {tab === "whatsapp" && <CentralWhatsAppPanel />}
-          {tab === "instagram" && <CentralInstagramPanel provider="instagram" attention={socialAttention.instagram} />}
-          {tab === "facebook" && <CentralInstagramPanel provider="facebook" attention={socialAttention.facebook} />}
           {tab === "crm" && <CRMClientesPanel mode="central" showImportButton={false} />}
           {tab === "sorteo" && <CentralRafflePanel />}
           {tab === "captacion" && (
             <CaptacionPanel
-              onOpenWhatsApp={() => handleSidebarTabChange("whatsapp")}
               onOpenClient={(clienteId) => {
                 setTab("crm" as any);
                 window.setTimeout(() => {

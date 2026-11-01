@@ -93,7 +93,7 @@ export default function LoginPage() {
       else if (message === "AUTH_EMAIL_NOT_CONFIRMED") setErr("Debes confirmar tu correo antes de entrar. Si necesitas ayuda, contacta con Administración.");
       else if (message === "AUTH_ACCOUNT_BLOCKED") setErr("Tu cuenta tiene el acceso bloqueado. Contacta con Administración.");
       else if (message === "AUTH_CAPTCHA_FAILED") setErr("No se pudo completar la verificación de seguridad. Contacta con Administración.");
-      else if (message === "SUPABASE_TIMEOUT") setErr("La base de datos de Tarot Celestial no está respondiendo. El problema está en Supabase, no en tu contraseña.");
+      else if (message === "SUPABASE_TIMEOUT") setErr("La base de datos de Tarot Leonaris no está respondiendo. El problema está en Supabase, no en tu contraseña.");
       else if (message === "AUTH_SERVICE_UNAVAILABLE") setErr("El servicio de acceso no está disponible. Inténtalo de nuevo en unos segundos.");
       else if (/NetworkError|Failed to fetch|fetch resource/i.test(message)) {
         setErr("No se pudo conectar con el servidor del panel. Recarga la página e inténtalo de nuevo.");
@@ -120,12 +120,12 @@ export default function LoginPage() {
         <div className="tc-login-grid" />
       </div>
 
-      <section className="tc-login-hero" aria-label="Acceso Tarot Celestial">
+      <section className="tc-login-hero" aria-label="Acceso Tarot Leonaris">
         <div className="tc-login-brand-panel">
           <div className="tc-login-logo-wrap">
             <Image
               src="/Nuevo-logo-tarot.png"
-              alt="Tarot Celestial"
+              alt="Tarot Leonaris"
               width={118}
               height={118}
               priority
@@ -135,7 +135,7 @@ export default function LoginPage() {
 
           <div className="tc-login-kicker">Central Operativa Inteligente</div>
           <h1 className="tc-login-title">
-            Tarot Celestial
+            Tarot Leonaris
             <span>Control total de llamadas, chats y equipo.</span>
           </h1>
           
