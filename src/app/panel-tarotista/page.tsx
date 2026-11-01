@@ -33,18 +33,83 @@ type TabKey =
   | "checklist"
   | "chat";
 
-const TAROTISTA_NAV: ReadonlyArray<{ key: TabKey; label: string; kicker: string; icon: LucideIcon }> = [
-  { key: "resumen", label: "Resumen", kicker: "Centro de turno", icon: LayoutDashboard },
-  { key: "notificaciones", label: "Notificaciones", kicker: "Avisos y seguimiento", icon: BellRing },
-  { key: "clientes", label: "Clientes", kicker: "Listas y seguimiento", icon: Send },
-  { key: "chat", label: "Chat", kicker: "Central en directo", icon: MessageSquare },
-  { key: "bonos", label: "Bonos", kicker: "Captadas y tramos", icon: BadgeEuro },
-  { key: "rangos", label: "Rangos", kicker: "Categoría y progreso", icon: Star },
-  { key: "ranking", label: "Ranking", kicker: "Top del mes", icon: Trophy },
-  { key: "equipos", label: "Equipos", kicker: "Competición", icon: Flame },
-  { key: "checklist", label: "Checklist", kicker: "Turno actual", icon: ClipboardCheck },
-  { key: "facturas", label: "Factura", kicker: "Resumen mensual", icon: ReceiptText },
+const TAROTISTA_NAV: ReadonlyArray<{ key: TabKey; label: string; kicker: string; icon: LucideIcon; tone: string }> = [
+  { key: "resumen", label: "Resumen", kicker: "Centro de turno", icon: LayoutDashboard, tone: "violet" },
+  { key: "notificaciones", label: "Notificaciones", kicker: "Avisos y seguimiento", icon: BellRing, tone: "rose" },
+  { key: "clientes", label: "Clientes", kicker: "Listas y seguimiento", icon: UsersRound, tone: "cyan" },
+  { key: "chat", label: "Chat", kicker: "Central en directo", icon: MessageSquare, tone: "violet" },
+  { key: "bonos", label: "Bonos", kicker: "Captadas y tramos", icon: BadgeEuro, tone: "mint" },
+  { key: "rangos", label: "Rangos", kicker: "Categoría y progreso", icon: Star, tone: "gold" },
+  { key: "ranking", label: "Ranking", kicker: "Top del mes", icon: Trophy, tone: "gold" },
+  { key: "equipos", label: "Equipos", kicker: "Competición", icon: Flame, tone: "orange" },
+  { key: "checklist", label: "Checklist", kicker: "Turno actual", icon: ClipboardCheck, tone: "mint" },
+  { key: "facturas", label: "Factura", kicker: "Resumen mensual", icon: ReceiptText, tone: "blue" },
 ];
+
+const TAROTISTA_NAV_GROUPS: ReadonlyArray<{ title: string; keys: readonly TabKey[] }> = [
+  { title: "Mi turno", keys: ["resumen", "notificaciones", "checklist"] },
+  { title: "Clientes y equipo", keys: ["clientes", "chat", "equipos"] },
+  { title: "Progreso e ingresos", keys: ["bonos", "rangos", "ranking", "facturas"] },
+];
+
+function TarotistaSidebar({ activeTab, onTabChange, badges }: {
+  activeTab: TabKey;
+  onTabChange: (tab: TabKey) => void;
+  badges: Partial<Record<TabKey, number>>;
+}) {
+  return (
+    <aside className={`tc-sidebar ${panelStyles.sidebar}`}>
+      <div className={`tc-sidebar-card ${panelStyles.sidebarCard}`}>
+        <div className={panelStyles.sidebarHeading}>
+          <div className={panelStyles.sidebarTitle}>Tu panel tarotista</div>
+          <div className={panelStyles.sidebarSubtitle}>Turno, clientes y progreso</div>
+        </div>
+        <nav className={panelStyles.navigation} aria-label="Navegación de tarotistas">
+          {TAROTISTA_NAV_GROUPS.map((group) => (
+            <section key={group.title} className={panelStyles.navSection} aria-label={group.title}>
+              <h2 className={panelStyles.navSectionTitle}>{group.title}</h2>
+              <div className={panelStyles.navItems}>
+                {group.keys.map((key) => {
+                  const item = TAROTISTA_NAV.find((entry) => entry.key === key)!;
+                  const Icon = item.icon;
+                  const badge = Math.max(0, badges[key] || 0);
+                  const badgeLabel = key === "chat" ? `${badge} mensajes sin leer`
+                    : key === "checklist" ? `${badge} tareas pendientes`
+                    : key === "facturas" ? `${badge} incidencias pendientes`
+                    : `${badge} notificaciones pendientes`;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`${panelStyles.navButton} ${activeTab === key ? panelStyles.navActive : ""}`}
+                      data-tarotista-nav={key}
+                      data-tone={item.tone}
+                      aria-current={activeTab === key ? "page" : undefined}
+                      onClick={() => onTabChange(key)}
+                    >
+                      <span className={panelStyles.navMain}>
+                        <Icon className={panelStyles.navIcon} size={21} strokeWidth={1.7} aria-hidden="true" />
+                        <span className={panelStyles.navCopy}>
+                          <span className={panelStyles.navLabel}>{item.label}</span>
+                          <span className={panelStyles.navKicker}>{item.kicker}</span>
+                        </span>
+                      </span>
+                      {badge > 0 ? (
+                        <span className={panelStyles.navBadge} data-tone={key === "checklist" ? "amber" : "red"} aria-label={badgeLabel} title={badgeLabel}>
+                          {badge > 99 ? "99+" : badge}
+                        </span>
+                      ) : <span className={panelStyles.navDot} aria-hidden="true" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </nav>
+      </div>
+    </aside>
+  );
+}
 
 function monthKeyNow() {
   const d = new Date();
@@ -375,2247 +440,1601 @@ export default function Tarotista() {
   const clProgress = useMemo(() => {
     const rows = clRows || [];
     const total = rows.length;
-    const completed = rows.filter((r: any) => !!r.done || r.status === "completed" || r.completed === true).length;
-    const pct = total ? Math.round((completed / total) * 100) : 0;
-    return { total, completed, pct };
-  }, [clRows]);
-
-  const pendingChecklist = Math.max(0, clProgress.total - clProgress.completed);
-  const outboundPending = (obItems || []).filter((it: any) => String(it.current_status || "pending").toLowerCase() !== "done").length;
-
-  const outboundDashboard = useMemo(() => {
-    const rows = obItems || [];
-    const total = rows.length;
-    const completed = rows.filter((it: any) => outboundStatusInfo(it.current_status).group === "done").length;
-    const inProgress = rows.filter((it: any) => outboundStatusInfo(it.current_status).group === "progress").length;
-    const pending = Math.max(0, total - completed - inProgress);
-    const progress = total ? Math.round((completed / total) * 100) : 0;
-    return { total, completed, inProgress, pending, progress };
-  }, [obItems]);
-
-  const outboundVisibleItems = useMemo(() => {
-    const query = obSearch.trim().toLowerCase();
-    return (obItems || []).filter((it: any) => {
-      const info = outboundStatusInfo(it.current_status);
-      if (obFilter !== "all" && info.group !== obFilter) return false;
-      if (!query) return true;
-      return [it.customer_name, it.phone, it.last_note, info.label]
-        .map((value) => String(value || "").toLowerCase())
-        .some((value) => value.includes(query));
-    });
-  }, [obItems, obSearch, obFilter]);
-
-  const outboundRecentActivity = useMemo(() => {
-    return (obItems || [])
-      .filter((it: any) => !!it.last_call_at)
-      .slice()
-      .sort((a: any, b: any) => new Date(String(b.last_call_at)).getTime() - new Date(String(a.last_call_at)).getTime())
-      .slice(0, 5);
-  }, [obItems]);
-
-  const summaryFocus: Array<{
-    id: string;
-    label: string;
-    value: string;
-    hint: string;
-    tone: "violet" | "gold" | "red";
-    actionTab: TabKey;
-  }> = [
-    { id: "notif-incidents", label: "Avisos pendientes", value: String(incidents.length || 0), hint: incidents.length ? "Revisa la incidencia" : "Sin avisos críticos", tone: "red", actionTab: "notificaciones" },
-    { id: "notif-checklist", label: "Tareas del checklist", value: String(pendingChecklist), hint: pendingChecklist ? "Aún abiertas" : "Todo al día", tone: "gold", actionTab: "checklist" },
-    { id: "notif-clients", label: "Seguimiento clientes", value: String(outboundPending), hint: outboundPending ? "Casos por revisar" : "Sin casos pendientes", tone: "violet", actionTab: "clientes" },
-  ];
-
-  const notificationItems = useMemo(() => {
-    const rows: Array<{
-      id: string;
-      tone: "gold" | "violet" | "blue" | "red" | "green";
-      section: string;
-      title: string;
-      detail: string;
-      actionLabel: string;
-      actionTab: TabKey;
-      meta?: string;
-    }> = [];
-
-    rows.push({
-      id: "attendance",
-      tone: attOnline ? "green" : "gold",
-      section: "Estado del turno",
-      title: attOnline ? "Estás lista para recibir actividad" : "Conéctate para recibir actividad",
-      detail: attOnline ? `Estado actual: ${String(attStatus || "connected")}.` : "Si no te conectas, no podrás recibir llamadas ni seguimiento de central.",
-      actionLabel: "Ver resumen",
-      actionTab: "resumen",
-      meta: attOnline ? "Operativa activa" : "Acción recomendada",
-    });
-
-    if (chatUnread > 0) {
-      rows.push({
-        id: "chat",
-        tone: "blue",
-        section: "Comunicación",
-        title: `Tienes ${chatUnread} mensaje${chatUnread === 1 ? "" : "s"} sin leer`,
-        detail: "Revisa el chat con Central para no perder instrucciones o cambios.",
-        actionLabel: "Abrir chat",
-        actionTab: "chat",
-        meta: "En tiempo real",
-      });
-    }
-
-    if (pendingChecklist > 0) {
-      rows.push({
-        id: "checklist",
-        tone: "gold",
-        section: "Checklist",
-        title: `${pendingChecklist} tarea${pendingChecklist === 1 ? "" : "s"} del turno pendiente${pendingChecklist === 1 ? "" : "s"}`,
-        detail: "Completa el checklist para llevar el control del turno sin olvidos.",
-        actionLabel: "Ir al checklist",
-        actionTab: "checklist",
-        meta: `${clProgress.completed}/${clProgress.total} completadas`,
-      });
-    }
-
-    (obItems || []).slice(0, 4).forEach((it: any, idx: number) => {
-      const name = String(it.customer_name || "Cliente");
-      const status = String(it.current_status || "pending");
-      const note = String(it.last_note || "").trim();
-      rows.push({
-        id: `client-${it.id || idx}`,
-        tone: note ? "violet" : "blue",
-        section: "Seguimiento cliente",
-        title: `${name} · ${status}`,
-        detail: note || "Todavía no hay apunte del central. Revisa si necesitas hacer seguimiento.",
-        actionLabel: "Abrir clientes",
-        actionTab: "clientes",
-        meta: it.phone ? `📱 ${it.phone}` : "Lista del día",
-      });
-    });
-
-    (incidents || []).slice(0, 3).forEach((inc: any, idx: number) => {
-      rows.push({
-        id: `incident-${inc.id || idx}`,
-        tone: String(inc.kind || "") === "attendance_jornada" ? (Number(inc.meta?.pending_minutes || 0) > 0 ? "gold" : "green") : "red",
-        section: String(inc.kind || "") === "attendance_jornada" ? "Jornada" : "Incidencias",
-        title: String(inc.title || inc.reason || "Incidencia del mes"),
-        detail: String(inc.kind || "") === "attendance_jornada" ? `${inc.reason || "Incidencia de jornada"} · ${Number(inc.meta?.pending_minutes || 0)} min pendientes` : String(inc.reason || "Revisión recomendada desde el resumen de factura."),
-        actionLabel: "Ver incidencias",
-        actionTab: "facturas",
-        meta: String(inc.kind || "") === "attendance_jornada" ? `${Number(inc.meta?.recovered_minutes || 0)} min recuperados · sin impacto económico automático` : canSeeMoney ? `Impacto ${eur(Number(inc.amount || 0))}` : "Impacto oculto",
-      });
-    });
-
-    if (!rows.length) {
-      rows.push({
-        id: "all-clear",
-        tone: "green",
-        section: "Todo bajo control",
-        title: "No tienes avisos urgentes ahora mismo",
-        detail: "Tu panel está limpio. Puedes dedicarte a atender y revisar objetivos del mes.",
-        actionLabel: "Volver al resumen",
-        actionTab: "resumen",
-        meta: "Panel tranquilo",
-      });
-    }
-
-    return rows;
-  }, [attOnline, attStatus, chatUnread, pendingChecklist, clProgress.completed, clProgress.total, obItems, incidents, canSeeMoney]);
-
-  const notificationsCount = notificationItems.filter((item) => item.id !== "attendance" && item.id !== "all-clear").length + (attOnline ? 0 : 1);
-  const urgentNotificationsCount = notificationItems.filter((item) => item.tone === "red" || item.tone === "gold").length;
-  const notificationMainItems = notificationItems
-    .filter((item) => item.id !== "attendance" && item.id !== "all-clear")
-    .slice()
-    .sort((a, b) => {
-      const weight = { red: 0, gold: 1, violet: 2, blue: 3, green: 4 } as const;
-      return weight[a.tone] - weight[b.tone];
-    });
-
-  useEffect(() => {
-    const { data: sub } = sb.auth.onAuthStateChange((event, session) => {
-      const nextUserId = String(session?.user?.id || "");
-      const previousUserId = authUserRef.current;
-      authUserRef.current = nextUserId;
-      if (previousUserId !== null && previousUserId !== nextUserId) {
-        panelReadEpoch.current += 1;
-        setOk(false);
-        setPanelUserId("");
-        setMyWorkerId("");
-        setRank(null);
-        setInvoice(null);
-        setInvoiceLines([]);
-        setInvoiceInsights(null);
-        setIncidents([]);
-        setDataRefreshing(false);
-        setRankingRefreshing(false);
-        if (nextUserId) setAccessAttempt(value => value + 1);
-      }
-      if (event === "SIGNED_OUT" && !session) window.location.href = "/login";
-    });
-    return () => { panelReadEpoch.current += 1; sub.subscription.unsubscribe(); };
-  }, []);
-
-  useEffect(() => {
-    const onPop = () => setMonth(getMonthFromUrl());
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    setAccessError(null);
-    (async () => {
-      try {
-        const me = await loadPanelIdentity(sb);
-        if (!active) return;
-        if (String(me.role).toLowerCase() !== "tarotista") {
-          window.location.replace(panelPathForRole(me.role));
-          return;
-        }
-        const identityUserId = String((me.user as { id?: string } | undefined)?.id || "");
-        const identityWorkerId = String(me.id || "");
-        if (!identityUserId || !identityWorkerId || (authUserRef.current !== null && authUserRef.current !== identityUserId)) return;
-        authUserRef.current = identityUserId;
-        setPanelUserId(identityUserId);
-        setMyWorkerId(identityWorkerId);
-        setMonth(getMonthFromUrl());
-        setOk(true);
-      } catch (error) {
-        if (!active) return;
-        if (panelSessionRejected(error)) {
-          redirectToLogin(error instanceof Error ? error.message : "session");
-          return;
-        }
-        setAccessError(error instanceof Error ? error.message : "No se pudo verificar el acceso. Vuelve a intentarlo.");
-      }
-    })();
-    return () => { active = false; };
-  }, [accessAttempt]);
-
-  async function loadAttendanceMe(silent = false) {
-    if (attLoading && !silent) return;
-    if (!silent) {
-      setAttLoading(true);
-      setAttMsg("");
-    }
-    try {
-      attendance.refreshAttendance();
-      if (!silent) setAttMsg("");
-    } catch (e: any) {
-      if (!silent) setAttMsg(`❌ Estado: ${e?.message || "Error"}`);
-      setAttOnline(false);
-      setAttStatus("offline");
-    } finally {
-      if (!silent) setAttLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    setAttOnline(attendance.online);
-    setAttStatus(String(attendance.status || (attendance.online ? "working" : "offline")));
-  }, [attendance.online, attendance.status]);
-
-  async function postAttendanceEvent(eventType: "online" | "offline" | "break_start" | "bathroom_start") {
-    try {
-      setAttMsg("");
-      setAttLoading(true);
-      await attendance.changeAttendance(eventType);
-      setAttMsg("✅ Listo");
-      setTimeout(() => setAttMsg(""), 1000);
-    } catch (e: any) {
-      setAttMsg(e?.message === "SESSION_REQUIRED" ? "No se pudo verificar tu sesión. Vuelve a intentarlo." : e?.message || "Error");
-    } finally {
-      setAttLoading(false);
-    }
-  }
-
-  async function loadChecklist() {
-    if (clLoading) return;
-    setClLoading(true);
-    setClMsg("");
-    try {
-      const token = await getTokenSafe();
-      if (!token) return;
-
-      const res = await fetch("/api/checklists/my", { headers: { Authorization: `Bearer ${token}` } });
-      const j = await safeJson(res);
-
-      if (!j?._ok || !j?.ok) {
-        setClShiftKey("");
-        setClRows([]);
-        setClMsg(`❌ Checklist: ${j?.error || `HTTP ${j?._status}`}`);
-        return;
-      }
-
-      setClShiftKey(String(j.shift_key || ""));
-      setClRows(j.items || j.rows || []);
-      setClMsg(`✅ Checklist cargado (${(j.items || j.rows || []).length} items)`);
-    } catch (e: any) {
-      setClShiftKey("");
-      setClRows([]);
-      setClMsg(`❌ Checklist: ${e?.message || "Error"}`);
-    } finally {
-      setClLoading(false);
-    }
-  }
-
-  async function toggleChecklistItem(item: any) {
-    const item_key = String(item?.item_key || item?.key || item?.id || "");
-    if (!item_key) return;
-
-    try {
-      setClMsg("");
-      const token = await getTokenSafe();
-      if (!token) return;
-
-      const res = await fetch("/api/checklists/toggle", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ item_key }),
-      });
-
-      const j = await safeJson(res);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      await loadChecklist();
-    } catch (e: any) {
-      setClMsg(`❌ No se pudo marcar: ${e?.message || "Error"}`);
-    }
-  }
-
-  async function refresh(forMonth?: string) {
-    const epoch = panelReadEpoch.current;
-    const m = forMonth || month;
-    const current = () => panelReadEpoch.current === epoch && currentMonthRef.current === m;
-    try {
-      setDataRefreshing(true);
-      setMsg("");
-      const token = await getTokenSafe();
-      if (!token) return;
-
-      const sJ = await refreshStats(m);
-      const rRes = await fetch(`/api/rankings/monthly?month=${encodeURIComponent(m)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const incRes = await fetch(`/api/incidents/my?month=${encodeURIComponent(m)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const invRes = await fetch(`/api/invoices/my?month=${encodeURIComponent(m)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const rnkJ = await safeJson(rRes);
-      const incJ = await safeJson(incRes);
-      const invJ = await safeJson(invRes);
-
-      if (!current()) return;
-      setRank(rnkJ);
-
-      if (sJ) setTarotistaLevel(Number(sJ.worker?.tarotista_level || 1) === 2 ? 2 : 1);
-
-      if (incJ?._ok && incJ?.ok) setIncidents(incJ.incidents || []);
-      else setIncidents([]);
-
-      if (invJ?._ok && invJ?.ok) {
-        setInvoice(invJ.invoice || null);
-        setInvoiceLines(invJ.lines || []);
-        setInvoiceInsights(invJ.insights || null);
-      } else {
-        setInvoice(null);
-        setInvoiceLines([]);
-        setInvoiceInsights(null);
-      }
-
-      if ((sJ && sJ.ok === false) || (rnkJ && rnkJ.ok === false))
-        setMsg("⚠️ Hay un error cargando datos (mira consola / endpoint).");
-      if (incJ && incJ.ok === false) setMsg((p) => `${p ? p + " · " : ""}⚠️ Incidencias: ${incJ.error || "error"}`);
-      if (invJ && invJ.ok === false) setMsg((p) => `${p ? p + " · " : ""}⚠️ Factura: ${invJ.error || "error"}`);
-    } catch (e: any) {
-      if (current()) setMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      if (current()) setDataRefreshing(false);
-    }
-  }
-
-  async function refreshRanking(forMonth?: string, silent = false) {
-    const epoch = panelReadEpoch.current;
-    const m = forMonth || month;
-    const current = () => panelReadEpoch.current === epoch && currentMonthRef.current === m;
-    if (!silent) setRankingRefreshing(true);
-    try {
-      const token = await getTokenSafe();
-      if (!token) return;
-      const res = await fetch(`/api/rankings/monthly?month=${encodeURIComponent(m)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const json = await safeJson(res);
-      if (!current()) return;
-      if (!json?._ok || !json?.ok) {
-        if (!silent) setMsg(`⚠️ Ranking: ${json?.error || `HTTP ${json?._status}`}`);
-        return;
-      }
-      setRank(json);
-    } catch (error: any) {
-      if (!silent && current()) setMsg(`⚠️ Ranking: ${error?.message || "Error al actualizar"}`);
-    } finally {
-      if (!silent && current()) setRankingRefreshing(false);
-    }
-  }
-
-  async function changeAttendanceStatus(action: "connected" | "break" | "bathroom" | "offline") {
-    await postAttendanceEvent(action === "offline" ? "offline"
-      : action === "break" ? "break_start"
-      : action === "bathroom" ? "bathroom_start"
-      : "online");
-  }
-
-  async function refreshInvoiceOnly() {
-    const epoch = panelReadEpoch.current;
-    const m = month;
-    const current = () => panelReadEpoch.current === epoch && currentMonthRef.current === m;
-    try {
-      setMsg("");
-      const token = await getTokenSafe();
-      if (!token) return;
-      const headers = { Authorization: `Bearer ${token}` };
-      const [statsJson, invoiceResponse, incidentsResponse] = await Promise.all([
-        refreshStats(m),
-        fetch(`/api/invoices/my?month=${encodeURIComponent(month)}`, { headers }),
-        fetch(`/api/incidents/my?month=${encodeURIComponent(month)}`, { headers }),
-      ]);
-      const [invoiceJson, incidentsJson] = await Promise.all([safeJson(invoiceResponse), safeJson(incidentsResponse)]);
-      if (!current()) return;
-      if (!statsJson?.ok) throw new Error("No se pudieron actualizar las métricas");
-      if (!invoiceJson?._ok || !invoiceJson?.ok) throw new Error(invoiceJson?.error || "No se pudo actualizar la factura");
-      setInvoice(invoiceJson.invoice || null);
-      setInvoiceLines(invoiceJson.lines || []);
-      setInvoiceInsights(invoiceJson.insights || null);
-      if (incidentsJson?._ok && incidentsJson?.ok) setIncidents(incidentsJson.incidents || []);
-    } catch (error: any) {
-      if (current()) setMsg(`⚠️ Factura: ${error?.message || "Error"}`);
-    }
-  }
-
-  async function loadMyOutbound(silent = false) {
-    if (obLoading && !silent) return;
-    if (!silent) {
-      setObLoading(true);
-      setObMsg("");
-    }
-
-    try {
-      const token = await getTokenSafe();
-      if (!token) return;
-
-      const res = await fetch(`/api/me/outbound?date=${encodeURIComponent(obDate)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const j = await safeJson(res);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      setObBatch(j.batch || null);
-      const items = (j.batch?.outbound_batch_items || [])
-        .slice()
-        .sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0));
-      setObItems(items);
-
-      if (!silent) {
-        setObMsg(j.batch ? `✅ Lista cargada (${items.length})` : "ℹ️ Hoy no has enviado lista.");
-        setTimeout(() => setObMsg(""), 1200);
-      }
-    } catch (e: any) {
-      if (!silent) setObMsg(`❌ ${e?.message || "Error"}`);
-      setObBatch(null);
-      setObItems([]);
-    } finally {
-      if (!silent) setObLoading(false);
-    }
-  }
-
-  async function submitOutboundDraft() {
-    if (obSending) return;
-    setObSending(true);
-    setObMsg("");
-    try {
-      const token = await getTokenSafe();
-      if (!token) return;
-
-      const names = obDraft
-        .split("\n")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      if (!names.length) {
-        setObMsg("⚠️ Escribe al menos un nombre (1 por línea).");
-        return;
-      }
-
-      const items = names.map((customer_name, idx) => ({ customer_name, position: idx + 1, priority: 0 }));
-
-      const res = await fetch("/api/tarot/outbound/submit", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ batch_date: obDate, items }),
-      });
-      const j = await safeJson(res);
-
-      if (!j?._ok || !j?.ok) {
-        if (j?.error === "BATCH_ALREADY_EXISTS") {
-          setObMsg("⚠️ Ya enviaste lista hoy. Recargando…");
-          await loadMyOutbound(true);
-          return;
-        }
-        throw new Error(j?.error || `HTTP ${j?._status}`);
-      }
-
-      setObDraft("");
-      setObMsg("✅ Lista enviada");
-      await loadMyOutbound(true);
-    } catch (e: any) {
-      setObMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      setObSending(false);
-    }
-  }
-
-  async function loadMyChatThread(silent = false) {
-    if (!silent) {
-      setChatLoading(true);
-      setChatMsg("");
-    }
-    try {
-      const token = await getTokenSafe();
-      if (!token) return;
-
-      const res = await fetch("/api/tarot/chat/thread", { headers: { Authorization: `Bearer ${token}` } });
-      const j = await safeJson(res);
-
-      if (!j?._ok || !j?.ok) {
-        setThread(null);
-        setSelectedThreadId("");
-        if (!silent) setChatMsg(`⚠️ Chat no disponible: ${j?.error || `HTTP ${j?._status}`}`);
-        return;
-      }
-
-      const t = j.thread || j.row || j.data || null;
-      if (!t?.id) {
-        setThread(null);
-        setSelectedThreadId("");
-        if (!silent) setChatMsg("ℹ️ Aún no tienes chat abierto. Pulsa “Abrir chat”.");
-        return;
-      }
-
-      const normalized: ChatThread = {
-        id: String(t.id),
-        title: t.title != null ? String(t.title) : null,
-        last_message_text: t.last_message_text != null ? String(t.last_message_text) : null,
-        last_message_at: t.last_message_at != null ? String(t.last_message_at) : null,
-      };
-
-      setThread(normalized);
-      setSelectedThreadId(String(t.id));
-      if (!silent) setChatMsg("✅ Chat cargado");
-      if (!silent) setTimeout(() => setChatMsg(""), 900);
-    } catch (e: any) {
-      setThread(null);
-      setSelectedThreadId("");
-      if (!silent) setChatMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      if (!silent) setChatLoading(false);
-    }
-  }
-
-  async function openMyChat() {
-    setChatMsg("");
-    setChatLoading(true);
-    try {
-      const token = await getTokenSafe();
-      if (!token) return;
-
-      const res = await fetch("/api/tarot/chat/open", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      const j = await safeJson(res);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      const t = j.thread || j.row || j.data || null;
-      if (!t?.id) throw new Error("NO_THREAD");
-
-      setThread({ id: String(t.id), title: t.title != null ? String(t.title) : null });
-      setSelectedThreadId(String(t.id));
-      setChatMsg("✅ Chat abierto");
-      setTimeout(() => setChatMsg(""), 900);
-    } catch (e: any) {
-      setChatMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      setChatLoading(false);
-    }
-  }
-
-  async function loadChatMessages(threadId: string, silent = false) {
-    if (!threadId) return;
-    if (!silent) {
-      setChatLoading(true);
-      setChatMsg("");
-    }
-    try {
-      const token = await getTokenSafe();
-      if (!token) return;
-
-      const res = await fetch(`/api/tarot/chat/messages?thread_id=${encodeURIComponent(threadId)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const j = await safeJson(res);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      const list: ChatMessage[] = (j.messages || j.rows || []).map((m: any) => ({
-        id: String(m.id),
-        thread_id: String(m.thread_id || threadId),
-        sender_worker_id: m.sender_worker_id != null ? String(m.sender_worker_id) : null,
-        sender_display_name: m.sender_display_name != null ? String(m.sender_display_name) : null,
-        text: m.text != null ? String(m.text) : m.body != null ? String(m.body) : "",
-        created_at: m.created_at != null ? String(m.created_at) : null,
-      }));
-
-      list.sort((a, b) => {
-        const at = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const bt = b.created_at ? new Date(b.created_at).getTime() : 0;
-        return at - bt;
-      });
-
-      setMessages(list);
-      if (!silent) setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-    } catch (e: any) {
-      setMessages([]);
-      if (!silent) setChatMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      if (!silent) setChatLoading(false);
-    }
-  }
-
-  async function sendChatMessage() {
-    const text = msgText.trim();
-    if (!text) return;
-
-    const tid = selectedThreadId || thread?.id || "";
-    if (!tid) return;
-
-    const tmpId = `tmp-${Date.now()}`;
-    const optimistic: ChatMessage = {
-      id: tmpId,
-      thread_id: tid,
-      text,
-      created_at: new Date().toISOString(),
-      sender_worker_id: "me",
-      sender_display_name: "Yo",
-    };
-    setMessages((prev) => [...(prev || []), optimistic]);
-    setMsgText("");
-    setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-
-    try {
-      const token = await getTokenSafe();
-      if (!token) throw new Error("NO_AUTH");
-
-      const res = await fetch("/api/tarot/chat/send", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ thread_id: tid, text }),
-      });
-
-      const j = await safeJson(res);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      const saved = j.message || j.item || null;
-      if (saved?.id) {
-        const normalized: ChatMessage = {
-          id: String(saved.id),
-          thread_id: String(saved.thread_id || tid),
-          sender_worker_id: saved.sender_worker_id != null ? String(saved.sender_worker_id) : null,
-          sender_display_name: saved.sender_display_name != null ? String(saved.sender_display_name) : null,
-          text: saved.text != null ? String(saved.text) : saved.body != null ? String(saved.body) : text,
-          created_at: saved.created_at != null ? String(saved.created_at) : new Date().toISOString(),
-        };
-        setMessages((prev) => (prev || []).map((m) => (m.id === tmpId ? normalized : m)));
-      } else {
-        loadChatMessages(tid, true);
-      }
-    } catch (e: any) {
-      setMessages((prev) => (prev || []).filter((m) => m.id !== tmpId));
-      alert(`Error: ${e?.message || "ERR"}`);
-    }
-  }
-
-  useEffect(() => {
-    if (!ok) return;
-    refresh();
-    loadChecklist();
-    loadAttendanceMe(true);
-    loadMyOutbound(true);
-  }, [ok]);
-
-  useEffect(() => {
-    if (stats?.worker?.id === myWorkerId) setTarotistaLevel(Number(stats.worker.tarotista_level || 1) === 2 ? 2 : 1);
-  }, [stats, myWorkerId]);
-
-  useEffect(() => {
-    if (!ok) return;
-    if (tab === "checklist" || tab === "notificaciones") loadChecklist();
-  }, [tab, ok]);
-
-  useEffect(() => {
-    if (!ok) return;
-    if (tab === "clientes" || tab === "notificaciones") loadMyOutbound(false);
-  }, [tab, ok, obDate]);
-
-  useEffect(() => {
-    if (!ok || tab !== "rangos") return;
-    void refresh(month);
-    const onFocus = () => void refresh(month);
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [ok, tab, month]);
-
-  useEffect(() => {
-    if (!ok || tab !== "ranking") return;
-    void refreshRanking(month, true);
-    const onFocus = () => void refreshRanking(month, true);
-    const intervalId = window.setInterval(() => void refreshRanking(month, true), 45_000);
-    window.addEventListener("focus", onFocus);
-    return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener("focus", onFocus);
-    };
-  }, [ok, tab, month]);
-
-  useEffect(() => {
-    if (!ok) return;
-
-    if (obChannelRef.current) {
-      sb.removeChannel(obChannelRef.current);
-      obChannelRef.current = null;
-    }
-
-    const bid = obBatch?.id ? String(obBatch.id) : "";
-    if (!bid) return;
-
-    const ch = sb
-      .channel(`tarot-outbound-${bid}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "outbound_batch_items", filter: `batch_id=eq.${bid}` },
-        (payload) => {
-          const updated: any = payload.new;
-          setObItems((prev) =>
-            (prev || []).map((it: any) => (String(it.id) === String(updated.id) ? { ...it, ...updated } : it))
-          );
-        }
-      )
-      .subscribe();
-
-    obChannelRef.current = ch;
-
-    return () => {
-      sb.removeChannel(ch);
-      obChannelRef.current = null;
-    };
-  }, [ok, obBatch?.id]);
-
-  useEffect(() => {
-    if (!ok || !myWorkerId) return;
-
-    loadPendingCallPopup(myWorkerId);
-    loadActiveCall(myWorkerId);
-
-    if (popupChannelRef.current) {
-      sb.removeChannel(popupChannelRef.current);
-      popupChannelRef.current = null;
-    }
-
-    const ch = sb
-      .channel(`crm-call-popup-${myWorkerId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "crm_call_popups",
-          filter: `tarotista_worker_id=eq.${myWorkerId}`,
-        },
-        (payload) => {
-          const row: any = payload.new;
-          if (!row || row.visible === false) return;
-          setIncomingPopup(row);
-          setPopupOpen(true);
-        }
-      )
-      .subscribe();
-
-    popupChannelRef.current = ch;
-
-    return () => {
-      sb.removeChannel(ch);
-      popupChannelRef.current = null;
-    };
-  }, [ok, myWorkerId]);
-
-  async function loadActiveCall(workerId?: string) {
-    const wid = String(workerId || myWorkerId || "").trim();
-    if (!wid) return;
-
-    try {
-      const { data, error } = await sb
-        .from("crm_call_popups")
-        .select("*")
-        .eq("tarotista_worker_id", wid)
-        .eq("accepted", true)
-        .eq("closed", false)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (data) {
-        setActiveCall(data);
-        setCloseManualOverride(false);
-        setCloseFreeUsed(String(data?.minutos_free_pendientes ?? 0));
-        setCloseNormalesUsed(String(data?.minutos_normales_pendientes ?? 0));
-      } else {
-        setActiveCall(null);
-      }
-    } catch (e) {
-      console.error("ERROR CARGANDO LLAMADA ACTIVA CRM", e);
-    }
-  }
-
-  useEffect(() => {
-    if (!activeCall?.accepted_at) {
-      setActiveCallElapsed(0);
-      setCloseManualOverride(false);
-      return;
-    }
-
-    const sync = () => {
-      const started = new Date(String(activeCall.accepted_at)).getTime();
-      if (!Number.isFinite(started)) {
-        setActiveCallElapsed(0);
-        return;
-      }
-      const elapsedSeconds = Math.max(0, Math.floor((Date.now() - started) / 1000));
-      setActiveCallElapsed(elapsedSeconds);
-      if (!closeManualOverride) {
-        const elapsedMinutes = Math.ceil(elapsedSeconds / 60);
-        const maxFree = Number(activeCall?.minutos_free_pendientes || 0) || 0;
-        const maxNormal = Number(activeCall?.minutos_normales_pendientes || 0) || 0;
-        const autoFree = Math.min(maxFree, elapsedMinutes);
-        const remaining = Math.max(elapsedMinutes - autoFree, 0);
-        const autoNormal = Math.min(maxNormal, remaining);
-        setCloseFreeUsed(String(autoFree));
-        setCloseNormalesUsed(String(autoNormal));
-      }
-    };
-
-    sync();
-    const id = window.setInterval(sync, 1000);
-    return () => window.clearInterval(id);
-  }, [activeCall?.id, activeCall?.accepted_at, activeCall?.minutos_free_pendientes, activeCall?.minutos_normales_pendientes, closeManualOverride]);
-
-  async function acceptIncomingPopup() {
-    const popupId = incomingPopup?.id;
-    if (!popupId) return;
-
-    try {
-      setPopupBusy(true);
-      setCloseMsg("");
-
-      const token = await getTokenSafe();
-      if (!token) return;
-
-      const res = await fetch("/api/crm/call/accept", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ popup_id: popupId }),
-      });
-
-      const j = await safeJson(res);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      const popup = j.popup || incomingPopup;
-      setPopupOpen(false);
-      setIncomingPopup(null);
-      setActiveCall(popup);
-      setCloseManualOverride(false);
-      setCloseFreeUsed(String(popup?.minutos_free_pendientes ?? 0));
-      setCloseNormalesUsed(String(popup?.minutos_normales_pendientes ?? 0));
-      setCloseMsg("✅ Llamada aceptada");
-      setTimeout(() => setCloseMsg(""), 1200);
-    } catch (e: any) {
-      console.error("ERROR ACEPTANDO POPUP CRM", e);
-      setCloseMsg(`❌ ${e?.message || "Error aceptando llamada"}`);
-    } finally {
-      setPopupBusy(false);
-    }
-  }
-
-  async function closeActiveCall() {
-    const popupId = activeCall?.id;
-    if (!popupId) return;
-
-    try {
-      setCloseLoading(true);
-      setCloseMsg("");
-
-      const token = await getTokenSafe();
-      if (!token) return;
-
-      const consumidos_free =
-        Number(String(closeFreeUsed).replace(",", ".")) || 0;
-      const consumidos_normales =
-        Number(String(closeNormalesUsed).replace(",", ".")) || 0;
-
-      const res = await fetch("/api/crm/call/close", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          popup_id: popupId,
-          consumidos_free,
-          consumidos_normales,
-        }),
-      });
-
-      const j = await safeJson(res);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      setActiveCall(null);
-      setActiveCallElapsed(0);
-      setCloseManualOverride(false);
-      setCloseFreeUsed("0");
-      setCloseNormalesUsed("0");
-      setCloseMsg(
-        `✅ Llamada cerrada · Devueltos ${Number(j?.restantes_free || 0)} free y ${Number(
-          j?.restantes_normales || 0
-        )} normales`
-      );
-    } catch (e: any) {
-      setCloseMsg(`❌ ${e?.message || "Error cerrando llamada"}`);
-    } finally {
-      setCloseLoading(false);
-    }
-  }
-
-  async function loadPendingCallPopup(workerId?: string) {
-    const wid = String(workerId || myWorkerId || "").trim();
-    if (!wid) return;
-
-    try {
-      const { data, error } = await sb
-        .from("crm_call_popups")
-        .select("*")
-        .eq("tarotista_worker_id", wid)
-        .eq("visible", true)
-        .eq("accepted", false)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (data) {
-        setIncomingPopup(data);
-        setPopupOpen(true);
-      }
-    } catch (e) {
-      console.error("ERROR CARGANDO POPUP CRM", e);
-    }
-  }
-
-  async function closeIncomingPopup(markAccepted = false) {
-    if (markAccepted) {
-      await acceptIncomingPopup();
-      return;
-    }
-
-    const popupId = incomingPopup?.id;
-    if (!popupId) {
-      setPopupOpen(false);
-      setIncomingPopup(null);
-      return;
-    }
-
-    try {
-      setPopupBusy(true);
-
-      const { error } = await sb
-        .from("crm_call_popups")
-        .update({ visible: false })
-        .eq("id", popupId);
-
-      if (error) throw error;
-
-      setPopupOpen(false);
-      setIncomingPopup(null);
-    } catch (e) {
-      console.error("ERROR CERRANDO POPUP CRM", e);
-    } finally {
-      setPopupBusy(false);
-    }
-  }
-
-  async function respondInvoice(action: "accepted" | "rejected") {
-    try {
-      setMsg("");
-      const token = await getTokenSafe();
-      if (!token) return;
-
-      const r = await fetch("/api/invoices/respond", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          invoiceId: invoice?.id || "",
-          month,
-          status: action,
-          workerNote: ackNote,
-        }),
-      });
-
-      const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      setMsg(action === "accepted" ? "✅ Factura aceptada" : "✅ Factura rechazada");
-      await refresh();
-    } catch (e: any) {
-      setMsg(`❌ ${e?.message || "Error"}`);
-    }
-  }
-
-  if (!ok) return (
-    <div style={{ padding: 40, minHeight: "100vh", display: "grid", placeItems: "center", color: "rgba(255,255,255,.92)" }}>
-      {accessError ? <div role="alert" style={{ maxWidth: 520, textAlign: "center" }}>
-        <p>{accessError}</p>
-        <button type="button" onClick={() => setAccessAttempt(attempt => attempt + 1)} style={{ marginTop: 16, padding: "12px 20px", borderRadius: 12, background: "#e5c276", color: "#23172f" }}>Reintentar acceso</button>
-      </div> : "Verificando acceso…"}
-    </div>
-  );
-
-  return (
-    <PanelTheme rank={s?.tarotista_rango}>
-      <div className="tc-premium-bg" aria-hidden="true">
-        <div className="tc-premium-orb tc-premium-orb-one" />
-        <div className="tc-premium-orb tc-premium-orb-two" />
-        <div className="tc-premium-orb tc-premium-orb-three" />
-        <div className="tc-login-stars" />
-        <div className="tc-login-grid" />
-      </div>
-      <AppHeader />
-
-      {popupOpen && incomingPopup ? (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 1000,
-            background: "rgba(8, 6, 16, 0.76)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16,
-          }}
-        >
-          <div
-            className="tc-card"
-            style={{
-              width: "100%",
-              maxWidth: 560,
-              border: "1px solid rgba(215,181,109,0.35)",
-              boxShadow: "0 24px 80px rgba(0,0,0,0.45)",
-            }}
-          >
-            <div className="tc-title" style={{ fontSize: 20 }}>
-              📞 Llamada entrante
-            </div>
-            <div className="tc-hr" />
-
-            <div style={{ fontSize: 28, fontWeight: 900, lineHeight: 1.15 }}>
-              {[incomingPopup?.nombre, incomingPopup?.apellido].filter(Boolean).join(" ") || "Cliente"}
-            </div>
-
-            <div className="tc-sub" style={{ marginTop: 12, fontSize: 16 }}>
-              <b>{Number(incomingPopup?.minutos_free_pendientes || 0)}</b> minutos free · <b>{Number(incomingPopup?.minutos_normales_pendientes || 0)}</b> minutos cliente
-            </div>
-
-            <div className="tc-row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 18, flexWrap: "wrap" }}>
-              <button className="tc-btn" onClick={() => closeIncomingPopup(false)} disabled={popupBusy}>
-                {popupBusy ? "…" : "Cerrar"}
-              </button>
-              <button className="tc-btn tc-btn-ok" onClick={() => closeIncomingPopup(true)} disabled={popupBusy}>
-                {popupBusy ? "…" : "Aceptar"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {activeCall ? (
-        <div
-          style={{
-            position: "fixed",
-            right: 16,
-            bottom: 16,
-            zIndex: 900,
-            width: "min(520px, calc(100vw - 32px))",
-          }}
-        >
-          <div className="tc-card" style={{ border: "1px solid rgba(120,255,190,0.25)", boxShadow: "0 18px 48px rgba(0,0,0,0.38)" }}>
-            <div className="tc-title" style={{ fontSize: 18 }}>☎️ Llamada en curso</div>
-            <div className="tc-sub" style={{ marginTop: 6 }}>
-              {[activeCall?.nombre, activeCall?.apellido].filter(Boolean).join(" ") || "Cliente"}
-            </div>
-            <div className="tc-sub" style={{ marginTop: 8 }}>
-              Tiempo tarificado desde que aceptaste la transferencia: <b>{formatDuration(activeCallElapsed)}</b>
-            </div>
-
-            <div className="tc-hr" />
-
-            <div className="tc-grid-2">
-              <div>
-                <div className="tc-sub">Free enviados</div>
-                <div style={{ fontWeight: 900, fontSize: 22, marginTop: 6 }}>
-                  {Number(activeCall?.minutos_free_pendientes || 0)}
-                </div>
-              </div>
-              <div>
-                <div className="tc-sub">Normales enviados</div>
-                <div style={{ fontWeight: 900, fontSize: 22, marginTop: 6 }}>
-                  {Number(activeCall?.minutos_normales_pendientes || 0)}
-                </div>
-              </div>
-            </div>
-
-            <div className="tc-hr" />
-
-            <div className="tc-grid-2">
-              <div>
-                <div className="tc-sub">Minutos free reales</div>
-                <input
-                  className="tc-input"
-                  value={closeFreeUsed}
-                  onChange={(e) => { setCloseManualOverride(true); setCloseFreeUsed(e.target.value); }}
-                  placeholder="0"
-                  style={{ width: "100%", marginTop: 6 }}
-                />
-              </div>
-              <div>
-                <div className="tc-sub">Minutos normales reales</div>
-                <input
-                  className="tc-input"
-                  value={closeNormalesUsed}
-                  onChange={(e) => { setCloseManualOverride(true); setCloseNormalesUsed(e.target.value); }}
-                  placeholder="0"
-                  style={{ width: "100%", marginTop: 6 }}
-                />
-              </div>
-            </div>
-
-            <div className="tc-sub" style={{ marginTop: 12 }}>
-              Al cerrar, el sistema devolverá automáticamente a la ficha del cliente los minutos no consumidos.
-            </div>
-
-            <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
-              <button
-                className="tc-btn"
-                onClick={() => {
-                  setCloseManualOverride(false);
-                  const elapsedMinutes = Math.ceil(activeCallElapsed / 60);
-                  const maxFree = Number(activeCall?.minutos_free_pendientes || 0) || 0;
-                  const maxNormal = Number(activeCall?.minutos_normales_pendientes || 0) || 0;
-                  const autoFree = Math.min(maxFree, elapsedMinutes);
-                  const remaining = Math.max(elapsedMinutes - autoFree, 0);
-                  const autoNormal = Math.min(maxNormal, remaining);
-                  setCloseFreeUsed(String(autoFree));
-                  setCloseNormalesUsed(String(autoNormal));
-                }}
-                disabled={!activeCall}
-              >
-                Usar tiempo transcurrido
-              </button>
-
-              <div className="tc-row" style={{ justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
-                <button className="tc-btn tc-btn-danger" onClick={closeActiveCall} disabled={closeLoading}>
-                  {closeLoading ? "Cerrando..." : "Finalizar llamada"}
-                </button>
-              </div>
-            </div>
-
-            <div className="tc-sub" style={{ marginTop: 10 }}>{closeMsg || " "}</div>
-          </div>
-        </div>
-      ) : null}
-
-      {!ok ? (
-        <div className={panelStyles.loadingShell} aria-label="Cargando panel">
-          <div className={panelStyles.loadingPulse} />
-        </div>
-      ) : (
-        <div className="tc-shell tc-shell-premium">
-          <aside className="tc-sidebar">
-            <div className="tc-sidebar-card">
-              <div className="tc-sidebar-title">Panel tarotista</div>
-              <div className="tc-sidebar-nav">
-                {TAROTISTA_NAV.map((item) => {
-                  const Icon = item.icon;
-                  const badge = item.key === "chat"
-                    ? chatUnread
-                    : item.key === "notificaciones"
-                      ? notificationsCount
-                      : item.key === "checklist"
-                        ? Math.max(0, clProgress.total - clProgress.completed)
-                        : item.key === "facturas" ? incidents.length : 0;
-                  return (
-                    <button key={item.key} className={`tc-sidebtn ${tab === item.key ? "tc-sidebtn-active" : ""}`} onClick={() => setTab(item.key)}>
-                      <div className={panelStyles.navMain}>
-                        <span className={panelStyles.navIcon}><Icon size={17} /></span>
-                        <div className={panelStyles.navCopy}>
-                          <div className="tc-sidebtn-main">{item.label}</div>
-                          <div className="tc-sidebtn-kicker">{item.kicker}</div>
-                        </div>
-                      </div>
-                      {badge > 0 ? <span className={panelStyles.navBadge} data-tone={item.key === "checklist" ? "amber" : "red"}>{badge > 99 ? "99+" : badge}</span> : <span className="tc-sidebtn-dot" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </aside>
-
-          <main className="tc-main">
-            <div className="tc-container">
-              <TarotistaStatusHeader
-                workerName={stats?.worker?.display_name || "Tarotista"}
-                team={stats?.worker?.team}
-                month={month}
-                online={attOnline}
-                status={attStatus}
-                loading={attLoading || dataRefreshing}
-                message={attMsg || msg}
-                onMonthChange={(value) => {
-                  const nextMonth = value || monthKeyNow();
-                  setMonth(nextMonth);
-                  setMonthInUrl(nextMonth);
-                  void refresh(nextMonth);
-                }}
-                onRefresh={() => void refresh()}
-                onStatusChange={(action) => void changeAttendanceStatus(action)}
-              />
-
-            {tab === "chat" && <StaffDirectChatPanel />}
-            {false && (
-              <div className="tc-card">
-                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                  <div>
-                    <div className="tc-title">💬 Chat con Central</div>
-                    <div className="tc-sub" style={{ marginTop: 6 }}>
-                      Mensajes en tiempo real {chatMsg ? `· ${chatMsg}` : ""}
-                    </div>
-                  </div>
-
-                  <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                    <button className="tc-btn tc-btn-gold" onClick={() => loadMyChatThread(false)} disabled={chatLoading}>
-                      {chatLoading ? "Cargando…" : "Recargar"}
-                    </button>
-                    {!thread?.id ? (
-                      <button className="tc-btn tc-btn-ok" onClick={openMyChat} disabled={chatLoading}>
-                        🟢 Abrir chat
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="tc-hr" />
-
-                {!thread?.id ? (
-                  <div className="tc-sub">
-                    Aún no tienes chat abierto. Pulsa <b>“Abrir chat”</b>.
-                    <div style={{ marginTop: 6, opacity: 0.85 }}>
-                      (Si ya tienes endpoints con otro nombre, cambia estas rutas: <b>/api/tarot/chat/thread</b>,{" "}
-                      <b>/api/tarot/chat/open</b>, <b>/api/tarot/chat/messages</b>, <b>/api/tarot/chat/send</b>)
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    style={{
-                      border: "1px solid rgba(255,255,255,0.10)",
-                      borderRadius: 14,
-                      background: "rgba(255,255,255,0.03)",
-                      overflow: "hidden",
-                      display: "flex",
-                      flexDirection: "column",
-                      minHeight: 520,
-                    }}
-                  >
-                    <div style={{ padding: 12 }}>
-                      <div style={{ fontWeight: 900 }}>{thread?.title || "Chat con Central"}</div>
-                      <div className="tc-sub" style={{ marginTop: 6 }}>
-                        Thread: {selectedThreadId || thread?.id}
-                      </div>
-                    </div>
-
-                    <div className="tc-hr" style={{ margin: 0 }} />
-
-                    <div style={{ padding: 12, overflow: "auto", flex: 1, display: "grid", gap: 10 }}>
-                      {(messages || []).map((m) => {
-                        const who = m.sender_display_name || m.sender_worker_id || "—";
-                        const when = m.created_at ? new Date(m.created_at).toLocaleString("es-ES") : "";
-                        return (
-                          <div
-                            key={m.id}
-                            style={{
-                              border: "1px solid rgba(255,255,255,0.10)",
-                              borderRadius: 14,
-                              padding: 10,
-                              background: "rgba(255,255,255,0.02)",
-                            }}
-                          >
-                            <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                              <div style={{ fontWeight: 900 }}>{who}</div>
-                              <div className="tc-sub">{when}</div>
-                            </div>
-                            <div style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>{m.text || ""}</div>
-                          </div>
-                        );
-                      })}
-                      {(!messages || messages.length === 0) && <div className="tc-sub">No hay mensajes todavía.</div>}
-                      <div ref={msgEndRef} />
-                    </div>
-
-                    <div className="tc-hr" style={{ margin: 0 }} />
-
-                    <div style={{ padding: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <input
-                        className="tc-input"
-                        value={msgText}
-                        onChange={(e) => setMsgText(e.target.value)}
-                        placeholder="Escribe un mensaje…"
-                        style={{ flex: 1, minWidth: 240 }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            sendChatMessage();
-                          }
-                        }}
-                      />
-                      <button className="tc-btn tc-btn-gold" onClick={sendChatMessage} disabled={!msgText.trim()}>
-                        Enviar
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {tab === "resumen" && (
-              <div className={panelStyles.summaryPage}>
-                <section className={panelStyles.summaryHero}>
-                  <div className={panelStyles.summaryHeroGlow} aria-hidden="true" />
-                  <div className={panelStyles.summaryHeroCopy}>
-                    <div className={panelStyles.summaryEyebrow}>
-                      <span className={panelStyles.summaryHeroIcon}><Sparkles size={17} /></span>
-                      Centro operativo · tarotista
-                    </div>
-                    <h2>Hola, {String(stats?.worker?.display_name || "Tarotista").trim().split(/\s+/)[0] || "Tarotista"}</h2>
-                    <h3>Tu centro de control</h3>
-                    <p>Todo lo importante de tu turno, en un solo lugar.</p>
-                  </div>
-                  <div className={panelStyles.summaryPeriod}>
-                    <CalendarDays size={17} />
-                    <div>
-                      <small>Periodo seleccionado</small>
-                      <strong>{formatMonthLabel(month)}</strong>
-                    </div>
-                  </div>
-                </section>
-
-                <section className={panelStyles.summaryKpis} aria-label="Indicadores esenciales del turno">
-                  <article className={panelStyles.summaryKpi} data-tone={!attOnline ? "red" : (attStatus === "break" || attStatus === "bathroom") ? "blue" : "green"}>
-                    <div className={panelStyles.summaryKpiTop}>
-                      <span className={panelStyles.summaryKpiIcon}><Radio size={20} /></span>
-                      <span className={panelStyles.summaryKpiLabel}>Estado</span>
-                    </div>
-                    <strong>{attendanceStatusLabel(attStatus, attOnline)}</strong>
-                    <small>{attOnline ? "Estado real del turno" : "Conéctate cuando empieces"}</small>
-                    {!attOnline ? (
-                      <button className={panelStyles.summaryKpiAction} type="button" onClick={() => void changeAttendanceStatus("connected")}>Conectarme</button>
-                    ) : null}
-                  </article>
-
-                  <article className={panelStyles.summaryKpi} data-tone="blue">
-                    <div className={panelStyles.summaryKpiTop}>
-                      <span className={panelStyles.summaryKpiIcon}><PhoneCall size={20} /></span>
-                      <span className={panelStyles.summaryKpiLabel}>Llamadas</span>
-                    </div>
-                    <strong>{Number(s?.calls_total || 0)}</strong>
-                    <small>Total real del mes registrado</small>
-                  </article>
-
-                  <article className={panelStyles.summaryKpi} data-tone="violet">
-                    <div className={panelStyles.summaryKpiTop}>
-                      <span className={panelStyles.summaryKpiIcon}><Clock3 size={20} /></span>
-                      <span className={panelStyles.summaryKpiLabel}>Minutos</span>
-                    </div>
-                    <strong>{n2(s?.minutes_total || 0)}</strong>
-                    <small>Minutos acumulados del periodo</small>
-                  </article>
-
-                  <article className={panelStyles.summaryKpi} data-tone="teal">
-                    <div className={panelStyles.summaryKpiTop}>
-                      <span className={panelStyles.summaryKpiIcon}><UserRound size={20} /></span>
-                      <span className={panelStyles.summaryKpiLabel}>Captadas</span>
-                    </div>
-                    <strong>{captadas}</strong>
-                    <small>{tier.label}</small>
-                  </article>
-                </section>
-
-                <div className={panelStyles.summaryWorkspace}>
-                  <div className={panelStyles.coreBoard}>
-                    <OperationalInbox
-                      mode="tarotista"
-                      compact
-                      showSections={false}
-                      externalChatUnread={chatUnread}
-                      onAction={(action) => {
-                        if (action === "chat") setTab("chat");
-                        if (action === "calls") setTab("clientes");
-                        if (action === "incidents") setTab("notificaciones");
-                        if (action === "attendance") void changeAttendanceStatus("connected");
-                      }}
-                    />
-                  </div>
-
-                  <aside className={panelStyles.summaryRail} aria-label="Resumen operativo">
-                    <section className={panelStyles.focusCard}>
-                      <div className={panelStyles.heroKicker}>Radar operativo</div>
-                      <h3>Lo siguiente que debes mirar</h3>
-                      <p className={panelStyles.focusIntro}>Solo lo que requiere tu atención ahora.</p>
-                      <div className={panelStyles.focusList}>
-                        {summaryFocus.map((item) => (
-                          <button key={item.id} type="button" className={panelStyles.focusItem} data-tone={item.tone} onClick={() => setTab(item.actionTab)}>
-                            <div>
-                              <span>{item.label}</span>
-                              <strong>{item.value}</strong>
-                            </div>
-                            <small>{item.hint}</small>
-                          </button>
-                        ))}
-                      </div>
-                    </section>
-
-                    <section className={panelStyles.railCard}>
-                      <div className={panelStyles.railKicker}>Rendimiento real · {month}</div>
-                      <h3>Tu mes, de un vistazo</h3>
-                      <p>Todo resumido para entenderlo sin esfuerzo.</p>
-                      <div className={panelStyles.statGrid}>
-                        <div className={panelStyles.stat}><span>Llamadas</span><strong>{Number(s?.calls_total || 0)}</strong></div>
-                        <div className={panelStyles.stat}><span>Minutos</span><strong>{n2(s?.minutes_total || 0)}</strong></div>
-                        <div className={panelStyles.stat}><span>Captadas</span><strong>{captadas}</strong></div>
-                        <div className={panelStyles.stat}><span>Rango</span><strong>{myPublicRange}</strong></div>
-                      </div>
-                      <div className={panelStyles.progressRow}>
-                        <div className={panelStyles.progressMeta}><span>Cliente</span><strong>{pct(s?.pct_cliente || 0)}</strong></div>
-                        <div className={panelStyles.track}><span style={{ width: `${clampPct(Number(s?.pct_cliente || 0))}%` }} /></div>
-                      </div>
-                      <div className={panelStyles.progressRow}>
-                        <div className={panelStyles.progressMeta}><span>Repite</span><strong>{pct(s?.pct_repite || 0)}</strong></div>
-                        <div className={panelStyles.track}><span style={{ width: `${clampPct(Number(s?.pct_repite || 0))}%` }} /></div>
-                      </div>
-                      <button className={panelStyles.railButton} type="button" onClick={() => setTab("ranking")}>Ver estadísticas completas</button>
-                    </section>
-                  </aside>
-                </div>
-              </div>
-            )}
-
-            {tab === "notificaciones" && (
-              <div className={panelStyles.notificationsPage}>
-                <section className={panelStyles.notificationsHero}>
-                  <div className={panelStyles.notificationsHeroGlow} aria-hidden="true" />
-                  <div className={panelStyles.notificationsHeroCopy}>
-                    <div className={panelStyles.notificationsEyebrow}>
-                      <span className={panelStyles.notificationsHeroIcon}><BellRing size={17} /></span>
-                      Centro de avisos
-                    </div>
-                    <h2>Notificaciones y recordatorios</h2>
-                    <p>Todo lo importante del turno reunido en un solo lugar, fácil de entender y priorizar.</p>
-                  </div>
-
-                  <div className={panelStyles.notificationStats}>
-                    <div className={panelStyles.notificationStat} data-tone="violet">
-                      <span className={panelStyles.notificationStatIcon}><BellRing size={16} /></span>
-                      <div><small>Total</small><strong>{notificationsCount}</strong></div>
-                    </div>
-                    <div className={panelStyles.notificationStat} data-tone="red">
-                      <span className={panelStyles.notificationStatIcon}><AlertTriangle size={16} /></span>
-                      <div><small>Prioridad</small><strong>{urgentNotificationsCount}</strong></div>
-                    </div>
-                    <div className={panelStyles.notificationStat} data-tone="blue">
-                      <span className={panelStyles.notificationStatIcon}><UsersRound size={16} /></span>
-                      <div><small>Clientes</small><strong>{outboundPending}</strong></div>
-                    </div>
-                  </div>
-                </section>
-
-                <div className={panelStyles.notificationsGrid}>
-                  <section className={panelStyles.notificationsMain}>
-                    <article className={panelStyles.turnStatusCard} data-tone={attOnline ? "green" : "gold"}>
-                      <div className={panelStyles.turnStatusIcon}><Radio size={25} /></div>
-                      <div className={panelStyles.turnStatusCopy}>
-                        <div className={panelStyles.turnStatusTopline}>
-                          <span>Estado del turno</span>
-                          <strong><i /> {attOnline ? "Operativa activa" : "Acción recomendada"}</strong>
-                        </div>
-                        <h3>{attOnline ? "Estás lista para recibir actividad" : "Conéctate para recibir actividad"}</h3>
-                        <p>Estado actual: <b>{attendanceStatusLabel(attStatus, attOnline)}</b></p>
-                      </div>
-                      <button type="button" className={panelStyles.turnStatusAction} onClick={() => setTab("resumen")}>
-                        Ver resumen <ArrowRight size={15} />
-                      </button>
-                    </article>
-
-                    <div className={panelStyles.notificationsSectionHead}>
-                      <div>
-                        <span>Actividad importante</span>
-                        <h3>{notificationMainItems.length ? "Tus avisos del turno" : "Todo bajo control"}</h3>
-                      </div>
-                      <strong>{notificationMainItems.length} pendiente{notificationMainItems.length === 1 ? "" : "s"}</strong>
-                    </div>
-
-                    {notificationMainItems.length ? (
-                      <div className={panelStyles.notificationsList}>
-                        {notificationMainItems.map((item) => {
-                          const isChecklist = item.id === "checklist";
-                          const isIncident = item.id.startsWith("incident-");
-                          return (
-                            <article key={item.id} className={panelStyles.notificationCard} data-tone={item.tone}>
-                              <div className={panelStyles.notificationCardAccent} aria-hidden="true" />
-                              <div className={panelStyles.notificationCardIcon}><NotificationGlyph id={item.id} /></div>
-                              <div className={panelStyles.notificationCardBody}>
-                                <div className={panelStyles.notificationMeta}>
-                                  <span>{item.section}</span>
-                                  {item.meta ? <strong>{item.meta}</strong> : null}
-                                </div>
-                                <h3>{item.title}</h3>
-                                <p>{item.detail}</p>
-                                {isChecklist ? (
-                                  <div className={panelStyles.notificationProgress}>
-                                    <div><span>Progreso del turno</span><strong>{clProgress.completed}/{clProgress.total}</strong></div>
-                                    <div className={panelStyles.notificationProgressTrack}><i style={{ width: `${clProgress.pct}%` }} /></div>
-                                  </div>
-                                ) : null}
-                                {isIncident ? (
-                                  <div className={panelStyles.notificationSignal}><AlertTriangle size={14} /> Revisión recomendada</div>
-                                ) : null}
-                              </div>
-                              <button type="button" className={panelStyles.notificationAction} onClick={() => setTab(item.actionTab)}>
-                                {item.actionLabel} <ArrowRight size={15} />
-                              </button>
-                            </article>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className={panelStyles.notificationsEmpty}>
-                        <span><CheckCircle2 size={30} /></span>
-                        <div>
-                          <strong>Todo bajo control</strong>
-                          <p>No tienes avisos pendientes. Puedes continuar con tu turno con tranquilidad.</p>
-                        </div>
-                      </div>
-                    )}
-                  </section>
-
-                  <aside className={panelStyles.notificationsAside}>
-                    <section className={panelStyles.missionCard}>
-                      <div className={panelStyles.sideCardHeading}>
-                        <span className={panelStyles.sideCardIcon} data-tone="gold"><Sparkles size={18} /></span>
-                        <div><small>Cómo usar este panel</small><h3>Orden recomendado</h3></div>
-                      </div>
-                      <div className={panelStyles.missionPath}>
-                        <button type="button" onClick={() => setTab("notificaciones")} className={panelStyles.missionStep} data-state="current">
-                          <span>1</span><div><strong>Revisar avisos</strong><small>Ahora</small></div>
-                        </button>
-                        <button type="button" onClick={() => setTab("clientes")} className={panelStyles.missionStep}>
-                          <span>2</span><div><strong>Seguir clientes</strong><small>Después</small></div>
-                        </button>
-                        <button type="button" onClick={() => setTab("checklist")} className={panelStyles.missionStep}>
-                          <span>3</span><div><strong>Completar checklist</strong><small>Antes de cerrar</small></div>
-                        </button>
-                      </div>
-                    </section>
-
-                    <section className={panelStyles.quickActionsCard}>
-                      <div className={panelStyles.sideCardHeading}>
-                        <span className={panelStyles.sideCardIcon} data-tone="violet"><Sparkles size={18} /></span>
-                        <div><small>Acciones rápidas</small><h3>Accesos directos</h3></div>
-                      </div>
-                      <div className={panelStyles.quickActionGrid}>
-                        <button type="button" onClick={() => setTab("clientes")} className={panelStyles.quickAction}>
-                          <span data-tone="violet"><UsersRound size={18} /></span>
-                          <div><strong>Clientes</strong><small>Gestionar seguimientos</small></div>
-                          <ArrowRight size={15} />
-                        </button>
-                        <button type="button" onClick={() => setTab("chat")} className={panelStyles.quickAction}>
-                          <span data-tone="blue"><MessageSquare size={18} /></span>
-                          <div><strong>Chat</strong><small>Central en directo</small></div>
-                          <ArrowRight size={15} />
-                        </button>
-                        <button type="button" onClick={() => setTab("checklist")} className={panelStyles.quickAction}>
-                          <span data-tone="gold"><ClipboardCheck size={18} /></span>
-                          <div><strong>Checklist</strong><small>{clProgress.total ? `${clProgress.completed}/${clProgress.total} completadas` : "Sin tareas"}</small></div>
-                          <ArrowRight size={15} />
-                        </button>
-                      </div>
-                    </section>
-
-                    <section className={panelStyles.shiftPulseCard}>
-                      <div className={panelStyles.shiftPulseTop}>
-                        <span><Clock3 size={17} /> Turno actual</span>
-                        <strong>{pendingChecklist ? `${pendingChecklist} tareas` : "En orden"}</strong>
-                      </div>
-                      <div className={panelStyles.shiftPulseTrack}><i style={{ width: `${clProgress.pct}%` }} /></div>
-                      <p>{clProgress.total ? `${clProgress.completed} de ${clProgress.total} tareas completadas.` : "No hay tareas de checklist asignadas."}</p>
-                    </section>
-                  </aside>
-                </div>
-              </div>
-            )}
-
-            {tab === "clientes" && (
-              <div className={panelStyles.clientsHub}>
-                <section className={panelStyles.clientsHero}>
-                  <div className={panelStyles.clientsHeroCopy}>
-                    <span className={panelStyles.clientsHeroIcon}><UsersRound size={24} /></span>
-                    <div>
-                      <small>Centro operativo · seguimiento diario</small>
-                      <h2>Clientes · Centro de seguimiento</h2>
-                      <p>Organiza, envía y controla las clientas de tu jornada desde una única vista.</p>
-                    </div>
-                  </div>
-
-                  <div className={panelStyles.clientsHeroControls}>
-                    <label className={panelStyles.clientsDateControl}>
-                      <span><CalendarDays size={15} /> Día de trabajo</span>
-                      <input type="date" value={obDate} onChange={(e) => setObDate(e.target.value)} />
-                    </label>
-                    <button type="button" className={panelStyles.clientsRefreshButton} onClick={() => loadMyOutbound(false)} disabled={obLoading}>
-                      <RefreshCw size={16} className={obLoading ? panelStyles.spin : ""} />
-                      {obLoading ? "Actualizando" : "Actualizar"}
-                    </button>
-                    {obBatch?.id ? (
-                      <div className={panelStyles.clientsSyncBadge} title="Los cambios de Central se reciben mediante Supabase Realtime">
-                        <Radio size={14} />
-                        <div><strong>Sincronizado</strong><small>Actualización en vivo</small></div>
-                      </div>
-                    ) : null}
-                  </div>
-                </section>
-
-                {obMsg ? <div className={panelStyles.clientsMessage}>{obMsg}</div> : null}
-
-                <section className={panelStyles.clientsKpis} aria-label="Resumen de seguimiento">
-                  <article className={panelStyles.clientsKpi} data-tone="violet">
-                    <span><UsersRound size={20} /></span>
-                    <div><small>Clientas del día</small><strong>{outboundDashboard.total}</strong><p>{formatOutboundDate(obDate)}</p></div>
-                  </article>
-                  <article className={panelStyles.clientsKpi} data-tone="gold">
-                    <span><Clock3 size={20} /></span>
-                    <div><small>Pendientes</small><strong>{outboundDashboard.pending}</strong><p>Requieren seguimiento</p></div>
-                  </article>
-                  <article className={panelStyles.clientsKpi} data-tone="blue">
-                    <span><Activity size={20} /></span>
-                    <div><small>En curso</small><strong>{outboundDashboard.inProgress}</strong><p>Gestión activa</p></div>
-                  </article>
-                  <article className={panelStyles.clientsKpi} data-tone="green">
-                    <span><CheckCircle2 size={20} /></span>
-                    <div><small>Completadas</small><strong>{outboundDashboard.completed}</strong><p>Marcadas como Done</p></div>
-                  </article>
-                </section>
-
-                <section className={panelStyles.clientsProgressCard}>
-                  <div className={panelStyles.clientsProgressTop}>
-                    <div>
-                      <small>Progreso del día</small>
-                      <h3>{outboundDashboard.completed} de {outboundDashboard.total} clientas completadas</h3>
-                    </div>
-                    <strong>{outboundDashboard.progress}%</strong>
-                  </div>
-                  <div className={panelStyles.clientsProgressTrack} aria-label={`${outboundDashboard.progress}% completado`}>
-                    <span style={{ width: `${outboundDashboard.progress}%` }} />
-                  </div>
-                  <p>{outboundDashboard.total ? `${Math.max(0, outboundDashboard.total - outboundDashboard.completed)} clientas siguen abiertas en la jornada.` : "Cuando envíes una lista, aquí verás el avance real del día."}</p>
-                </section>
-
-                <div className={panelStyles.clientsWorkspace}>
-                  <main className={panelStyles.clientsMainColumn}>
-                    <section className={panelStyles.clientsListCard}>
-                      <header className={panelStyles.clientsSectionHeader}>
-                        <div>
-                          <small>Seguimiento operativo</small>
-                          <h3>Clientas de hoy</h3>
-                          <p>{obBatch?.note ? `Nota del envío: ${obBatch.note}` : "Estados y apuntes actualizados por Central."}</p>
-                        </div>
-                        <span className={panelStyles.clientsCountChip}>{outboundDashboard.total} total</span>
-                      </header>
-
-                      <div className={panelStyles.clientsToolbar}>
-                        <label className={panelStyles.clientsSearch}>
-                          <Search size={17} />
-                          <input
-                            value={obSearch}
-                            onChange={(e) => setObSearch(e.target.value)}
-                            placeholder="Buscar por nombre, teléfono, estado o apunte..."
-                            aria-label="Buscar clientas"
-                          />
-                        </label>
-                        <div className={panelStyles.clientsFilters} aria-label="Filtrar clientas">
-                          {([
-                            ["all", "Todas"],
-                            ["pending", "Pendientes"],
-                            ["progress", "En curso"],
-                            ["done", "Completadas"],
-                          ] as Array<[OutboundFilter, string]>).map(([key, label]) => (
-                            <button
-                              type="button"
-                              key={key}
-                              className={obFilter === key ? panelStyles.clientsFilterActive : ""}
-                              onClick={() => setObFilter(key)}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {obLoading && !obBatch ? (
-                        <div className={panelStyles.clientsSkeletonList} aria-label="Cargando clientas">
-                          {[0, 1, 2].map((item) => <span key={item} />)}
-                        </div>
-                      ) : !obBatch ? (
-                        <div className={panelStyles.clientsEmptyState}>
-                          <span><UsersRound size={30} /></span>
-                          <div><strong>No hay clientas asignadas este día</strong><p>Cuando envíes una nueva lista aparecerá aquí y sus cambios se actualizarán automáticamente.</p></div>
-                        </div>
-                      ) : outboundVisibleItems.length === 0 ? (
-                        <div className={panelStyles.clientsEmptyState}>
-                          <span><Search size={28} /></span>
-                          <div><strong>No hay resultados con este filtro</strong><p>Cambia el filtro o la búsqueda para volver a ver la lista.</p></div>
-                        </div>
-                      ) : (
-                        <div className={panelStyles.clientsCards}>
-                          {outboundVisibleItems.map((it: any) => {
-                            const info = outboundStatusInfo(it.current_status);
-                            const StatusIcon = info.Icon;
-                            const eventTime = it.last_call_at || obBatch?.created_at || null;
-                            return (
-                              <article key={it.id} className={panelStyles.clientCard} data-tone={info.tone}>
-                                <div className={panelStyles.clientStatusRail} />
-                                <div className={panelStyles.clientAvatar} data-tone={info.tone}>{clientInitials(it.customer_name)}</div>
-                                <div className={panelStyles.clientCardBody}>
-                                  <div className={panelStyles.clientCardTop}>
-                                    <div>
-                                      <h4>{it.customer_name || "Clienta sin nombre"}</h4>
-                                      {it.phone ? <span className={panelStyles.clientPhone}>📱 {it.phone}</span> : <span className={panelStyles.clientMuted}>Sin teléfono registrado</span>}
-                                    </div>
-                                    <span className={panelStyles.clientStatus} data-tone={info.tone}><StatusIcon size={14} /> {info.label}</span>
-                                  </div>
-
-                                  <div className={panelStyles.clientMetaRow}>
-                                    {eventTime ? <span><Clock3 size={13} /> {formatOutboundTime(eventTime)} {relativeOutboundTime(eventTime) ? `· ${relativeOutboundTime(eventTime)}` : ""}</span> : null}
-                                    {it.last_called_by?.display_name ? <span><UserRound size={13} /> {it.last_called_by.display_name}</span> : null}
-                                  </div>
-
-                                  {it.last_note ? (
-                                    <div className={panelStyles.clientNote}><MessageSquare size={15} /><div><small>Apunte de Central</small><p>{it.last_note}</p></div></div>
-                                  ) : (
-                                    <div className={panelStyles.clientNoteMuted}><MessageSquare size={14} /> Aún sin apunte de Central.</div>
-                                  )}
-                                </div>
-                              </article>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </section>
-                  </main>
-
-                  <aside className={panelStyles.clientsSideColumn}>
-                    <section className={panelStyles.clientsAddCard}>
-                      <div className={panelStyles.clientsSideHeading}>
-                        <span data-tone="violet"><Send size={18} /></span>
-                        <div><small>Herramienta secundaria</small><h3>Añadir clientas</h3></div>
-                      </div>
-
-                      {!obBatch ? (
-                        <>
-                          <p>Escribe una lista de nombres, uno por línea, para enviarla al seguimiento de <strong>{formatOutboundDate(obDate)}</strong>.</p>
-                          <textarea
-                            value={obDraft}
-                            onChange={(e) => setObDraft(e.target.value)}
-                            placeholder={"Ana Pérez\nLuis Gómez\nMaría Sánchez"}
-                            aria-label="Lista de clientas"
-                          />
-                          <button type="button" className={panelStyles.clientsSendButton} onClick={submitOutboundDraft} disabled={obSending}>
-                            <Send size={16} /> {obSending ? "Enviando…" : "Enviar lista"}
-                          </button>
-                        </>
-                      ) : (
-                        <div className={panelStyles.clientsListSent}>
-                          <span><CheckCircle2 size={22} /></span>
-                          <div><strong>Lista del día enviada</strong><p>La lista ya está activa. Para conservar el flujo actual, el envío queda bloqueado una vez creada.</p></div>
-                          <small>Estado: {String(obBatch.status || "submitted")}</small>
-                        </div>
-                      )}
-                    </section>
-
-                    <section className={panelStyles.clientsActivityCard}>
-                      <div className={panelStyles.clientsSideHeading}>
-                        <span data-tone="blue"><Activity size={18} /></span>
-                        <div><small>Últimos cambios reales</small><h3>Actividad reciente</h3></div>
-                      </div>
-
-                      {outboundRecentActivity.length ? (
-                        <div className={panelStyles.clientsTimeline}>
-                          {outboundRecentActivity.map((it: any) => {
-                            const info = outboundStatusInfo(it.current_status);
-                            const StatusIcon = info.Icon;
-                            return (
-                              <div key={`activity-${it.id}`} className={panelStyles.clientsTimelineItem} data-tone={info.tone}>
-                                <span><StatusIcon size={13} /></span>
-                                <div>
-                                  <strong>{it.customer_name || "Clienta"}</strong>
-                                  <p>{info.label}{it.last_note ? ` · ${it.last_note}` : ""}</p>
-                                  <small>{formatOutboundTime(it.last_call_at)} · {relativeOutboundTime(it.last_call_at)}</small>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className={panelStyles.clientsActivityEmpty}>Aún no hay actividad registrada por Central para este día.</div>
-                      )}
-                    </section>
-
-                    <div className={panelStyles.clientsAmbientLine}>Conecta · acompaña · haz seguimiento</div>
-                  </aside>
-                </div>
-              </div>
-            )}
-
-            {tab === "bonos" && <TarotistaBonuses month={month} />}
-
-            {tab === "rangos" && (
-              <TarotistaRanksPanel
-                stats={s}
-                month={month}
-                onOpenRanking={() => setTab("ranking")}
-              />
-            )}
-
-            {tab === "ranking" && (
-              <TarotistaRankingArena
-                data={rank}
-                month={month}
-                myWorkerId={myWorkerId}
-                refreshing={rankingRefreshing}
-                onRefresh={() => void refreshRanking(month)}
-              />
-            )}
-
-            {tab === "equipos" && <TeamCompetitionArena month={month} mode="tarotista" />}
-
-            {tab === "checklist" && (
-              <div className="tc-card">
-                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                  <div>
-                    <div className="tc-title">✅ Checklist del turno</div>
-                    <div className="tc-sub" style={{ marginTop: 6 }}>
-                      Turno: <b>{clShiftKey || "—"}</b> · Completadas: <b>{clProgress.completed}/{clProgress.total}</b>
-                      {clMsg ? ` · ${clMsg}` : ""}
-                    </div>
-                  </div>
-
-                  <div className="tc-row" style={{ flexWrap: "wrap" }}>
-                    <button className="tc-btn tc-btn-gold" onClick={loadChecklist} disabled={clLoading}>
-                      {clLoading ? "Cargando…" : "Actualizar checklist"}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="tc-hr" />
-
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                    <input
-                      className="tc-input"
-                      value={clQ}
-                      onChange={(e) => setClQ(e.target.value)}
-                      placeholder="Buscar en checklist…"
-                      style={{ width: 320, maxWidth: "100%" }}
-                    />
-
-                    <div style={{ minWidth: 240, flex: 1 }}>
-                      <div
-                        style={{
-                          height: 12,
-                          borderRadius: 999,
-                          background: "rgba(255,255,255,0.10)",
-                          overflow: "hidden",
-                          border: "1px solid rgba(255,255,255,0.10)",
-                        }}
-                      >
-                        <div
-                          style={{
-                            height: "100%",
-                            width: `${clampPct(clProgress.pct)}%`,
-                            background: "linear-gradient(90deg, rgba(181,156,255,0.95), rgba(215,181,109,0.95))",
-                          }}
-                        />
-                      </div>
-                      <div className="tc-sub" style={{ marginTop: 6 }}>
-                        Progreso: <b>{clProgress.pct}%</b>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ display: "grid", gap: 10, marginTop: 2 }}>
-                    {(clFiltered || []).map((it: any) => {
-                      const title = String(it.title || it.label || it.item_key || "Checklist item");
-                      const done = !!it.done || it.status === "completed" || it.completed === true;
-                      const desc = String(it.description || it.desc || "");
-                      const doneAt = it.completed_at || it.done_at || it.updated_at || null;
-
-                      return (
-                        <div
-                          key={String(it.item_key || it.key || it.id || title)}
-                          style={{
-                            border: "1px solid rgba(255,255,255,0.10)",
-                            borderRadius: 14,
-                            padding: 12,
-                            background: done ? "rgba(120,255,190,0.10)" : "rgba(255,255,255,0.03)",
-                          }}
-                        >
-                          <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                            <div style={{ minWidth: 240 }}>
-                              <div style={{ fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
-                                <span style={{ opacity: done ? 1 : 0.9 }}>{done ? "✅" : "⬜"}</span>
-                                <span>{title}</span>
-                              </div>
-                              {desc ? <div className="tc-sub" style={{ marginTop: 6 }}>{desc}</div> : null}
-                              {done && doneAt ? (
-                                <div className="tc-sub" style={{ marginTop: 6, opacity: 0.85 }}>
-                                  Completado: <b>{new Date(doneAt).toLocaleString("es-ES")}</b>
-                                </div>
-                              ) : null}
-                            </div>
-
-                            <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                              <span className="tc-chip" style={{ border: "1px solid rgba(215,181,109,0.35)" }}>
-                                {done ? "Completado" : "Pendiente"}
-                              </span>
-
-                              <button
-                                className="tc-btn tc-btn-purple"
-                                onClick={() => toggleChecklistItem(it)}
-                                disabled={clLoading}
-                                style={{ minWidth: 160 }}
-                              >
-                                {done ? "Marcar como pendiente" : "Marcar como hecho"}
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {(!clFiltered || clFiltered.length === 0) && (
-                      <div className="tc-sub">No hay items en tu checklist (o no coinciden con la búsqueda).</div>
-                    )}
-                  </div>
-
-                  <div className="tc-hr" />
-
-                  <div className="tc-sub">
-                    Nota: el checklist se reinicia automáticamente con el <b>turno</b> (shift_key). Si cambia el turno, recarga.
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {tab === "facturas" && (
-              <TarotistaInvoiceDashboard
-                month={month}
-                invoice={invoice}
-                lines={invoiceLines}
-                insights={invoiceInsights}
-                liveStats={s}
-                incidents={incidents}
-                canSeeMoney={canSeeMoney}
-                ackNote={ackNote}
-                onAckNoteChange={setAckNote}
-                onRespond={respondInvoice}
-                onReload={refreshInvoiceOnly}
-              />
-            )}
-
-            {false && tab === "facturas" && (
-              <div className="tc-card">
-                <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                  <div>
-                    <div className="tc-title">🧾 Mi factura</div>
-                    <div className="tc-sub" style={{ marginTop: 6 }}>
-                      Aquí está la factura oficial (líneas por códigos + bonos + incidencias).
-                    </div>
-                  </div>
-                  <button className="tc-btn tc-btn-gold" onClick={() => refresh()}>
-                    Recargar
-                  </button>
-                </div>
-
-                <div className="tc-hr" />
-
-                {!invoice ? (
-                  <div className="tc-sub">Aún no hay factura generada para este mes. (La genera Admin)</div>
-                ) : (
-                  <>
-                    <div className="tc-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-                      <div>
-                        <div className="tc-sub">
-                          Estado: <b>{getInvoiceVisibleStatus(invoice)}</b> · Aceptación: <b>{invoice.worker_ack || "pending"}</b>
-                        </div>
-                        <div style={{ fontWeight: 900, fontSize: 22, marginTop: 6 }}>{money(invoice.total || 0)}</div>
-                        {invoice.worker_ack_note ? (
-                          <div className="tc-sub" style={{ marginTop: 6 }}>
-                            Nota enviada: <b>{invoice.worker_ack_note}</b>
-                          </div>
-                        ) : null}
-                      </div>
-
-                      <div style={{ minWidth: 320, maxWidth: "100%" }}>
-                        <div className="tc-sub">Nota (opcional, sobre todo si rechazas)</div>
-                        <input
-                          className="tc-input"
-                          value={ackNote}
-                          onChange={(e) => setAckNote(e.target.value)}
-                          placeholder="Ej: Falta revisar una incidencia…"
-                          style={{ width: "100%", marginTop: 6 }}
-                        />
-
-                        <div className="tc-row" style={{ marginTop: 10, justifyContent: "flex-end" }}>
-                          <button className="tc-btn tc-btn-ok" onClick={() => respondInvoice("accepted")}>
-                            Aceptar
-                          </button>
-                          <button className="tc-btn tc-btn-danger" onClick={() => respondInvoice("rejected")}>
-                            Rechazar
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="tc-hr" />
-
-                    <div className="tc-title" style={{ fontSize: 14 }}>
-                      📌 Líneas
-                    </div>
-
-                    <div style={{ overflowX: "auto", marginTop: 8 }}>
-                      <table className="tc-table">
-                        <thead>
-                          <tr>
-                            <th>Concepto</th>
-                            <th>Importe</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(invoiceLines || []).map((l: any) => {
-                            const meta = l?.meta || {};
-                            const hasBreakdown = meta && meta.minutes != null && meta.rate != null;
-                            const minutes = Number(meta.minutes || 0);
-                            const rate = Number(meta.rate || 0);
-                            const calc = minutes * rate;
-                            const bonusDetail = meta.bonus_mode === "units"
-                              ? `${Number(meta.quantity || 0)} × ${canSeeMoney ? eur(meta.unit_rate || 0) : "unidad"}`
-                              : String(meta.description || "");
-
-                            return (
-                              <tr key={l.id}>
-                                <td>
-                                  <b>{l.label}</b>
-                                  {hasBreakdown ? (
-                                    <div className="tc-sub" style={{ marginTop: 6 }}>
-                                      {String(meta.code || "").toUpperCase()} · {minutes} min
-{canSeeMoney ? <> × {eur(rate)} = <b>{eur(calc)}</b></> : null}
-                                    </div>
-                                  ) : bonusDetail ? <div className="tc-sub" style={{ marginTop: 6 }}>{bonusDetail}{meta.description && meta.bonus_mode === "units" ? ` · ${meta.description}` : ""}</div> : null}
-                                </td>
-                                <td style={{ fontWeight: 900, whiteSpace: "nowrap" }}>{canSeeMoney ? eur(l.amount) : (hasBreakdown ? `${minutes} min` : "Oculto nivel 2")}</td>
-                              </tr>
-                            );
-                          })}
-                          {(!invoiceLines || invoiceLines.length === 0) && (
-                            <tr>
-                              <td colSpan={2} className="tc-muted">
-                                No hay líneas (aún). Si esto pasa, regeneramos factura del mes en Admin.
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <div className="tc-hr" />
-
-                    <div className="tc-title" style={{ fontSize: 14 }}>
-                      ⚠️ Incidencias del mes
-                    </div>
-                    <div className="tc-sub" style={{ marginTop: 6 }}>
-                      Esto se actualiza en vivo (aunque la factura no se regenere).
-                    </div>
-
-                    <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                      {!incidents || incidents.length === 0 ? (
-                        <div className="tc-sub">No tienes incidencias este mes.</div>
-                      ) : (
-                        (incidents || []).map((i: any) => (
-                          <div
-                            key={i.id}
-                            style={{
-                              border: "1px solid rgba(255,255,255,0.10)",
-                              borderRadius: 14,
-                              padding: 12,
-                              background: "rgba(255,80,80,0.06)",
-                            }}
-                          >
-                            <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                              <div style={{ fontWeight: 900 }}>{i.title || i.reason || "Incidencia"}</div>
-                              <div style={{ fontWeight: 900 }}>{canSeeMoney ? `-${eur(i.amount)}` : "Oculto nivel 2"}</div>
-                            </div>
-                            {i.reason ? <div className="tc-sub" style={{ marginTop: 6 }}>{i.reason}</div> : null}
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-            </div>
-          </main>
-        </div>
-      )}
-    </PanelTheme>
-  );
+    const completed = rows.filter((r: any) => !!r.done || r.status === "completed" || r.completed === tr5,255,255,.04);
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: transform .2s ease, border-color .2s ease, background .2s ease, box-shadow .2s ease;
 }
 
-function Kpi({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
-  return (
-    <div
-      style={{
-        border: "1px solid rgba(255,255,255,0.10)",
-        borderRadius: 14,
-        padding: 12,
-        background: highlight ? "rgba(215,181,109,0.10)" : "rgba(255,255,255,0.03)",
-      }}
-    >
-      <div className="tc-sub">{label}</div>
-      <div style={{ fontWeight: 900, fontSize: 18, marginTop: 6 }}>{value}</div>
-    </div>
-  );
+.turnStatusAction:hover,
+.notificationAction:hover {
+  transform: translateY(-2px);
+  border-color: rgba(234, 198, 112, .28);
+  background: rgba(234,198,112,.07);
+  box-shadow: 0 10px 28px rgba(0,0,0,.2);
 }
 
-function TopCard({ title, items }: { title: string; items: string[] }) {
-  return (
-    <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
-      <div className="tc-title" style={{ fontSize: 14 }}>
-        🏆 {title}
-      </div>
-      <div className="tc-hr" />
-      <div style={{ display: "grid", gap: 8 }}>
-        {(items || []).slice(0, 3).map((t, i) => (
-          <div key={i} className="tc-row" style={{ justifyContent: "space-between" }}>
-            <span>
-              {i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"} {t}
-            </span>
-          </div>
-        ))}
-        {(!items || items.length === 0) && <div className="tc-sub">Sin datos</div>}
-      </div>
-    </div>
-  );
+.notificationsSectionHead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 6px 4px 2px;
 }
 
-function TeamCard({
-  title,
-  tone,
-  score,
-  avgCliente,
-  avgRepite,
-  scoreRatio,
-  isWinner,
-}: {
-  title: string;
-  tone: "fuego" | "agua";
-  score: any;
-  avgCliente: any;
-  avgRepite: any;
-  scoreRatio: number;
-  isWinner: boolean;
-}) {
-  const s = Number(score || 0);
-  const toneLabel = tone === "fuego" ? "fuego" : "agua";
-  const ToneIcon = tone === "fuego" ? Flame : Droplets;
-  return (
-    <article className={panelStyles.teamBattleCard} data-tone={toneLabel} data-winner={isWinner ? "true" : "false"}>
-      <div className={panelStyles.teamBattleHead}>
-        <div className={panelStyles.teamBattleTitleWrap}>
-          <span className={panelStyles.teamBattleBadge}><ToneIcon size={18} /></span>
-          <div>
-            <small>{isWinner ? "Marcando el ritmo" : "En persecución"}</small>
-            <h3>{title}</h3>
-          </div>
-        </div>
-        {isWinner ? <span className={panelStyles.teamLeaderPill}>Líder</span> : <span className={panelStyles.teamLeaderPill} data-passive="true">Objetivo</span>}
-      </div>
-
-      <div className={panelStyles.teamScoreRow}>
-        <div>
-          <small>Score total</small>
-          <strong>{s.toFixed(2)}</strong>
-        </div>
-        <div className={panelStyles.teamAuraRing} data-tone={toneLabel}>
-          <ToneIcon size={22} />
-        </div>
-      </div>
-
-      <div className={panelStyles.teamProgressWrap}>
-        <div className={panelStyles.teamProgressMeta}>
-          <span>Poder del equipo</span>
-          <b>{Math.max(0, Math.min(100, Number(scoreRatio || 0))).toFixed(0)}%</b>
-        </div>
-        <div className={panelStyles.teamProgressTrack}>
-          <span style={{ width: `${Math.max(6, Math.min(100, Number(scoreRatio || 0)))}%` }} data-tone={toneLabel} />
-        </div>
-      </div>
-
-      <div className={panelStyles.teamStatsGrid}>
-        <div className={panelStyles.teamMetricTile}>
-          <small>Cliente</small>
-          <strong>{Number(avgCliente || 0).toFixed(2)}%</strong>
-        </div>
-        <div className={panelStyles.teamMetricTile}>
-          <small>Repite</small>
-          <strong>{Number(avgRepite || 0).toFixed(2)}%</strong>
-        </div>
-      </div>
-    </article>
-  );
+.notificationsSectionHead > div { min-width: 0; }
+.notificationsSectionHead span {
+  color: #d9b76b;
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: .15em;
+  text-transform: uppercase;
 }
+.notificationsSectionHead h3 {
+  margin: 4px 0 0;
+  font-size: 20px;
+}
+.notificationsSectionHead > strong {
+  padding: 7px 10px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 999px;
+  color: rgba(255,255,255,.6);
+  background: rgba(255,255,255,.03);
+  font-size: 10px;
+}
+
+.notificationsList {
+  display: grid;
+  gap: 12px;
+}
+
+.notificationCard {
+  --tone-rgb: 139,92,246;
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr) auto;
+  gap: 15px;
+  align-items: center;
+  padding: 17px 18px;
+  border: 1px solid rgba(var(--tone-rgb), .18);
+  border-radius: 21px;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(var(--tone-rgb), .1), transparent 34%),
+    linear-gradient(145deg, rgba(18,13,28,.96), rgba(8,7,14,.985));
+  box-shadow: 0 18px 48px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.035);
+  transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease;
+}
+
+.notificationCard:hover {
+  transform: translateY(-3px);
+  border-color: rgba(var(--tone-rgb), .34);
+  box-shadow: 0 24px 58px rgba(0,0,0,.28), 0 0 30px rgba(var(--tone-rgb), .07);
+}
+
+.notificationCard[data-tone="gold"] { --tone-rgb: 240,202,115; }
+.notificationCard[data-tone="violet"] { --tone-rgb: 166,108,255; }
+.notificationCard[data-tone="blue"] { --tone-rgb: 75,167,255; }
+.notificationCard[data-tone="red"] { --tone-rgb: 255,71,111; }
+.notificationCard[data-tone="green"] { --tone-rgb: 46,220,145; }
+
+.notificationCardAccent {
+  position: absolute;
+  inset: 14px auto 14px 0;
+  width: 3px;
+  border-radius: 0 999px 999px 0;
+  background: rgb(var(--tone-rgb));
+  box-shadow: 0 0 16px rgba(var(--tone-rgb), .5);
+}
+
+.notificationCardIcon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(var(--tone-rgb), .2);
+  border-radius: 16px;
+  color: rgb(var(--tone-rgb));
+  background: rgba(var(--tone-rgb), .075);
+  box-shadow: 0 0 24px rgba(var(--tone-rgb), .1);
+  transition: transform .22s ease;
+}
+
+.notificationCard:hover .notificationCardIcon { transform: scale(1.045); }
+.notificationCardBody { min-width: 0; }
+
+.notificationMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.notificationMeta span {
+  color: rgb(var(--tone-rgb));
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.notificationMeta strong {
+  color: rgba(255,255,255,.48);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.notificationCard h3 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.12;
+}
+
+.notificationCard p {
+  margin: 7px 0 0;
+  color: rgba(255,255,255,.67);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.notificationProgress {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+}
+.notificationProgress > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: rgba(255,255,255,.5);
+  font-size: 10px;
+}
+.notificationProgress > div:first-child strong { color: #f0ce7b; }
+.notificationProgressTrack,
+.shiftPulseTrack {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255,255,255,.07);
+}
+.notificationProgressTrack i,
+.shiftPulseTrack i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #9c66ff, #f0ca73);
+  box-shadow: 0 0 18px rgba(208,164,255,.25);
+  transition: width .45s ease;
+}
+
+.notificationSignal {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255,71,111,.18);
+  border-radius: 9px;
+  color: #ff839e;
+  background: rgba(255,71,111,.06);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.notificationsEmpty {
+  min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  border: 1px dashed rgba(83,225,164,.18);
+  border-radius: 22px;
+  background: radial-gradient(circle at 50% 0%, rgba(46,220,145,.08), transparent 48%), rgba(255,255,255,.018);
+}
+.notificationsEmpty > span {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 19px;
+  color: #55e6a9;
+  background: rgba(46,220,145,.08);
+  border: 1px solid rgba(46,220,145,.18);
+  box-shadow: 0 0 28px rgba(46,220,145,.1);
+}
+.notificationsEmpty strong { font-size: 18px; }
+.notificationsEmpty p { margin: 5px 0 0; color: rgba(255,255,255,.55); font-size: 12px; }
+
+.notificationsAside {
+  display: grid;
+  gap: 14px;
+}
+
+.missionCard,
+.quickActionsCard,
+.shiftPulseCard {
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(143,94,255,.09), transparent 36%),
+    linear-gradient(155deg, rgba(18,13,27,.96), rgba(8,6,14,.99));
+  box-shadow: 0 20px 54px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.035);
+}
+
+.missionCard,
+.quickActionsCard { padding: 16px; }
+
+.sideCardHeading {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.sideCardIcon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.035);
+}
+.sideCardIcon[data-tone="gold"] { color: #efd07d; box-shadow: 0 0 22px rgba(236,191,89,.1); }
+.sideCardIcon[data-tone="violet"] { color: #bb91ff; box-shadow: 0 0 22px rgba(139,92,246,.1); }
+.sideCardHeading small {
+  display: block;
+  color: #d8b76d;
+  font-size: 8px;
+  font-weight: 950;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.sideCardHeading h3 { margin: 3px 0 0; font-size: 18px; }
+
+.missionPath {
+  position: relative;
+  display: grid;
+  gap: 7px;
+  margin-top: 15px;
+}
+.missionPath::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 22px;
+  bottom: 22px;
+  width: 1px;
+  background: linear-gradient(180deg, rgba(239,204,121,.45), rgba(157,96,255,.15));
+}
+.missionStep {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr);
+  gap: 11px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: background .2s ease, border-color .2s ease, transform .2s ease;
+}
+.missionStep:hover { transform: translateX(2px); background: rgba(255,255,255,.03); }
+.missionStep[data-state="current"] { border-color: rgba(239,204,121,.13); background: rgba(239,204,121,.045); }
+.missionStep > span {
+  width: 33px;
+  height: 33px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: #ead080;
+  background: #171020;
+  border: 1px solid rgba(239,204,121,.18);
+  font-size: 11px;
+  font-weight: 950;
+  box-shadow: 0 0 14px rgba(220,178,77,.08);
+}
+.missionStep div { min-width: 0; display: grid; gap: 2px; }
+.missionStep strong { font-size: 11px; }
+.missionStep small { color: rgba(255,255,255,.43); font-size: 9px; }
+
+.quickActionGrid {
+  display: grid;
+  gap: 8px;
+  margin-top: 15px;
+}
+.quickAction {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 14px;
+  color: #fff;
+  background: rgba(255,255,255,.024);
+  text-align: left;
+  cursor: pointer;
+  transition: transform .2s ease, border-color .2s ease, background .2s ease;
+}
+.quickAction:hover { transform: translateY(-2px); border-color: rgba(177,125,255,.2); background: rgba(255,255,255,.04); }
+.quickAction > span {
+  width: 35px;
+  height: 35px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.07);
+}
+.quickAction > span[data-tone="violet"] { color: #be96ff; }
+.quickAction > span[data-tone="blue"] { color: #73bcff; }
+.quickAction > span[data-tone="gold"] { color: #efd07d; }
+.quickAction div { min-width: 0; display: grid; gap: 2px; }
+.quickAction strong { font-size: 11px; }
+.quickAction small { color: rgba(255,255,255,.43); font-size: 9px; }
+.quickAction > svg { color: rgba(255,255,255,.32); }
+
+.shiftPulseCard { padding: 14px; }
+.shiftPulseTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.shiftPulseTop span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: rgba(255,255,255,.58);
+  font-size: 10px;
+  font-weight: 850;
+}
+.shiftPulseTop strong { color: #e7ca7b; font-size: 10px; }
+.shiftPulseCard p { margin: 9px 0 0; color: rgba(255,255,255,.43); font-size: 9px; }
+
+.sidebar { min-width: 0; }
+.sidebar .sidebarCard {
+  position: relative;
+  padding: 15px 11px;
+  border: 1px solid rgba(182, 165, 224, .25) !important;
+  border-radius: 19px;
+  background: linear-gradient(145deg, rgba(73, 55, 100, .48), rgba(18, 22, 40, .91) 40%, rgba(23, 22, 41, .92)) !important;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, .22), inset 0 1px 0 rgba(255, 255, 255, .09) !important;
+  backdrop-filter: blur(16px);
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior-y: contain;
+  scroll-padding-block: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(186, 160, 220, .45) transparent;
+}
+.sidebar .sidebarCard::before { content: none !important; }
+.sidebarHeading { display: grid; gap: 3px; padding: 0 8px 14px; }
+.sidebarTitle { color: #f6e7c9; font-size: 15px; font-weight: 750; }
+.sidebarSubtitle { color: #beb5cd; font-size: 11px; }
+.navigation, .navItems { display: grid; gap: 4px; }
+.navSection + .navSection { margin-top: 11px; padding-top: 11px; border-top: 1px solid rgba(194, 176, 221, .12); }
+.sidebar .navSectionTitle { margin: 0 8px 9px; color: #c9b8dc; font-family: inherit; font-size: 10.5px; font-weight: 750; line-height: 1.5; letter-spacing: .095em; text-transform: uppercase; }
+.navButton {
+  --nav-rgb: 227, 186, 114;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 50px;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  color: #e9e3f3;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+.navButton[data-tone="violet"] { --nav-rgb: 176, 122, 255; }
+.navButton[data-tone="rose"] { --nav-rgb: 245, 145, 176; }
+.navButton[data-tone="cyan"] { --nav-rgb: 98, 215, 255; }
+.navButton[data-tone="mint"] { --nav-rgb: 100, 232, 207; }
+.navButton[data-tone="gold"] { --nav-rgb: 240, 196, 107; }
+.navButton[data-tone="orange"] { --nav-rgb: 255, 172, 95; }
+.navButton[data-tone="blue"] { --nav-rgb: 103, 169, 255; }
+.navButton:hover { border-color: rgba(198, 174, 237, .2); background: rgba(174, 146, 224, .1); color: #fff; }
+.navActive, .navActive:hover {
+  border-color: rgba(207, 166, 255, .5);
+  color: #fff;
+  background: linear-gradient(105deg, rgba(135, 80, 200, .64), rgba(101, 66, 157, .28));
+  box-shadow: 0 4px 16px rgba(90, 44, 150, .18), inset 0 1px 0 rgba(255, 255, 255, .12);
+}
+.navActive::before { content: ""; position: absolute; inset: 10px auto 10px -1px; width: 3px; border-radius: 5px; background: #e9c8ff; }
+.navButton:focus-visible { outline: 2px solid #f3d99b; outline-offset: 2px; }
+
+.navMain {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.navIcon {
+  width: 23px;
+  height: 21px;
+  flex: 0 0 23px;
+  color: rgb(var(--nav-rgb));
+}
+.navActive .navIcon { color: #f0dcff; }
+
+.navCopy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.navLabel { font-size: 14px; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
+.navKicker { color: #c4bdd2; font-size: 11px; font-weight: 450; line-height: 1.35; overflow-wrap: anywhere; }
+.navActive .navKicker { color: #eee2fa; }
+.navDot { width: 4px; height: 4px; flex: 0 0 auto; border-radius: 50%; background: rgba(var(--nav-rgb), .35); }
+.navActive .navDot { background: #eed4ff; }
+
+.navBadge {
+  min-width: 25px;
+  height: 25px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  padding: 0 6px;
+  border: 1px solid rgba(255, 167, 193, .48);
+  border-radius: 8px;
+  color: #fff4f7;
+  background: #783a57;
+  font-size: 12px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.navBadge[data-tone="amber"] {
+  border-color: rgba(246, 211, 135, .45);
+  color: #fff0c9;
+  background: #705325;
+}
+
+@media (max-width: 900px) {
+  .sidebar { max-height: none; }
+  .sidebar .sidebarCard { max-height: none !important; }
+  .navigation { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 18px; }
+  .navSection + .navSection { margin-top: 0; padding-top: 0; border-top: 0; }
+}
+@media (max-width: 520px) {
+  .navigation { grid-template-columns: minmax(0, 1fr); }
+  .sidebar .sidebarCard { padding: 13px 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .navButton { transition: none; } }
+
+.loadingShell {
+  min-height: 360px;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.loadingPulse {
+  width: min(520px, 86%);
+  height: 180px;
+  border-radius: 24px;
+  background: linear-gradient(100deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.035));
+  background-size: 200% 100%;
+  animation: loading 1.25s ease-in-out infinite;
+}
+
+@keyframes loading {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (max-width: 1180px) {
+  .commandDeck,
+  .overview,
+  .notificationsHero,
+  .notificationsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .heroMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .heroTop h2,
+  .notificationsHero h2 {
+    font-size: 31px;
+  }
+
+  .notificationsHero {
+    padding: 20px;
+  }
+
+  .notificationStats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    min-width: 0;
+    width: 100%;
+  }
+
+  .notificationStat {
+    min-height: 88px;
+    padding: 11px;
+  }
+
+  .notificationStatIcon {
+    display: none;
+  }
+
+  .turnStatusCard,
+  .notificationCard {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .turnStatusAction,
+  .notificationAction {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .heroMetrics,
+  .statGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .heroMetrics,
+  .statGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .notificationStats {
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 7px;
+  }
+
+  .notificationStat {
+    min-height: 76px;
+    padding: 9px;
+  }
+
+  .notificationStat strong {
+    font-size: 22px;
+  }
+
+  .turnStatusCard,
+  .notificationCard {
+    grid-template-columns: 1fr;
+  }
+
+  .turnStatusIcon,
+  .notificationCardIcon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .notificationsSectionHead {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .notificationsEmpty {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .heroTop p,
+  .notificationsHero p,
+  .notificationCard p,
+  .railCard > p,
+  .focusItem small {
+    font-size: 13px;
+  }
+
+  .heroMetric strong {
+    font-size: 24px;
+  }
+
+  .focusCard h3,
+  .railCard h3,
+  .notificationCard h3 {
+    font-size: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingPulse {
+    animation: none;
+  }
+
+  .heroButton,
+  .softButton,
+  .turnStatusAction,
+  .notificationAction,
+  .notificationCard,
+  .quickAction,
+  .missionStep,
+  .railButton {
+    transition: none;
+  }
+}
+
+/* ======================================================
+   CLIENTES · CENTRO DE SEGUIMIENTO
+   Rediseño premium manteniendo outbound_* como fuente real
+   ====================================================== */
+.clientsHub {
+  position: relative;
+  display: grid;
+  gap: 18px;
+  isolation: isolate;
+}
+
+.clientsHub::before {
+  content: "";
+  position: absolute;
+  inset: -30px -28px auto;
+  height: 360px;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(130, 75, 225, .13), transparent 35%),
+    radial-gradient(circle at 82% 4%, rgba(218, 174, 82, .07), transparent 28%);
+  filter: blur(4px);
+}
+
+.clientsHero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  padding: 22px 24px;
+  border: 1px solid rgba(174, 123, 255, .19);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(135, 75, 232, .16), transparent 34%),
+    radial-gradient(circle at 94% 18%, rgba(230, 186, 86, .08), transparent 32%),
+    linear-gradient(145deg, rgba(18, 12, 32, .97), rgba(7, 5, 15, .98));
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .26), inset 0 1px 0 rgba(255, 255, 255, .035);
+}
+
+.clientsHero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .32;
+  background-image: radial-gradient(circle, rgba(255,255,255,.16) 1px, transparent 1.2px);
+  background-size: 34px 34px;
+  mask-image: linear-gradient(to right, transparent, #000 70%, #000);
+}
+
+.clientsHeroCopy {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.clientsHeroIcon {
+  width: 54px;
+  height: 54px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: #d8bc78;
+  border: 1px solid rgba(230, 194, 109, .23);
+  border-radius: 17px;
+  background:
+    radial-gradient(circle at 35% 25%, rgba(241, 204, 117, .18), transparent 46%),
+    rgba(29, 18, 45, .8);
+  box-shadow: 0 0 26px rgba(214, 169, 75, .09), inset 0 0 24px rgba(144, 79, 233, .07);
+}
+
+.clientsHeroCopy small {
+  display: block;
+  margin-bottom: 5px;
+  color: #d8b96f;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+.clientsHeroCopy h2 {
+  margin: 0;
+  color: #fff;
+  font-size: clamp(25px, 2.5vw, 36px);
+  line-height: 1.02;
+  letter-spacing: -.035em;
+}
+
+.clientsHeroCopy p {
+  max-width: 680px;
+  margin: 7px 0 0;
+  color: rgba(235, 228, 248, .62);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.clientsHeroControls {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.clientsDateControl {
+  min-width: 178px;
+  display: grid;
+  gap: 5px;
+  padding: 9px 11px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 13px;
+  background: rgba(255,255,255,.025);
+}
+
+.clientsDateControl > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255,255,255,.44);
+  font-size: 9px;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+}
+
+.clientsDateControl input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  color: rgba(255,255,255,.88);
+  background: transparent;
+  color-scheme: dark;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.clientsRefreshButton {
+  min-width: 112px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid rgba(212, 166, 74, .2);
+  border-radius: 13px;
+  color: #e7ca7b;
+  background: linear-gradient(145deg, rgba(68, 45, 19, .3), rgba(27, 18, 9, .2));
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 850;
+  transition: transform .2s ease, border-color .2s ease, background .2s ease;
+}
+
+.clientsRefreshButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(232, 193, 96, .36);
+  background: linear-gradient(145deg, rgba(78, 51, 22, .38), rgba(31, 21, 10, .25));
+}
+
+.clientsRefreshButton:disabled { opacity: .58; cursor: wait; }
+
+.spin { animation: clientsSpin .9s linear infinite; }
+@keyframes clientsSpin { to { transform: rotate(360deg); } }
+
+.clientsSyncBadge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 138px;
+  padding: 8px 11px;
+  border: 1px solid rgba(68, 219, 155, .14);
+  border-radius: 13px;
+  color: #73dfad;
+  background: rgba(31, 120, 82, .08);
+  box-shadow: inset 0 0 22px rgba(46, 220, 145, .025);
+}
+
+.clientsSyncBadge > svg { filter: drop-shadow(0 0 7px rgba(46,220,145,.22)); }
+.clientsSyncBadge div { display: grid; gap: 1px; }
+.clientsSyncBadge strong { font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
+.clientsSyncBadge small { color: rgba(167, 239, 204, .52); font-size: 8px; }
+
+.clientsMessage {
+  margin-top: -6px;
+  padding: 8px 12px;
+  border: 1px solid rgba(172, 132, 255, .1);
+  border-radius: 11px;
+  color: rgba(225,216,244,.72);
+  background: rgba(84, 54, 134, .08);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.clientsKpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.clientsKpi {
+  position: relative;
+  overflow: hidden;
+  min-height: 110px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 17px;
+  background: linear-gradient(145deg, rgba(19, 15, 29, .96), rgba(9, 7, 16, .98));
+  box-shadow: 0 12px 32px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.025);
+  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+
+.clientsKpi:hover { transform: translateY(-2px); }
+.clientsKpi::after {
+  content: "";
+  position: absolute;
+  width: 100px;
+  height: 100px;
+  right: -30px;
+  top: -35px;
+  border-radius: 50%;
+  filter: blur(7px);
+  opacity: .28;
+}
+.clientsKpi[data-tone="violet"] { border-color: rgba(160,103,255,.17); }
+.clientsKpi[data-tone="violet"]::after { background: rgba(139,92,246,.28); }
+.clientsKpi[data-tone="gold"] { border-color: rgba(225,181,84,.16); }
+.clientsKpi[data-tone="gold"]::after { background: rgba(212,166,74,.28); }
+.clientsKpi[data-tone="blue"] { border-color: rgba(78,162,255,.16); }
+.clientsKpi[data-tone="blue"]::after { background: rgba(75,167,255,.24); }
+.clientsKpi[data-tone="green"] { border-color: rgba(53,211,144,.15); }
+.clientsKpi[data-tone="green"]::after { background: rgba(46,220,145,.22); }
+
+.clientsKpi > span {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.03);
+}
+.clientsKpi[data-tone="violet"] > span { color: #bd98ff; box-shadow: 0 0 20px rgba(139,92,246,.07); }
+.clientsKpi[data-tone="gold"] > span { color: #e8c66e; box-shadow: 0 0 20px rgba(212,166,74,.07); }
+.clientsKpi[data-tone="blue"] > span { color: #72baff; box-shadow: 0 0 20px rgba(75,167,255,.07); }
+.clientsKpi[data-tone="green"] > span { color: #68dda9; box-shadow: 0 0 20px rgba(46,220,145,.06); }
+.clientsKpi div { min-width: 0; display: grid; gap: 2px; }
+.clientsKpi small { color: rgba(255,255,255,.42); font-size: 9px; font-weight: 850; text-transform: uppercase; letter-spacing: .1em; }
+.clientsKpi strong { color: #fff; font-size: 28px; line-height: 1; letter-spacing: -.035em; }
+.clientsKpi p { margin: 2px 0 0; color: rgba(255,255,255,.38); font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.clientsProgressCard {
+  padding: 17px 18px;
+  border: 1px solid rgba(174, 123, 255, .12);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 85% 30%, rgba(216,171,75,.07), transparent 28%),
+    linear-gradient(145deg, rgba(19,13,31,.94), rgba(9,7,16,.98));
+}
+.clientsProgressTop { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; }
+.clientsProgressTop small { display: block; margin-bottom: 3px; color: #c5a7f5; font-size: 9px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
+.clientsProgressTop h3 { margin: 0; color: #fff; font-size: 16px; }
+.clientsProgressTop > strong { color: #eed07c; font-size: 30px; line-height: 1; letter-spacing: -.04em; }
+.clientsProgressTrack { height: 9px; margin-top: 13px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.055); box-shadow: inset 0 1px 3px rgba(0,0,0,.45); }
+.clientsProgressTrack span { display: block; height: 100%; min-width: 0; border-radius: inherit; background: linear-gradient(90deg, #7543cf, #a765ef 56%, #ddba61); box-shadow: 0 0 16px rgba(173,115,246,.28); transition: width .65s cubic-bezier(.2,.8,.2,1); }
+.clientsProgressCard > p { margin: 8px 0 0; color: rgba(255,255,255,.39); font-size: 10px; }
+
+.clientsWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(270px, 1fr);
+  align-items: flex-start;
+  gap: 15px;
+}
+.clientsMainColumn,
+.clientsSideColumn { min-width: 0; }
+.clientsSideColumn { display: grid; gap: 12px; }
+
+.clientsListCard,
+.clientsAddCard,
+.clientsActivityCard {
+  border: 1px solid rgba(255,255,255,.075);
+  border-radius: 19px;
+  background:
+    radial-gradient(circle at 94% 0%, rgba(116,71,181,.07), transparent 27%),
+    linear-gradient(145deg, rgba(17,13,27,.97), rgba(8,6,14,.985));
+  box-shadow: 0 14px 36px rgba(0,0,0,.19), inset 0 1px 0 rgba(255,255,255,.022);
+}
+.clientsListCard { padding: 18px; }
+.clientsAddCard,
+.clientsActivityCard { padding: 15px; }
+
+.clientsSectionHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.clientsSectionHeader > div { min-width: 0; }
+.clientsSectionHeader small,
+.clientsSideHeading small { color: #b990ec; font-size: 9px; font-weight: 900; letter-spacing: .13em; text-transform: uppercase; }
+.clientsSectionHeader h3,
+.clientsSideHeading h3 { margin: 3px 0 0; color: #fff; font-size: 18px; letter-spacing: -.02em; }
+.clientsSectionHeader p { margin: 5px 0 0; color: rgba(255,255,255,.39); font-size: 10px; line-height: 1.45; }
+.clientsCountChip { flex: 0 0 auto; padding: 6px 9px; border: 1px solid rgba(173,123,255,.13); border-radius: 999px; color: #cfb6f7; background: rgba(116,68,183,.08); font-size: 9px; font-weight: 850; }
+
+.clientsToolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin: 16px 0 14px;
+}
+.clientsSearch {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid rgba(255,255,255,.075);
+  border-radius: 13px;
+  color: rgba(255,255,255,.35);
+  background: rgba(255,255,255,.025);
+}
+.clientsSearch:focus-within { border-color: rgba(166,108,255,.23); box-shadow: 0 0 0 3px rgba(139,92,246,.04); }
+.clientsSearch input { min-width: 0; width: 100%; border: 0; outline: 0; color: rgba(255,255,255,.85); background: transparent; font: inherit; font-size: 11px; }
+.clientsSearch input::placeholder { color: rgba(255,255,255,.28); }
+.clientsFilters { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.clientsFilters button { padding: 7px 9px; border: 1px solid rgba(255,255,255,.07); border-radius: 999px; color: rgba(255,255,255,.47); background: rgba(255,255,255,.02); cursor: pointer; font-size: 9px; font-weight: 800; transition: border-color .18s ease, color .18s ease, background .18s ease; }
+.clientsFilters button:hover { color: rgba(255,255,255,.75); border-color: rgba(167,107,255,.16); }
+.clientsFilters button.clientsFilterActive { color: #dec8ff; border-color: rgba(166,108,255,.26); background: rgba(126,73,203,.12); box-shadow: inset 0 0 16px rgba(139,92,246,.04); }
+
+.clientsCards { display: grid; gap: 9px; }
+.clientCard {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 4px 48px minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  min-height: 116px;
+  padding: 12px 13px 12px 0;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 15px;
+  background: linear-gradient(145deg, rgba(255,255,255,.026), rgba(255,255,255,.011));
+  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease, background .2s ease;
+}
+.clientCard:hover { transform: translateY(-2px); border-color: rgba(255,255,255,.12); box-shadow: 0 12px 26px rgba(0,0,0,.18); background: linear-gradient(145deg, rgba(255,255,255,.035), rgba(255,255,255,.014)); }
+.clientCard[data-tone="violet"] { box-shadow: inset 45px 0 80px -82px rgba(139,92,246,.65); }
+.clientCard[data-tone="gold"] { box-shadow: inset 45px 0 80px -82px rgba(212,166,74,.65); }
+.clientCard[data-tone="blue"] { box-shadow: inset 45px 0 80px -82px rgba(75,167,255,.62); }
+.clientCard[data-tone="green"] { box-shadow: inset 45px 0 80px -82px rgba(46,220,145,.58); }
+.clientCard[data-tone="red"] { box-shadow: inset 45px 0 80px -82px rgba(228,59,114,.58); }
+
+.clientStatusRail { width: 4px; height: 100%; border-radius: 0 999px 999px 0; background: rgba(180,120,255,.8); box-shadow: 0 0 15px rgba(180,120,255,.18); }
+.clientCard[data-tone="gold"] .clientStatusRail { background: #d6aa50; box-shadow: 0 0 15px rgba(214,170,80,.2); }
+.clientCard[data-tone="blue"] .clientStatusRail { background: #4ba7ff; box-shadow: 0 0 15px rgba(75,167,255,.2); }
+.clientCard[data-tone="green"] .clientStatusRail { background: #2edc91; box-shadow: 0 0 15px rgba(46,220,145,.18); }
+.clientCard[data-tone="red"] .clientStatusRail { background: #e43b72; box-shadow: 0 0 15px rgba(228,59,114,.18); }
+
+.clientAvatar {
+  align-self: start;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(170,120,255,.18);
+  border-radius: 14px;
+  color: #d9c4f8;
+  background: radial-gradient(circle at 35% 25%, rgba(164,102,255,.18), rgba(48,31,70,.52));
+  box-shadow: inset 0 0 18px rgba(139,92,246,.06);
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: .04em;
+}
+.clientAvatar[data-tone="gold"] { color: #efd17b; border-color: rgba(222,181,83,.17); background: radial-gradient(circle at 35% 25%, rgba(214,166,74,.17), rgba(61,42,23,.48)); }
+.clientAvatar[data-tone="blue"] { color: #8ac5ff; border-color: rgba(75,167,255,.17); background: radial-gradient(circle at 35% 25%, rgba(75,167,255,.16), rgba(22,43,67,.48)); }
+.clientAvatar[data-tone="green"] { color: #7ce4b7; border-color: rgba(46,220,145,.16); background: radial-gradient(circle at 35% 25%, rgba(46,220,145,.13), rgba(22,61,45,.44)); }
+.clientAvatar[data-tone="red"] { color: #ff88a5; border-color: rgba(228,59,114,.16); background: radial-gradient(circle at 35% 25%, rgba(228,59,114,.14), rgba(67,24,39,.46)); }
+
+.clientCardBody { min-width: 0; display: grid; align-content: start; gap: 8px; }
+.clientCardTop { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.clientCardTop h4 { margin: 0; color: #fff; font-size: 14px; letter-spacing: -.015em; }
+.clientPhone,
+.clientMuted { display: inline-block; margin-top: 4px; color: rgba(255,255,255,.45); font-size: 9px; }
+.clientMuted { color: rgba(255,255,255,.27); }
+.clientStatus { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; padding: 5px 7px; border: 1px solid rgba(169,118,255,.14); border-radius: 999px; color: #cdb0f8; background: rgba(119,68,190,.08); font-size: 8px; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; }
+.clientStatus[data-tone="gold"] { color: #e6c56c; border-color: rgba(214,166,74,.15); background: rgba(116,82,28,.08); }
+.clientStatus[data-tone="blue"] { color: #7dbfff; border-color: rgba(75,167,255,.15); background: rgba(27,79,128,.08); }
+.clientStatus[data-tone="green"] { color: #72dfae; border-color: rgba(46,220,145,.14); background: rgba(29,112,78,.08); }
+.clientStatus[data-tone="red"] { color: #ff7c9d; border-color: rgba(228,59,114,.14); background: rgba(126,30,58,.08); }
+
+.clientMetaRow { display: flex; gap: 11px; flex-wrap: wrap; color: rgba(255,255,255,.34); font-size: 8px; }
+.clientMetaRow span { display: inline-flex; align-items: center; gap: 5px; }
+.clientNote { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 8px; padding: 8px 9px; border: 1px solid rgba(255,255,255,.05); border-radius: 11px; color: rgba(211,190,240,.65); background: rgba(255,255,255,.017); }
+.clientNote > svg { margin-top: 2px; }
+.clientNote div { min-width: 0; }
+.clientNote small { display: block; margin-bottom: 2px; color: rgba(255,255,255,.3); font-size: 7px; text-transform: uppercase; letter-spacing: .09em; }
+.clientNote p { margin: 0; color: rgba(235,226,247,.62); font-size: 9px; line-height: 1.45; overflow-wrap: anywhere; }
+.clientNoteMuted { display: inline-flex; align-items: center; gap: 6px; color: rgba(255,255,255,.25); font-size: 8px; }
+
+.clientsEmptyState { min-height: 210px; display: flex; align-items: center; justify-content: center; gap: 13px; padding: 28px; text-align: left; border: 1px dashed rgba(171,123,255,.11); border-radius: 15px; background: rgba(91,54,141,.025); }
+.clientsEmptyState > span { width: 48px; height: 48px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 15px; color: #a983e2; background: rgba(133,82,202,.08); border: 1px solid rgba(171,123,255,.11); }
+.clientsEmptyState strong { display: block; color: rgba(255,255,255,.82); font-size: 12px; }
+.clientsEmptyState p { max-width: 470px; margin: 5px 0 0; color: rgba(255,255,255,.35); font-size: 10px; line-height: 1.5; }
+.clientsSkeletonList { display: grid; gap: 9px; }
+.clientsSkeletonList span { height: 112px; border-radius: 15px; background: linear-gradient(100deg, rgba(255,255,255,.025), rgba(255,255,255,.065), rgba(255,255,255,.025)); background-size: 200% 100%; animation: loading 1.25s ease-in-out infinite; }
+
+.clientsSideHeading { display: flex; align-items: center; gap: 10px; }
+.clientsSideHeading > span { width: 36px; height: 36px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.07); border-radius: 12px; background: rgba(255,255,255,.025); }
+.clientsSideHeading > span[data-tone="violet"] { color: #c09aff; box-shadow: inset 0 0 18px rgba(139,92,246,.05); }
+.clientsSideHeading > span[data-tone="blue"] { color: #77baff; box-shadow: inset 0 0 18px rgba(75,167,255,.05); }
+.clientsAddCard > p { margin: 13px 0 10px; color: rgba(255,255,255,.39); font-size: 10px; line-height: 1.55; }
+.clientsAddCard > p strong { color: rgba(238,219,255,.68); font-weight: 800; }
+.clientsAddCard textarea { width: 100%; min-height: 142px; resize: vertical; padding: 11px; outline: 0; border: 1px solid rgba(255,255,255,.075); border-radius: 13px; color: rgba(255,255,255,.86); background: rgba(0,0,0,.19); font: inherit; font-size: 10px; line-height: 1.6; transition: border-color .2s ease, box-shadow .2s ease; }
+.clientsAddCard textarea:focus { border-color: rgba(168,109,255,.24); box-shadow: 0 0 0 3px rgba(139,92,246,.04); }
+.clientsAddCard textarea::placeholder { color: rgba(255,255,255,.22); }
+.clientsSendButton { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 7px; margin-top: 9px; padding: 10px 12px; border: 1px solid rgba(177,122,255,.23); border-radius: 12px; color: #fff; background: linear-gradient(135deg, rgba(116,62,190,.84), rgba(80,42,139,.86)); box-shadow: 0 8px 24px rgba(88,45,145,.13); cursor: pointer; font-size: 10px; font-weight: 900; transition: transform .2s ease, filter .2s ease; }
+.clientsSendButton:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.08); }
+.clientsSendButton:disabled { opacity: .55; cursor: wait; }
+.clientsListSent { display: grid; gap: 8px; margin-top: 14px; padding: 12px; border: 1px solid rgba(46,220,145,.12); border-radius: 13px; background: rgba(32,111,80,.055); }
+.clientsListSent > span { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; color: #73dfad; background: rgba(46,220,145,.07); }
+.clientsListSent strong { color: rgba(235,255,246,.86); font-size: 11px; }
+.clientsListSent p { margin: 3px 0 0; color: rgba(203,235,218,.42); font-size: 9px; line-height: 1.45; }
+.clientsListSent small { color: rgba(120,220,171,.55); font-size: 8px; text-transform: uppercase; letter-spacing: .07em; }
+
+.clientsActivityCard { min-height: 200px; }
+.clientsTimeline { position: relative; display: grid; gap: 0; margin-top: 14px; }
+.clientsTimeline::before { content: ""; position: absolute; left: 14px; top: 10px; bottom: 10px; width: 1px; background: linear-gradient(to bottom, rgba(157,105,238,.2), rgba(255,255,255,.04)); }
+.clientsTimelineItem { position: relative; display: grid; grid-template-columns: 28px minmax(0,1fr); gap: 9px; padding: 7px 0; }
+.clientsTimelineItem > span { z-index: 1; width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid rgba(168,112,252,.14); border-radius: 50%; color: #bd98f6; background: #110c1c; }
+.clientsTimelineItem[data-tone="gold"] > span { color: #e3bf64; border-color: rgba(212,166,74,.15); }
+.clientsTimelineItem[data-tone="blue"] > span { color: #72b8ff; border-color: rgba(75,167,255,.14); }
+.clientsTimelineItem[data-tone="green"] > span { color: #69dda8; border-color: rgba(46,220,145,.14); }
+.clientsTimelineItem[data-tone="red"] > span { color: #ff7898; border-color: rgba(228,59,114,.14); }
+.clientsTimelineItem div { min-width: 0; padding-top: 1px; }
+.clientsTimelineItem strong { display: block; color: rgba(255,255,255,.76); font-size: 10px; }
+.clientsTimelineItem p { margin: 2px 0 0; color: rgba(255,255,255,.36); font-size: 8px; line-height: 1.4; overflow-wrap: anywhere; }
+.clientsTimelineItem small { display: block; margin-top: 2px; color: rgba(255,255,255,.23); font-size: 7px; }
+.clientsActivityEmpty { margin-top: 14px; padding: 15px 12px; border: 1px dashed rgba(255,255,255,.06); border-radius: 12px; color: rgba(255,255,255,.28); background: rgba(255,255,255,.012); font-size: 9px; line-height: 1.5; }
+.clientsAmbientLine { padding: 4px 6px; color: rgba(209,183,239,.28); font-size: 8px; font-weight: 850; letter-spacing: .18em; text-align: center; text-transform: uppercase; }
+
+@media (max-width: 1180px) {
+  .clientsKpis { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .clientsWorkspace { grid-template-columns: minmax(0, 2fr) minmax(250px, .85fr); }
+  .clientsToolbar { grid-template-columns: 1fr; }
+  .clientsFilters { justify-content: flex-start; }
+}
+
+@media (max-width: 900px) {
+  .clientsHero { align-items: flex-start; flex-direction: column; }
+  .clientsHeroControls { width: 100%; justify-content: flex-start; }
+  .clientsWorkspace { grid-template-columns: 1fr; }
+  .clientsSideColumn { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .clientsAmbientLine { grid-column: 1 / -1; }
+}
+
+@media (max-width: 660px) {
+  .clientsHero { padding: 18px; }
+  .clientsHeroCopy { align-items: flex-start; }
+  .clientsHeroIcon { width: 46px; height: 46px; border-radius: 14px; }
+  .clientsHeroCopy h2 { font-size: 25px; }
+  .clientsHeroControls { display: grid; grid-template-columns: 1fr; }
+  .clientsDateControl,
+  .clientsRefreshButton,
+  .clientsSyncBadge { width: 100%; min-width: 0; }
+  .clientsRefreshButton { min-height: 44px; }
+  .clientsKpis { grid-template-columns: 1fr 1fr; }
+  .clientsKpi { min-height: 96px; padding: 12px; }
+  .clientsKpi > span { width: 36px; height: 36px; }
+  .clientsKpi strong { font-size: 24px; }
+  .clientsProgressTop { align-items: flex-start; }
+  .clientsProgressTop h3 { font-size: 14px; }
+  .clientsProgressTop > strong { font-size: 26px; }
+  .clientsSideColumn { grid-template-columns: 1fr; }
+  .clientsSectionHeader { flex-direction: column; }
+  .clientsFilters { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .clientsFilters button { width: 100%; }
+  .clientCard { grid-template-columns: 4px 42px minmax(0,1fr); gap: 9px; padding-right: 10px; }
+  .clientAvatar { width: 40px; height: 40px; border-radius: 12px; }
+  .clientCardTop { flex-direction: column; gap: 7px; }
+  .clientStatus { align-self: flex-start; }
+  .clientsEmptyState { align-items: flex-start; flex-direction: column; }
+}
+
+@media (max-width: 420px) {
+  .clientsKpis { grid-template-columns: 1fr; }
+  .clientsHeroCopy { flex-direction: column; }
+  .clientsProgressTop { flex-direction: column; gap: 8px; }
+  .clientCard { grid-template-columns: 4px minmax(0,1fr); }
+  .clientAvatar { grid-column: 2; }
+  .clientCardBody { grid-column: 2; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clientsRefreshButton,
+  .clientsKpi,
+  .clientCard,
+  .clientsFilters button,
+  .clientsSendButton,
+  .clientsProgressTrack span { transition: none; }
+  .clientsSkeletonList span,
+  .spin { animation: none; }
+}
+
+.teamArenaBoard {
+  display: grid;
+  gap: 18px;
+}
+
+.teamArenaHero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.9fr);
+  gap: 18px;
+  padding: 24px;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 225, 150, 0.18);
+  background:
+    radial-gradient(circle at top left, rgba(255, 166, 78, 0.18), transparent 30%),
+    radial-gradient(circle at top right, rgba(138, 92, 255, 0.22), transparent 34%),
+    linear-gradient(135deg, rgba(12, 6, 30, 0.96), rgba(30, 18, 64, 0.94));
+  box-shadow: 0 20px 50px rgba(4, 0, 18, 0.44), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+.teamArenaCopy {
+  display: grid;
+  gap: 10px;
+}
+
+.teamArenaEyebrow {
+  font-size: 0.76rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #e8c878;
+  font-weight: 800;
+}
+
+.teamArenaCopy h2 {
+  margin: 0;
+  font-size: clamp(1.8rem, 3vw, 2.5rem);
+  line-height: 1.02;
+  color: #fff7ec;
+}
+
+.teamArenaCopy p {
+  margin: 0;
+  color: rgba(242, 233, 255, 0.82);
+  line-height: 1.65;
+  max-width: 62ch;
+}
+
+.teamArenaSummary {
+  display: grid;
+  gap: 12px;
+  align-content: center;
+}
+
+.teamMiniStat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 225, 150, 0.14);
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+}
+
+.teamMiniStat span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  color: #ffe6a9;
+  background: linear-gradient(180deg, rgba(255, 221, 139, 0.22), rgba(146, 99, 255, 0.14));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.07);
+}
+
+.teamMiniStat small {
+  display: block;
+  color: rgba(224, 214, 242, 0.72);
+  font-size: 0.76rem;
+}
+
+.teamMiniStat strong {
+  color: #fff8ee;
+  font-size: 1rem;
+}
+
+.teamBattleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.teamBattleCard {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 225, 150, 0.16);
+  background: linear-gradient(180deg, rgba(16, 10, 33, 0.96), rgba(10, 6, 24, 0.98));
+  box-shadow: 0 22px 50px rgba(5, 0, 16, 0.42), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.teamBattleCard::before {
+  content: "";
+  position: absolute;
+  inset: auto auto -32% -10%;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  filter: blur(22px);
+  opacity: 0.38;
+  pointer-events: none;
+}
+
+.teamBattleCard[data-tone="fuego"]::before {
+  background: radial-gradient(circle, rgba(255, 128, 59, 0.65), rgba(255, 128, 59, 0));
+}
+
+.teamBattleCard[data-tone="agua"]::before {
+  background: radial-gradient(circle, rgba(61, 180, 255, 0.55), rgba(61, 180, 255, 0));
+}
+
+.teamBattleCard[data-winner="true"] {
+  border-color: rgba(255, 215, 123, 0.38);
+  box-shadow: 0 26px 60px rgba(8, 0, 24, 0.5), 0 0 0 1px rgba(255,215,123,0.12), inset 0 1px 0 rgba(255,255,255,0.07);
+}
+
+.teamBattleHead {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.teamBattleTitleWrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.teamBattleTitleWrap small {
+  display: block;
+  color: rgba(224, 214, 242, 0.72);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.teamBattleTitleWrap h3 {
+  margin: 4px 0 0;
+  color: #fff7ec;
+  font-size: 1.5rem;
+}
+
+.teamBattleBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+  color: #ffe6a9;
+}
+
+.teamLeaderPill {
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 218, 140, 0.26);
+  background: rgba(255, 215, 123, 0.16);
+  color: #fff1cd;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.teamLeaderPill[data-passive="true"] {
+  background: rgba(132, 103, 255, 0.14);
+  border-color: rgba(167, 140, 255, 0.22);
+  color: #ddd1ff;
+}
+
+.teamScoreRow {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.teamScoreRow small,
+.teamMetricTile small,
+.teamProgressMeta span,
+.teamDuelLegend,
+.teamRuleList,
+.teamMissionList {
+  color: rgba(225, 216, 241, 0.72);
+}
+
+.teamScoreRow strong {
+  display: block;
+  margin-top: 4px;
+  font-size: clamp(2rem, 3.2vw, 2.7rem);
+  color: #fff4df;
+  line-height: 1;
+}
+
+.teamAuraRing {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 22px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03));
+  color: #fff3d7;
+}
+
+.teamAuraRing[data-tone="fuego"] {
+  box-shadow: inset 0 0 0 1px rgba(255, 152, 86, 0.12), 0 0 30px rgba(255, 118, 63, 0.18);
+}
+
+.teamAuraRing[data-tone="agua"] {
+  box-shadow: inset 0 0 0 1px rgba(116, 204, 255, 0.12), 0 0 30px rgba(70, 171, 255, 0.16);
+}
+
+.teamProgressWrap {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 8px;
+}
+
+.teamProgressMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.86rem;
+}
+
+.teamProgressMeta b {
+  color: #fff0ce;
+}
+
+.teamProgressTrack,
+.teamDuelTrack {
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.45);
+}
+
+.teamProgressTrack span,
+.teamDuelTrack span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.teamProgressTrack span[data-tone="fuego"],
+.teamDuelTrack span[data-tone="fuego"] {
+  background: linear-gradient(90deg, #ff8c45, #ffc468);
+}
+
+.teamProgressTrack span[data-tone="agua"],
+.teamDuelTrack span[data-tone="agua"] {
+  background: linear-gradient(90deg, #4dc7ff, #79f0ff);
+}
+
+.teamStatsGrid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.teamMetricTile {
+  padding: 14px 15px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+}
+
+.teamMetricTile strong {
+  display: block;
+  margin-top: 6px;
+  color: #ffffff;
+  font-size: 1.25rem;
+}
+
+.teamBottomGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.teamInsightCard {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 225, 150, 0.12);
+  background: linear-gradient(180deg, rgba(18, 12, 38, 0.96), rgba(11, 7, 26, 0.98));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.teamInsightHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.teamInsightHead span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  color: #ffe6a9;
+  background: linear-gradient(180deg, rgba(255, 221, 139, 0.2), rgba(155, 110, 255, 0.12));
+}
+
+.teamInsightHead small {
+  display: block;
+  color: rgba(224, 214, 242, 0.7);
+  font-size: 0.74rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.teamInsightHead h3 {
+  margin: 4px 0 0;
+  color: #fff8ee;
+  font-size: 1.08rem;
+}
+
+.teamInsightCard p {
+  margin: 0;
+  color: rgba(244, 235, 255, 0.84);
+  line-height: 1.6;
+}
+
+.teamDuelTrack {
+  min-height: 14px;
+}
+
+.teamDuelTrack span + span {
+  margin-left: 4px;
+}
+
+.teamDuelLegend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.92rem;
+}
+
+.teamDuelLegend strong {
+  color: #fff6e7;
+}
+
+.teamRuleList,
+.teamMissionList {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 10px;
+  line-height: 1.55;
+}
+
+.teamRuleList li::marker,
+.teamMissionList li::marker {
+  color: #ffd36c;
+}
+
+.teamMissionList b {
+  color: #fff1c8;
+}
+
+@media (max-width: 1100px) {
+  .teamArenaHero,
+  .teamBottomGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  .teamBattleGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .teamArenaHero,
+  .teamBattleCard,
+  .teamInsightCard {
+    padding: 18px;
+    border-radius: 22px;
+  }
+
+  .teamStatsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .teamArenaCopy h2 {
+    font-size: 1.65rem;
+  }
+
+  .teamBattleTitleWrap h3 {
+    font-size: 1.24rem;
+  }
+
+  .teamScoreRow {
+    align-items: flex-start;
+  }
+
+  .teamAuraRing {
+    width: 56px;
+    height: 56px;
+  }
+}
+
+:global(.tc-rank-panel) .railCard,
+:global(.tc-rank-panel) .clientsHero,
+:global(.tc-rank-panel) .clientsProgressCard,
+:global(.tc-rank-panel) .clientsListCard,
+:global(.tc-rank-panel) .clientsAddCard,
+:global(.tc-rank-panel) .clientsActivityCard,
+:global(.tc-rank-panel) .teamBattleCard { background:var(--panel-glass); border-color:var(--panel-border); box-shadow:var(--panel-shadow); backdrop-filter:blur(var(--panel-blur)); }
