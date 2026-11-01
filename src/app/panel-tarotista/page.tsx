@@ -33,18 +33,83 @@ type TabKey =
   | "checklist"
   | "chat";
 
-const TAROTISTA_NAV: ReadonlyArray<{ key: TabKey; label: string; kicker: string; icon: LucideIcon }> = [
-  { key: "resumen", label: "Resumen", kicker: "Centro de turno", icon: LayoutDashboard },
-  { key: "notificaciones", label: "Notificaciones", kicker: "Avisos y seguimiento", icon: BellRing },
-  { key: "clientes", label: "Clientes", kicker: "Listas y seguimiento", icon: Send },
-  { key: "chat", label: "Chat", kicker: "Central en directo", icon: MessageSquare },
-  { key: "bonos", label: "Bonos", kicker: "Captadas y tramos", icon: BadgeEuro },
-  { key: "rangos", label: "Rangos", kicker: "Categoría y progreso", icon: Star },
-  { key: "ranking", label: "Ranking", kicker: "Top del mes", icon: Trophy },
-  { key: "equipos", label: "Equipos", kicker: "Competición", icon: Flame },
-  { key: "checklist", label: "Checklist", kicker: "Turno actual", icon: ClipboardCheck },
-  { key: "facturas", label: "Factura", kicker: "Resumen mensual", icon: ReceiptText },
+const TAROTISTA_NAV: ReadonlyArray<{ key: TabKey; label: string; kicker: string; icon: LucideIcon; tone: string }> = [
+  { key: "resumen", label: "Resumen", kicker: "Centro de turno", icon: LayoutDashboard, tone: "violet" },
+  { key: "notificaciones", label: "Notificaciones", kicker: "Avisos y seguimiento", icon: BellRing, tone: "rose" },
+  { key: "clientes", label: "Clientes", kicker: "Listas y seguimiento", icon: UsersRound, tone: "cyan" },
+  { key: "chat", label: "Chat", kicker: "Central en directo", icon: MessageSquare, tone: "violet" },
+  { key: "bonos", label: "Bonos", kicker: "Captadas y tramos", icon: BadgeEuro, tone: "mint" },
+  { key: "rangos", label: "Rangos", kicker: "Categoría y progreso", icon: Star, tone: "gold" },
+  { key: "ranking", label: "Ranking", kicker: "Top del mes", icon: Trophy, tone: "gold" },
+  { key: "equipos", label: "Equipos", kicker: "Competición", icon: Flame, tone: "orange" },
+  { key: "checklist", label: "Checklist", kicker: "Turno actual", icon: ClipboardCheck, tone: "mint" },
+  { key: "facturas", label: "Factura", kicker: "Resumen mensual", icon: ReceiptText, tone: "blue" },
 ];
+
+const TAROTISTA_NAV_GROUPS: ReadonlyArray<{ title: string; keys: readonly TabKey[] }> = [
+  { title: "Mi turno", keys: ["resumen", "notificaciones", "checklist"] },
+  { title: "Clientes y equipo", keys: ["clientes", "chat", "equipos"] },
+  { title: "Progreso e ingresos", keys: ["bonos", "rangos", "ranking", "facturas"] },
+];
+
+function TarotistaSidebar({ activeTab, onTabChange, badges }: {
+  activeTab: TabKey;
+  onTabChange: (tab: TabKey) => void;
+  badges: Partial<Record<TabKey, number>>;
+}) {
+  return (
+    <aside className={`tc-sidebar ${panelStyles.sidebar}`}>
+      <div className={`tc-sidebar-card ${panelStyles.sidebarCard}`}>
+        <div className={panelStyles.sidebarHeading}>
+          <div className={panelStyles.sidebarTitle}>Tu panel tarotista</div>
+          <div className={panelStyles.sidebarSubtitle}>Turno, clientes y progreso</div>
+        </div>
+        <nav className={panelStyles.navigation} aria-label="Navegación de tarotistas">
+          {TAROTISTA_NAV_GROUPS.map((group) => (
+            <section key={group.title} className={panelStyles.navSection} aria-label={group.title}>
+              <h2 className={panelStyles.navSectionTitle}>{group.title}</h2>
+              <div className={panelStyles.navItems}>
+                {group.keys.map((key) => {
+                  const item = TAROTISTA_NAV.find((entry) => entry.key === key)!;
+                  const Icon = item.icon;
+                  const badge = Math.max(0, badges[key] || 0);
+                  const badgeLabel = key === "chat" ? `${badge} mensajes sin leer`
+                    : key === "checklist" ? `${badge} tareas pendientes`
+                    : key === "facturas" ? `${badge} incidencias pendientes`
+                    : `${badge} notificaciones pendientes`;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`${panelStyles.navButton} ${activeTab === key ? panelStyles.navActive : ""}`}
+                      data-tarotista-nav={key}
+                      data-tone={item.tone}
+                      aria-current={activeTab === key ? "page" : undefined}
+                      onClick={() => onTabChange(key)}
+                    >
+                      <span className={panelStyles.navMain}>
+                        <Icon className={panelStyles.navIcon} size={21} strokeWidth={1.7} aria-hidden="true" />
+                        <span className={panelStyles.navCopy}>
+                          <span className={panelStyles.navLabel}>{item.label}</span>
+                          <span className={panelStyles.navKicker}>{item.kicker}</span>
+                        </span>
+                      </span>
+                      {badge > 0 ? (
+                        <span className={panelStyles.navBadge} data-tone={key === "checklist" ? "amber" : "red"} aria-label={badgeLabel} title={badgeLabel}>
+                          {badge > 99 ? "99+" : badge}
+                        </span>
+                      ) : <span className={panelStyles.navDot} aria-hidden="true" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </nav>
+      </div>
+    </aside>
+  );
+}
 
 function monthKeyNow() {
   const d = new Date();
@@ -1559,35 +1624,12 @@ export default function Tarotista() {
         </div>
       ) : (
         <div className="tc-shell tc-shell-premium">
-          <aside className="tc-sidebar">
-            <div className="tc-sidebar-card">
-              <div className="tc-sidebar-title">Panel tarotista</div>
-              <div className="tc-sidebar-nav">
-                {TAROTISTA_NAV.map((item) => {
-                  const Icon = item.icon;
-                  const badge = item.key === "chat"
-                    ? chatUnread
-                    : item.key === "notificaciones"
-                      ? notificationsCount
-                      : item.key === "checklist"
-                        ? Math.max(0, clProgress.total - clProgress.completed)
-                        : item.key === "facturas" ? incidents.length : 0;
-                  return (
-                    <button key={item.key} className={`tc-sidebtn ${tab === item.key ? "tc-sidebtn-active" : ""}`} onClick={() => setTab(item.key)}>
-                      <div className={panelStyles.navMain}>
-                        <span className={panelStyles.navIcon}><Icon size={17} /></span>
-                        <div className={panelStyles.navCopy}>
-                          <div className="tc-sidebtn-main">{item.label}</div>
-                          <div className="tc-sidebtn-kicker">{item.kicker}</div>
-                        </div>
-                      </div>
-                      {badge > 0 ? <span className={panelStyles.navBadge} data-tone={item.key === "checklist" ? "amber" : "red"}>{badge > 99 ? "99+" : badge}</span> : <span className="tc-sidebtn-dot" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </aside>
+          <TarotistaSidebar activeTab={tab} onTabChange={setTab} badges={{
+            chat: chatUnread,
+            notificaciones: notificationsCount,
+            checklist: Math.max(0, clProgress.total - clProgress.completed),
+            facturas: incidents.length,
+          }} />
 
           <main className="tc-main">
             <div className="tc-container">
