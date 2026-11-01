@@ -94,16 +94,16 @@ test('overview uses live panel sessions instead of stale worker heartbeat and ne
  h.tables.workers.find(w=>w.id===id(2)).state='offline';
  h.tables.attendance_panel_sessions.push({worker_id:id(2),ended_at:null,expires_at:future});
  let body=await (await h.threads.GET(req('/api/chat/threads'))).json();
- assert.equal(body.contacts[0].state,'online');assert.equal(body.threads[0].contact.state,'online');assert.equal(body.contacts[0].presence_expires_at,future);
+ assert.equal(body.contacts.find(c=>c.id===id(2)).state,'online');assert.equal(body.threads[0].contact.state,'online');assert.equal(body.contacts.find(c=>c.id===id(2)).presence_expires_at,future);
  assert.ok(Date.parse(body.presence_checked_at));assert.equal(h.writes.length,0);assert.equal(h.connectionCalls.length,0);
  h.tables.workers.find(w=>w.id===id(2)).state='online';
  h.tables.attendance_panel_sessions[0].expires_at=new Date(Date.now()-1).toISOString();
- body=await (await h.threads.GET(req('/api/chat/threads'))).json();assert.equal(body.contacts[0].state,'offline');
+ body=await (await h.threads.GET(req('/api/chat/threads'))).json();assert.equal(body.contacts.find(c=>c.id===id(2)).state,'offline');
  h.tables.attendance_state.push({worker_id:id(2),status:'bathroom'});
- body=await (await h.threads.GET(req('/api/chat/threads'))).json();assert.equal(body.contacts[0].state,'break');
+ body=await (await h.threads.GET(req('/api/chat/threads'))).json();assert.equal(body.contacts.find(c=>c.id===id(2)).state,'break');
  h.tables.attendance_panel_sessions[0]={worker_id:id(2),ended_at:new Date().toISOString(),expires_at:future};
  h.tables.attendance_state[0].status='offline';
- body=await (await h.threads.GET(req('/api/chat/threads'))).json();assert.equal(body.contacts[0].state,'offline','closed sessions are never online');
+ body=await (await h.threads.GET(req('/api/chat/threads'))).json();assert.equal(body.contacts.find(c=>c.id===id(2)).state,'offline','closed sessions are never online');
 });
 
 test('presence read failure fails overview instead of publishing a false offline snapshot',async()=>{
@@ -196,11 +196,46 @@ test('message idempotency cannot recover a message from a different thread/body'
  const crossThread=await h.messages.POST(req('/api/chat/messages',{thread_id:id(10),text:'Fixture message',client_message_id:'existing-message'}));
  assert.equal(crossThread.status,409);assert.equal(h.writes.length,0);
 });
-test('central-tarotista contact model and admin create restriction remain unchanged',async()=>{
+test('Central-Tarotista pairs stay unchanged and Admin can initiate its own staff conversations',async()=>{
  const h=harness();
  assert.equal((await h.threads.POST(req('/api/chat/threads',{contact_worker_id:id(4)}))).status,400);
  assert.equal((await h.threads.POST(req('/api/chat/threads',{contact_worker_id:id(2)}))).status,200);
- const admin=harness({actor:3});assert.equal((await admin.threads.POST(req('/api/chat/threads',{contact_worker_id:id(2)}))).status,403);
+ for (const peer of [1,2]) {
+  const admin=harness({actor:3});
+  const created=await admin.threads.POST(req('/api/chat/threads',{contact_worker_id:id(peer),central_worker_id:id(4)}));
+  assert.equal(created.status,201);
+  const data=await created.json();
+  assert.equal(data.thread.central_worker_id,id(peer===1?1:3));
+  assert.equal(data.thread.tarotist_worker_id,id(peer===1?3:2));
+  const retry=await admin.threads.POST(req('/api/chat/threads',{contact_worker_id:id(peer)}));
+  assert.equal(retry.status,200);assert.equal((await retry.json()).thread.id,data.thread.id);
+  const overview=await(await admin.threads.GET(req('/api/chat/threads'))).json();
+  assert.equal(overview.threads.find(t=>t.id===data.thread.id).contact.id,id(peer));
+ }
+});
+
+test('staff can reply to Admin in the same pair without gaining other private threads',async()=>{
+ for(const actor of [1,2]) {
+  const h=harness({actor});
+  const pair={id:id(15),central_worker_id:id(actor===1?1:3),tarotist_worker_id:id(actor===1?3:2),status:'open'};
+  h.tables.chat_threads.push(pair);
+  const response=await h.threads.POST(req('/api/chat/threads',{contact_worker_id:id(3)}));
+  assert.equal(response.status,200);assert.equal((await response.json()).thread.id,pair.id);
+  const overview=await(await h.threads.GET(req('/api/chat/threads'))).json();
+  assert.ok(overview.contacts.some(c=>c.id===id(3)));
+  assert.equal(overview.threads.find(t=>t.id===pair.id).contact.id,id(3));
+  assert.equal((await h.messages.GET(req('/api/chat/messages?thread_id='+id(11)))).status,403);
+ }
+});
+
+test('Admin cannot create a chat when disconnected, with itself or with inactive staff',async()=>{
+ const disconnected=harness({actor:3,connected:false});
+ assert.equal((await disconnected.threads.POST(req('/api/chat/threads',{contact_worker_id:id(2)}))).status,423);
+ assert.equal(disconnected.writes.length,0);
+ const admin=harness({actor:3});
+ assert.equal((await admin.threads.POST(req('/api/chat/threads',{contact_worker_id:id(3)}))).status,400);
+ assert.equal((await admin.threads.POST(req('/api/chat/threads',{contact_worker_id:id(5)}))).status,404);
+ assert.equal(admin.writes.length,0);
 });
 
 test('legacy endpoints enforce verified auth and private-thread ownership',async()=>{

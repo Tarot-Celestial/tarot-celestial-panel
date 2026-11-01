@@ -28,15 +28,17 @@ function realEffect(file, marker) {
 }
 
 const gates = [
-  ['src/app/panel-central/page.tsx', 'central'],
+  ['src/features/central/CentralWorkspace.tsx', 'central'],
+  ['src/features/central/CentralWorkspace.tsx', 'admin'],
   ['src/app/panel-tarotista/page.tsx', 'tarotista'],
   ['src/app/admin/cerebro/page.tsx', 'admin'],
 ];
 
-function gateFixture(file, loadIdentity) {
+function gateFixture(file, loadIdentity, expectedRole = "central") {
   const exports = {}, state = { authorized: false, error: null }, redirects = [];
   vm.runInNewContext(compile(`exports.effect = ${realEffect(file, 'loadPanelIdentity(sb)')}`), {
-    exports, Error, sb: {}, loadPanelIdentity: loadIdentity,
+    exports, Error, expectedRole, sb: {}, loadPanelIdentity: loadIdentity,
+    authUserRef: { current: null }, setPanelUserId() {}, setMyWorkerId() {},
     panelSessionRejected: access.panelSessionRejected, panelPathForRole: access.panelPathForRole,
     redirectToLogin: reason => redirects.push(`/login?reason=${reason}`),
     window: { location: { replace: destination => redirects.push(destination) } },
@@ -55,8 +57,8 @@ for (const [file, role] of gates) {
     const fixture = gateFixture(file, async () => {
       attempts++;
       if (attempts === 1) throw new access.PanelAccessError('ACCESS_SERVICE_UNAVAILABLE', 'Servicio temporalmente no disponible', 503);
-      return { ok: true, role };
-    });
+      return { ok: true, role, id: 'worker-test', user: { id: 'user-test' } };
+    }, role);
     fixture.effect(); await settle();
     assert.equal(attempts, 1);
     assert.equal(fixture.state.authorized, false);
@@ -71,7 +73,7 @@ for (const [file, role] of gates) {
 
   test(`${role} gate still rejects invalid sessions and disabled workers`, async () => {
     for (const [code, status] of [['INVALID_SESSION', 401], ['WORKER_DISABLED', 403]]) {
-      const fixture = gateFixture(file, async () => { throw new access.PanelAccessError(code, 'Acceso denegado', status); });
+      const fixture = gateFixture(file, async () => { throw new access.PanelAccessError(code, 'Acceso denegado', status); }, role);
       fixture.effect(); await settle();
       assert.equal(fixture.state.authorized, false);
       assert.equal(fixture.redirects.length, 1);
@@ -81,12 +83,12 @@ for (const [file, role] of gates) {
 
   test(`${role} gate routes verified alternative roles and ignores stale results after unmount`, async () => {
     const alternative = role === 'admin' ? 'central' : 'admin';
-    const fixture = gateFixture(file, async () => ({ role: alternative }));
+    const fixture = gateFixture(file, async () => ({ role: alternative }), role);
     fixture.effect(); await settle();
     assert.equal(fixture.state.authorized, false);
     assert.deepEqual(fixture.redirects, [access.panelPathForRole(alternative)]);
     let finish;
-    const disposed = gateFixture(file, () => new Promise(resolve => { finish = resolve; }));
+    const disposed = gateFixture(file, () => new Promise(resolve => { finish = resolve; }), role);
     disposed.effect()(); finish({ role }); await settle();
     assert.equal(disposed.state.authorized, false);
     assert.deepEqual(disposed.redirects, []);
@@ -97,7 +99,7 @@ test('tarotista ignores initial null session notifications but honors an explici
   const exports = {}, location = { href: '/panel-tarotista' };
   let notify, unsubscribed = false;
   vm.runInNewContext(compile(`exports.effect = ${realEffect('src/app/panel-tarotista/page.tsx', 'onAuthStateChange')}`), {
-    exports, window: { location },
+    exports, window: { location }, authUserRef: { current: null }, panelReadEpoch: { current: 0 },
     sb: { auth: { onAuthStateChange(callback) { notify = callback; return { data: { subscription: { unsubscribe() { unsubscribed = true; } } } }; } } },
   });
   const cleanup = exports.effect();

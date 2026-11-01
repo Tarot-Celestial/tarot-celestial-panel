@@ -44,7 +44,7 @@ function fixture(activeTab = 'dashboard') {
 test('all existing Admin destinations survive grouping, without duplicate sections or missing root items', () => {
   const previousDestinations = [
     'atlas', 'dashboard', 'panel', 'facturas', 'client-balances', 'welldone', 'rank-benefits', 'finance-center', 'editor',
-    'estadisticas', 'equipos-marcador', 'asistencia', 'incidencias', 'trabajadores', 'clientes', 'pagos-web', 'precios-hoy',
+    'estadisticas', 'estadisticas-centrales', 'central-operativa', 'central-primera-tarotista', 'central-chat', 'central-sorteo', 'central-whatsapp', 'equipos-marcador', 'asistencia', 'incidencias', 'trabajadores', 'clientes', 'pagos-web', 'precios-hoy',
     'rangos-clientes', 'clientes-web', 'ruletas-clientes', 'rituales-clientes', 'bonos-tarotistas', 'rangos-tarotistas',
     'sistema-xp', 'sistema-xp-niveles', 'crm', 'sorteo', 'chat', 'captacion', 'campanas-clientes', 'redes-sociales',
     'redes-sociales-instagram', 'redes-sociales-tiktok', 'rendimiento', 'reservas', 'diario',
@@ -76,7 +76,7 @@ test('WhatsApp is an accessible Admin action inside Communication and does not n
 test('direct child destinations open the appropriate submenu and remain keyboard-reachable', () => {
   const f = fixture('clientes-web');
   try {
-    for (const [childKey, groupLabel] of [['clientes-web', 'Rangos de clientes'], ['sistema-xp-niveles', 'Sistema de XP'], ['rangos-tarotistas', 'Bonos tarotistas'], ['redes-sociales-tiktok', 'Redes sociales']]) {
+    for (const [childKey, groupLabel] of [['central-chat', 'Trabajar como Central'], ['clientes-web', 'Rangos de clientes'], ['sistema-xp-niveles', 'Sistema de XP'], ['rangos-tarotistas', 'Bonos tarotistas'], ['redes-sociales-tiktok', 'Redes sociales']]) {
       f.render(childKey);
       const toggle = f.toggle(groupLabel);
       assert.equal(toggle.props.type, 'button');

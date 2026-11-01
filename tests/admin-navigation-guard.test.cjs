@@ -58,3 +58,16 @@ test('callbacks captured before edits still protect the draft and approved depar
     assert.equal(f.prompts.length, 2);
   } finally { f.close(); }
 });
+
+test('Central shortcuts respect cancelling an unsaved WhatsApp draft', () => {
+  const f = fixture();
+  try {
+    act(() => f.current.setTab('whatsapp'));
+    act(() => f.current.setWhatsAppDirty(true));
+    act(() => f.current.setTab('central-operativa'));
+    assert.equal(f.current.tab, 'whatsapp');
+    f.allow();
+    act(() => f.current.setTab('central-chat'));
+    assert.equal(f.current.tab, 'central-chat');
+  } finally { f.close(); }
+});

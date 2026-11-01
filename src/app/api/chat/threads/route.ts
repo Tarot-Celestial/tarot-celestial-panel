@@ -12,8 +12,8 @@ function publicWorker(worker: any, presence: Map<string, StaffChatPresence>) {
 export async function GET(req: Request) {
   try {
     const { db, me } = await getStaffChatActor(req);
-    const contactRole = me.role === "tarotista" ? "central" : "tarotista";
-    const contactsQuery = db.from("workers").select("id, display_name, role, team, state").eq("role", contactRole).eq("is_active", true).order("display_name");
+    const contactRoles = me.role === "admin" ? ["central", "tarotista"] : me.role === "tarotista" ? ["central", "admin"] : ["tarotista", "admin"];
+    const contactsQuery = db.from("workers").select("id, display_name, role, team, state").in("role", contactRoles).eq("is_active", true).order("display_name");
     let threadsQuery = db.from("chat_threads").select("id, central_worker_id, tarotist_worker_id, status, created_at, last_message_at, last_message_preview, title").order("last_message_at", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false });
     if (me.role === "central") threadsQuery = threadsQuery.eq("central_worker_id", me.id);
     if (me.role === "tarotista") threadsQuery = threadsQuery.eq("tarotist_worker_id", me.id);
@@ -45,7 +45,7 @@ export async function GET(req: Request) {
       sender_display_name: String(row.sender_display_name || ""), text: String(row.text || ""), created_at: String(row.created_at),
     }]));
     const normalizedThreads = (threads || []).map((thread: any) => {
-      const otherId = me.role === "tarotista" ? thread.central_worker_id : thread.tarotist_worker_id;
+      const otherId = String(thread.tarotist_worker_id) === me.id ? thread.central_worker_id : thread.tarotist_worker_id;
       const legacyContact = !otherId && me.role === "tarotista" ? { id: `legacy:${thread.id}`, display_name: "Historial anterior", role: "central", team: null, state: "offline" } : null;
       return { ...thread, id: String(thread.id), central_display_name: thread.central_worker_id ? workerById.get(String(thread.central_worker_id))?.display_name || 'Central' : 'Historial anterior', contact: otherId ? workerById.get(String(otherId)) || null : legacyContact, unread_count: unreadByThread.get(String(thread.id)) || 0, latest_incoming: incomingByThread.get(String(thread.id)) || null, legacy: !thread.central_worker_id };
     });
@@ -60,7 +60,6 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const { db, me } = await getStaffChatActor(req);
-    if (me.role === "admin") throw new Error("FORBIDDEN");
     await requireStaffChatConnection(db, me);
     const body = await req.json().catch(() => ({}));
     const requestedId = String(body?.contact_worker_id || body?.tarotist_worker_id || "").trim();
@@ -69,9 +68,13 @@ export async function POST(req: Request) {
     const { data: contact, error: contactError } = await db.from("workers").select("id, display_name, role, team, state, is_active").eq("id", requestedId).eq("is_active", true).maybeSingle();
     if (contactError) throw contactError;
     if (!contact?.id) throw new Error("CONTACT_NOT_FOUND");
-    if ((me.role === "central" && contact.role !== "tarotista") || (me.role === "tarotista" && contact.role !== "central")) throw new Error("INVALID_CONTACT_ROLE");
-    const centralWorkerId = me.role === "central" ? me.id : String(contact.id);
-    const tarotistWorkerId = me.role === "tarotista" ? me.id : String(contact.id);
+    const allowedRoles = me.role === "admin" ? ["central", "tarotista"] : me.role === "central" ? ["tarotista", "admin"] : ["central", "admin"];
+    if (me.id === String(contact.id) || !allowedRoles.includes(contact.role)) throw new Error("INVALID_CONTACT_ROLE");
+    // Legacy column names are preserved. A Central occupies the first slot,
+    // a Tarotista the second; Admin takes the other slot. Either participant
+    // therefore resolves the same unique pair without changing old histories.
+    const centralWorkerId = me.role === "central" ? me.id : contact.role === "central" ? String(contact.id) : me.role === "admin" ? me.id : String(contact.id);
+    const tarotistWorkerId = centralWorkerId === me.id ? String(contact.id) : me.id;
     const { data: existing, error: existingError } = await db.from("chat_threads").select("*").eq("central_worker_id", centralWorkerId).eq("tarotist_worker_id", tarotistWorkerId).maybeSingle();
     if (existingError) throw existingError;
     if (existing?.id) return NextResponse.json({ ok: true, thread: existing, created: false });

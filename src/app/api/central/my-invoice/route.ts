@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 import { normalizeMonthKey } from "@/lib/month-key";
-import { createClient } from "@supabase/supabase-js";
-import { getBearerToken } from "@/lib/server/auth-fast";
+import { centralWorkspaceIdentity, centralWorkspaceAccessFailure } from "@/lib/server/central-workspace-access";
 
 export const runtime = "nodejs";
 
 type InvoiceLine = { id: string; kind: string; label: string; amount: number; created_at?: string | null; meta?: unknown };
 type InvoiceRow = { id: string; worker_id: string; month_key: string; status: string; total: number; created_at?: string | null; updated_at?: string | null };
 
-function env(name: string) { const value = process.env[name]; if (!value) throw new Error(`Missing env var: ${name}`); return value; }
 function money(value: unknown) { const n = Number(value); return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0; }
 function monthKey(date = new Date()) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`; }
 function previousMonth(key: string) { const [y, m] = key.split("-").map(Number); const d = new Date(y, m - 2, 1); return monthKey(d); }
@@ -34,20 +32,7 @@ function currentMadridWeekStartKey(now = new Date()) {
 
 export async function GET(req: Request) {
   try {
-    const token = getBearerToken(req);
-    if (!token) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-    const supabaseUrl = env("NEXT_PUBLIC_SUPABASE_URL");
-    const authClient = createClient(supabaseUrl, env("NEXT_PUBLIC_SUPABASE_ANON_KEY"), { auth: { persistSession: false } });
-    const { data: authData, error: authError } = await authClient.auth.getUser(token);
-    const uid = authData.user?.id || null;
-    if (authError || !uid) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-
-    const admin = createClient(supabaseUrl, env("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false } });
-    const { data: worker, error: workerError } = await admin.from("workers")
-      .select("id,user_id,display_name,role,team,salary_base,is_active")
-      .eq("user_id", uid).maybeSingle();
-    if (workerError) throw workerError;
-    if (!worker || String(worker.role || "").toLowerCase() !== "central") return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    const { db: admin, worker } = await centralWorkspaceIdentity(req);
 
     const url = new URL(req.url);
     const month = normalizeMonthKey(url.searchParams.get("month") ?? monthKey());
@@ -114,6 +99,8 @@ export async function GET(req: Request) {
       next_payment_at: null,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    const denied = centralWorkspaceAccessFailure(error);
+    if (denied) return denied;
     const e = error as { code?: string; message?: string; details?: string; hint?: string };
     if (e.message === "INVALID_MONTH_KEY") return NextResponse.json({ ok: false, error: e.message }, { status: 400 });
     console.error("[central/my-invoice]", { code: e.code, message: e.message, details: e.details, hint: e.hint });

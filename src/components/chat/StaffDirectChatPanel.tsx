@@ -52,12 +52,16 @@ function mergeMessages(current: StaffChatMessage[], incoming: StaffChatMessage[]
   return [...merged.values()].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
 }
 
-export default function StaffDirectChatPanel({ compact = false }: { compact?: boolean }) {
+export default function StaffDirectChatPanel({ compact = false, directConversations = false }: { compact?: boolean; directConversations?: boolean }) {
   const { me, mode, contacts, threads, loading, error: sharedError, live, sound, volume, audioReady, notificationPermission, refresh, setSound, setVolume, testSound, enableNotifications, setVisibleThread, incoming, openRequest } = useStaffChat();
   const attendance = useAttendance();
   const { connected, verificationPending } = usePanelSessionAccess(attendance);
   const surfaceId = useId();
   const meId = me?.id || "";
+  const [directOnly, setDirectOnly] = useState(directConversations);
+  const visibleThreads = useMemo(() => mode === "admin" && directOnly
+    ? threads.filter(thread => thread.central_worker_id === meId || thread.tarotist_worker_id === meId) : threads,
+  [mode, directOnly, threads, meId]);
   const [selectedContactId, setSelectedContactId] = useState("");
   const [selectedThreadId, setSelectedThreadId] = useState("");
   const [messages, setMessages] = useState<StaffChatMessage[]>([]);
@@ -113,10 +117,10 @@ export default function StaffDirectChatPanel({ compact = false }: { compact?: bo
   const selectedContact = contacts.find(contact => contact.id === selectedContactId) || selectedThread?.contact || null;
   const threadByContact = useMemo(() => {
     const map = new Map<string, (typeof threads)[number]>();
-    for (const thread of threads) if (thread.contact?.id && !map.has(thread.contact.id)) map.set(thread.contact.id, thread);
+    for (const thread of visibleThreads) if (thread.contact?.id && !map.has(thread.contact.id)) map.set(thread.contact.id, thread);
     return map;
-  }, [threads]);
-  const contactThreads = useMemo(() => threads.filter(thread => thread.contact?.id === selectedContactId), [threads, selectedContactId]);
+  }, [visibleThreads]);
+  const contactThreads = useMemo(() => visibleThreads.filter(thread => thread.contact?.id === selectedContactId), [visibleThreads, selectedContactId]);
   const sortedContacts = useMemo(() => contacts.map(contact => ({ contact, thread: threadByContact.get(contact.id) })).filter(({ contact, thread }) => {
     if (search.trim() && !contact.display_name.toLowerCase().includes(search.trim().toLowerCase())) return false;
     if (filter === "conectados") return presence(contact.state).key === "online";
@@ -175,14 +179,15 @@ export default function StaffDirectChatPanel({ compact = false }: { compact?: bo
     if (openRequest && handledOpen.current !== openRequest.version) {
       const thread = threads.find(item => item.id === openRequest.threadId);
       if (!thread?.contact) return;
+      if (mode === "admin" && thread.central_worker_id !== meId && thread.tarotist_worker_id !== meId) setDirectOnly(false);
       handledOpen.current = openRequest.version; chooseThread(thread.id, thread.contact.id); setMobileConversation(true);
       return;
     }
     if (!selectedContactId && !openRequest && contacts.length) {
-      const first = threads.find(thread => thread.contact)?.contact || contacts[0];
+      const first = visibleThreads.find(thread => thread.contact)?.contact || contacts[0];
       chooseThread(threadByContact.get(first.id)?.id || "", first.id);
     }
-  }, [openRequest, threads, contacts, selectedContactId, threadByContact, chooseThread]);
+  }, [openRequest, threads, visibleThreads, contacts, selectedContactId, threadByContact, chooseThread, mode, meId]);
 
   const loadMessages = useCallback(async (before?: string) => {
     const selected = selection.current, actor = actorRef.current;
@@ -300,7 +305,7 @@ export default function StaffDirectChatPanel({ compact = false }: { compact?: bo
 
   async function openContact(contactId: string) {
     const current = selection.current;
-    const existing = (current.contactId === contactId ? threads.find(thread => thread.id === current.threadId && thread.contact?.id === contactId) : null) || threadByContact.get(contactId);
+    const existing = (current.contactId === contactId ? visibleThreads.find(thread => thread.id === current.threadId && thread.contact?.id === contactId) : null) || threadByContact.get(contactId);
     const threadId = existing?.id || knownThreads.current.get(contactId) || "";
     chooseThread(threadId, contactId); setMobileConversation(true);
     if (threadId || !connected || openingContacts.current.has(contactId)) return;
@@ -371,7 +376,7 @@ export default function StaffDirectChatPanel({ compact = false }: { compact?: bo
 
   return <section ref={shellRef} className={`${styles.shell} ${compact ? styles.compact : ""}`} aria-label="Chat del equipo">
     <header className={styles.top}>
-      <div><span className={styles.eyebrow}>COMUNICACIÓN INTERNA</span><h2>Chat del equipo</h2><p>Conversaciones privadas entre Centrales y Tarotistas.</p></div>
+      <div><span className={styles.eyebrow}>COMUNICACIÓN INTERNA</span><h2>Chat del equipo</h2><p>Conversaciones entre administración, centrales y tarotistas.</p></div>
       <div className={styles.controls}>
         <span className={`${styles.live} ${live ? styles.liveOn : ""}`}>● {live ? "Chat en vivo" : "Reconectando"}</span>
         <button type="button" onClick={() => { void refresh(); void loadMessages(); }} aria-label="Actualizar chat" title="Actualizar chat"><RefreshCw size={16}/></button>
@@ -382,12 +387,17 @@ export default function StaffDirectChatPanel({ compact = false }: { compact?: bo
         <button type="button" onClick={() => void enableNotifications()} disabled={notificationPermission === "denied" || notificationPermission === "unsupported"} aria-label={notificationLabel} title={notificationLabel}><Bell size={17}/><span>{notificationLabel}</span></button>
       </div>
     </header>
+    {mode === "admin" && <div className={styles.viewSwitch} aria-label="Vista del chat">
+      <button type="button" aria-pressed={directOnly} onClick={() => { setDirectOnly(true); chooseThread("", "", true); }}>Mis conversaciones</button>
+      <button type="button" aria-pressed={!directOnly} onClick={() => { setDirectOnly(false); chooseThread("", "", true); }}>Supervisar equipo</button>
+      <span>{directOnly ? "Escribe con tu propia cuenta de administrador." : "Historial del equipo y conversaciones propias."}</span>
+    </div>}
     {error || sharedError ? <div className={styles.error} role="alert">{error || sharedError}</div> : null}
     {!connected ? <div className={styles.connectionNotice}>Pulsa Conectado para enviar mensajes y confirmar su lectura.</div> : null}
     {verificationPending ? <div className={styles.connectionNotice}>Comprobando la conexión del panel…</div> : null}
     <div className={`${styles.workspace} ${mobileConversation ? styles.mobileOpen : ""}`}>
       <aside className={styles.contacts} aria-label="Contactos del equipo">
-        <div className={styles.search}><Search size={16}/><input aria-label="Buscar contacto" value={search} onChange={event => setSearch(event.target.value)} placeholder={`Buscar ${mode === "tarotista" ? "central" : "tarotista"}…`}/></div>
+        <div className={styles.search}><Search size={16}/><input aria-label="Buscar contacto" value={search} onChange={event => setSearch(event.target.value)} placeholder={`Buscar ${mode === "admin" ? "central o tarotista" : mode === "tarotista" ? "central o administración" : "tarotista o administración"}…`}/></div>
         <div className={styles.filters}>{FILTERS.map(item => <button key={item} type="button" className={filter === item ? styles.activeFilter : ""} aria-pressed={filter === item} onClick={() => setFilter(item)}>{item === "no-leidos" ? "No leídos" : item[0].toUpperCase() + item.slice(1)}</button>)}</div>
         <div className={styles.contactList}>{loading && !contacts.length ? <div className={styles.empty}>Cargando contactos…</div> : sortedContacts.map(({ contact, thread }) => {
           const state = presence(contact.state);
