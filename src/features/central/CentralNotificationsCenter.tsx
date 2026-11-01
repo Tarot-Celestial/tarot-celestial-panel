@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Bell, CheckCircle2, ChevronRight, Clock3, Gift, Info, ShieldAlert, Sparkles } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { centralWorkspaceDestination } from "@/lib/central-workspace-navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import styles from "./CentralNotificationsCenter.module.css";
@@ -194,6 +195,7 @@ type CentralNotificationsCenterProps = {
 
 export default function CentralNotificationsCenter({ feed }: CentralNotificationsCenterProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const [filter, setFilter] = useState<FilterKey>("all");
   const { items: allItems, summary, loading, error, now, reload: load } = feed;
 
@@ -228,7 +230,7 @@ export default function CentralNotificationsCenter({ feed }: CentralNotification
     if (item.state === "pending") await updateState(item, "read");
     const client = clientOf(item);
     const target = item.action_path || (client?.id ? `/panel-central?tab=mis-clientas&cliente=${encodeURIComponent(client.id)}` : "");
-    if (target) router.push(target);
+    if (target) router.push(centralWorkspaceDestination(pathname, target));
   }
 
   const cards: Array<{ key: FilterKey; label: string; value: number; icon: typeof Bell }> = [

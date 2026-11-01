@@ -1,0 +1,23 @@
+.adminBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 24px;
+  margin-bottom: 18px;
+  border: 1px solid rgba(97, 218, 200, .35);
+  border-radius: 22px;
+  background: linear-gradient(120deg, rgba(40, 103, 106, .28), rgba(65, 46, 103, .24));
+  color: #f3f4fa;
+}
+.eyebrow { display: block; color: #a2dfd5; font-size: 11px; font-weight: 800; letter-spacing: .1em; margin-bottom: 7px; }
+.adminBanner strong { font-size: 22px; }
+.adminBanner p { margin: 7px 0 0; color: #c0c5d6; font-size: 13px; }
+.back { display: inline-flex; align-items: center; justify-content: center; gap: 12px; flex-shrink: 0; min-height: 44px; padding: 10px 16px; border: 1px solid rgba(200, 201, 232, .3); border-radius: 12px; color: #f3f4fa; background: rgba(20, 24, 40, .65); font-size: 13px; font-weight: 750; text-decoration: none; }
+.back:hover { background: rgba(65, 69, 95, .6); }
+.back:focus-visible { outline: 2px solid #87e7d4; outline-offset: 4px; }
+@media (max-width: 700px) {
+  .adminBanner { align-items: stretch; flex-direction: column; padding: 18px; }
+  .adminBanner strong { font-size: 20px; }
+  .back { align-self: flex-start; }
+}

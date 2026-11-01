@@ -1,4 +1,4 @@
-import { BarChart3, BookOpen, CalendarDays, CreditCard, Flame, KeyRound, LayoutDashboard, Megaphone, MessageCircle, Phone, ReceiptText, ShieldCheck, Share2, Users, Trophy, Sparkles, type LucideIcon } from "lucide-react";
+import { Headphones, BarChart3, BookOpen, CalendarDays, CreditCard, Flame, KeyRound, LayoutDashboard, Megaphone, MessageCircle, Phone, ReceiptText, ShieldCheck, Share2, Users, Trophy, Sparkles, type LucideIcon } from "lucide-react";
 
 type AdminNavItem = {
   key: string;
@@ -13,6 +13,13 @@ type AdminNavItem = {
 export const ADMIN_NAV = [
   { key: "atlas", icon: Sparkles, label: "Atlas", kicker: "Tu mano derecha", tone: "goldPurple" },
   { key: "dashboard", icon: LayoutDashboard, label: "Dashboard", kicker: "Control ejecutivo", tone: "gold" },
+  { key: "central-operativa", icon: Headphones, label: "Trabajar como Central", kicker: "Toda la atención diaria", tone: "cyan", children: [
+    { key: "central-operativa", label: "Abrir operativa completa", kicker: "Menú y avisos de Central" },
+    { key: "central-primera-tarotista", label: "Primera tarotista", kicker: "Consulta gratis y orden" },
+    { key: "central-chat", label: "Chat de equipo", kicker: "Centrales y tarotistas" },
+    { key: "central-sorteo", label: "Sorteo de Central", kicker: "Participantes y premios" },
+    { key: "central-whatsapp", label: "WhatsApp de Central", kicker: "Conversaciones con clientas" },
+  ] },
   { key: "panel", icon: Phone, label: "Panel", kicker: "Extensiones y llamadas", tone: "cyan" },
   { key: "facturas", icon: CreditCard, label: "Facturación", kicker: "Ingresos y cierre", tone: "emerald" },
   { key: "client-balances", icon: Sparkles, label: "Giros y saldos", kicker: "Giros, Coins y minutos", tone: "gold" },
@@ -68,7 +75,7 @@ export const ADMIN_TAB_KEYS = new Set<string>(ADMIN_NAV.flatMap((item) => [
 
 export const ADMIN_NAV_SECTIONS = [
   { key: "resumen", title: "Resumen", keys: ["dashboard", "atlas", "estadisticas", "estadisticas-centrales"] },
-  { key: "operativa", title: "Operativa diaria", keys: ["panel", "reservas", "diario", "rendimiento"] },
+  { key: "operativa", title: "Operativa diaria", keys: ["central-operativa", "panel", "reservas", "diario", "rendimiento"] },
   { key: "clientas", title: "Clientas y seguimiento", keys: ["clientes", "crm", "captacion", "rangos-clientes"] },
   { key: "comunicacion", title: "Comunicación", keys: ["whatsapp", "chat", "campanas-clientes", "redes-sociales"] },
   { key: "equipo", title: "Equipo", keys: ["trabajadores", "asistencia", "incidencias", "equipos-marcador", "sistema-xp", "bonos-tarotistas"] },

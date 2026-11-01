@@ -1,6 +1,7 @@
+import { centralWorkspaceIdentity, centralWorkspaceAccessFailure } from "@/lib/server/central-workspace-access";
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { getAdminClient, workerFromRequest } from "@/lib/server/auth-worker";
+import { getAdminClient } from "@/lib/server/auth-worker";
 
 export const runtime = "nodejs";
 
@@ -40,10 +41,7 @@ function photoUrl(admin: ReturnType<typeof getAdminClient>, path: string | null 
 
 export async function GET(req: Request) {
   try {
-    const me = await workerFromRequest(req);
-    if (!me || me.role !== "central") {
-      return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-    }
+    const { worker: me } = await centralWorkspaceIdentity(req);
     const admin = getAdminClient();
     const { data, error } = await admin
       .from("central_public_profiles")
@@ -66,6 +64,8 @@ export async function GET(req: Request) {
       },
     });
   } catch (error) {
+    const denied = centralWorkspaceAccessFailure(error);
+    if (denied) return denied;
     console.error("[central/public-profile][GET]", error);
     return NextResponse.json({ ok: false, error: "No se pudo cargar el perfil." }, { status: 500 });
   }
@@ -73,10 +73,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const me = await workerFromRequest(req);
-    if (!me || me.role !== "central") {
-      return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-    }
+    const { worker: me } = await centralWorkspaceIdentity(req);
 
     const form = await req.formData();
     const name = String(form.get("name") || "").trim();
@@ -152,6 +149,8 @@ export async function POST(req: Request) {
       },
     });
   } catch (error) {
+    const denied = centralWorkspaceAccessFailure(error);
+    if (denied) return denied;
     console.error("[central/public-profile][POST]", error);
     return NextResponse.json({ ok: false, error: "No se pudo guardar el perfil." }, { status: 500 });
   }

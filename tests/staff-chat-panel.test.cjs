@@ -94,7 +94,7 @@ function harness(options = {}) {
   const Panel = evaluate('src/components/chat/StaffDirectChatPanel.tsx');
   const Dock = evaluate('src/components/global/DockChatWidget.tsx', { '@/components/chat/StaffDirectChatPanel': { default: Panel } });
   const Component = options.dock ? Dock : Panel;
-  let props = options.dock ? { open: true, onClose() {} } : { compact: !!options.compact };
+  let props = options.dock ? { open: true, onClose() {} } : { compact: !!options.compact, directConversations: !!options.directConversations };
   return {
     context, attendance, requests, calls, pages, listNode, audioNode, uploads, revoked,
     get view() { return view; }, get refreshes() { return refreshes; },
@@ -498,4 +498,36 @@ test('Yesterday uses the Madrid calendar across its DST change even for a browse
   const h = harness({ Date: FixtureDate, pages: { ta: [message('m1', 'ta', { created_at: '2026-03-29T12:00:00Z' })] } });
   try { await h.mount(); assert.ok(h.view.root.findAll(node => node.props.className === 'day').some(node => text(node) === 'Ayer')); }
   finally { await h.dispose(); if (oldTZ == null) delete process.env.TZ; else process.env.TZ = oldTZ; }
+});
+
+test('Admin operational chat opens only its own pair and supervision remains an explicit separate view', async () => {
+  const threads = [
+    { id: 'tmaria', contact: contact('a'), central_worker_id: 'maria', tarotist_worker_id: 'a', central_display_name: 'María', unread_count: 1 },
+    { id: 'ta', contact: contact('a'), central_worker_id: 'me', tarotist_worker_id: 'a', central_display_name: 'Admin', unread_count: 1 },
+  ];
+  const h = harness({ directConversations: true, context: { mode: 'admin', me: { id: 'me', role: 'admin', display_name: 'Admin simulado' }, threads }, pages: { tmaria: [message('maria-1', 'tmaria')] } });
+  await h.mount();
+  try {
+    assert.equal(button(h, 'Mis conversaciones').props['aria-pressed'], true);
+    assert.ok(getRequests(h).some(request => request.url.includes('thread_id=ta')));
+    assert.equal(getRequests(h).some(request => request.url.includes('thread_id=tmaria')), false);
+    await flush(() => button(h, 'Supervisar equipo').props.onClick());
+    assert.ok(getRequests(h).some(request => request.url.includes('thread_id=tmaria')));
+    await flush(() => button(h, 'Mis conversaciones').props.onClick());
+    assert.equal(button(h, 'Mis conversaciones').props['aria-pressed'], true);
+    assert.ok(getRequests(h).at(-1).url.includes('thread_id=ta'));
+    assert.equal(h.requests.some(request => request.url === '/api/chat/threads'), false);
+  } finally { await h.dispose(); }
+});
+
+test('Admin without a direct pair never falls into another central conversation when opening a contact', async () => {
+  const threads = [{ id: 'tmaria', contact: contact('a'), central_worker_id: 'maria', tarotist_worker_id: 'a', unread_count: 1 }];
+  const h = harness({ directConversations: true, context: { mode: 'admin', me: { id: 'me', role: 'admin' }, threads } });
+  await h.mount();
+  try {
+    assert.equal(getRequests(h).length, 0);
+    await h.clickContact('a');
+    assert.equal(h.requests.find(request => request.url === '/api/chat/threads').body.contact_worker_id, 'a');
+    assert.equal(getRequests(h).some(request => request.url.includes('tmaria')), false);
+  } finally { await h.dispose(); }
 });

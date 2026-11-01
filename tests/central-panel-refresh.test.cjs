@@ -4,7 +4,7 @@ const fs = require('node:fs'), path = require('node:path'), vm = require('node:v
 
 // Execute the real page effect with controllable network/event timing. This
 // verifies bursts and late responses without mounting unrelated phone providers.
-const text = fs.readFileSync(path.join(__dirname, '../src/app/panel-central/page.tsx'), 'utf8');
+const text = fs.readFileSync(path.join(__dirname, '../src/features/central/CentralWorkspace.tsx'), 'utf8');
 const file = ts.createSourceFile('page.tsx', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 let refreshEffect;
 function visit(node) {

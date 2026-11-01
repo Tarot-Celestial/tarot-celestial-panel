@@ -6,7 +6,7 @@ import AttendanceHours from "@/components/attendance/AttendanceHours";
 import AttendanceIncidentCenter from "@/components/attendance/AttendanceIncidentCenter";
 import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import nextDynamic from "next/dynamic";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import PanelTheme from "@/components/ui/PanelTheme";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
@@ -29,6 +29,7 @@ import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/t
 
 
 import { LayoutDashboard } from "lucide-react";
+import { adminCentralDestination } from "@/lib/central-workspace-navigation";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import { ADMIN_TAB_KEYS, type AdminTabKey } from "@/components/admin/admin-navigation";
 import { useAdminNavigation } from "@/components/admin/useAdminNavigation";
@@ -273,6 +274,7 @@ function PreviousMonthComparison({ invoice }: { invoice: any }) {
 }
 
 function AdminPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [ok, setOk] = useState(false);
   const [accessError, setAccessError] = useState<string | null>(null);
@@ -282,6 +284,12 @@ function AdminPage() {
   const [atlasOpenView, setAtlasOpenView] = useState<'chat' | 'supervision'>('chat');
   const [backgroundReady, setBackgroundReady] = useState(false);
   const { tab, setTab, setWhatsAppDirty } = useAdminNavigation();
+
+  // Navigate only after useAdminNavigation has accepted leaving the current tab.
+  useEffect(() => {
+    const destination = adminCentralDestination(tab);
+    if (ok && destination) router.push(destination);
+  }, [ok, router, tab]);
 
   useEffect(() => {
     const onOpenCrmTab = () => setTab("crm" as any);
