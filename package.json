@@ -4,7 +4,7 @@
   "packageManager": "yarn@1.22.19",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/check-paypal-leonaris.cjs && next build",
     "start": "next start",
     "test": "node --test tests/*.test.cjs tests/*.integration.cjs",
     "typecheck": "tsc --noEmit"

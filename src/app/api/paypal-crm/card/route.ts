@@ -33,6 +33,7 @@ export async function POST(req: Request) {
     const isPurchase = current.checkout_kind === "client_purchase";
     const purchaseKind = current.purchase_payload?.purchase_kind === "oracle" ? "oracle" : "minutes";
     const summary = { status: current.status, remote_status: current.remote_status,
+      paypal_account: config.account, recipient_label: config.account === "client_business_v1" ? "Tarot Leonaris" : "Tarot Celestial",
       amount: Number(current.amount), currency: current.currency, description: current.pack_name, last_error: current.last_error || null,
       attempt_id: current.id, checkout_kind: isPurchase ? "client_purchase" : "crm_collection",
       can_cancel: isPurchase && current.status === "pending" && ["CREATED", "SAVED", "PAYER_ACTION_REQUIRED", "APPROVED"].includes(current.remote_status),

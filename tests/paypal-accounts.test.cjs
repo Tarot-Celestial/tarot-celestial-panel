@@ -38,7 +38,8 @@ function harness(overrides = {}) {
       const filters = []; let mode = 'read', values, single = false, limit;
       const query = {
         select: () => query,
-        eq: (key, value) => { filters.push(row => row[key] === value); return query; },
+        or: () => { filters.push(row => !row.purchase_payload?.paypal_account || row.purchase_payload.paypal_account === 'legacy'); return query; },
+        eq: (key, value) => { filters.push(row => (key==='purchase_payload->>paypal_account'?row.purchase_payload?.paypal_account:row[key]) === value); return query; },
         neq: (key, value) => { filters.push(row => row[key] !== value); return query; },
         is: (key, value) => { filters.push(row => (row[key] ?? null) === value); return query; },
         in: (key, values) => { filters.push(row => values.includes(row[key])); return query; },
@@ -67,6 +68,7 @@ function harness(overrides = {}) {
       return query;
     },
     async rpc(name, params) {
+      if(name==='tc_create_paypal_crm_attempt'){const v=params.p_attempt;if(rows.has(v.id))return {data:clone(rows.get(v.id))};if([...rows.values()].some(a=>a.cliente_id===v.cliente_id&&a.environment===v.environment&&a.checkout_kind==='crm_collection'&&a.status==='pending'))return {error:{message:'PAYPAL_PENDING_COLLECTION'}};const a={...clone(v),checkout_kind:'crm_collection',created_at:new Date().toISOString(),status:'pending',remote_status:'CREATING',order_id:null};rows.set(v.id,a);return {data:clone(a)};}
       rpcCalls.push({ name, params: clone(params) });
       const row = rows.get(params.p_id);
       Object.assign(row, { status: 'completed', remote_status: 'CAPTURE_COMPLETED', capture_id: params.p_capture_id,
@@ -189,7 +191,7 @@ test('Persisted account determines routing: all unmarked historical orders stay 
   for (const purchase_payload of [{ paypal_account: 'unknown' }, { paypal_account: null }, { paypal_account: '' }, { paypal_account: 1 },
     { paypal_account: BUSINESS }, { paypal_account: BUSINESS, paypal_merchant_id: '' }])
     assert.throws(() => h.paypal.paypalAccountForAttempt({ checkout_kind: 'client_purchase', purchase_payload }));
-  assert.throws(() => h.paypal.paypalAccountForAttempt({ ...row, checkout_kind: 'crm_collection' }));
+  assert.throws(() => h.paypal.paypalAccountForAttempt({ ...row, checkout_kind: 'invalid' }));
   assert.equal(h.calls.length, 0);
 });
 
@@ -332,4 +334,25 @@ test('Failed webhook signature never reaches fulfillment or account fallback', a
   const h = harness(), row = h.seed(BUSINESS); h.completed(row, BUSINESS); h.state.verification = false;
   assert.equal((await h.webhook(BUSINESS, row)).status, 401); assert.equal(h.rpcCalls.length, 0); assert.equal(h.writes.length, 0);
   assert.ok(h.calls.every(call => call.account === BUSINESS));
+});
+
+
+test('Leonaris CRM uses the second account, validates its merchant and completes only a collection',async()=>{
+ const h=harness();const response=await h.createCentral({account:'leonaris'});assert.equal(response.status,200,await response.clone().text());
+ const row=h.rows.get(id(11));assert.equal(h.paypal.paypalAccountForAttempt(row),BUSINESS);assert.equal(row.checkout_kind,'crm_collection');
+ assert.equal(row.create_payload.purchase_units[0].payee.merchant_id,'CUSTOMER12345');
+ assert.equal((await h.createCentral({account:'leonaris'})).status,200);assert.equal(h.calls.filter(c=>c.url.endsWith('/v2/checkout/orders')).length,1);
+ const remote=h.remoteOrders.get(BUSINESS+':'+row.order_id);remote.status='APPROVED';
+ await h.paypal.reconcilePayPal(h.admin,row);assert.equal(h.rpcCalls.at(-1).name,'tc_complete_paypal_crm');assert.ok(h.calls.every(c=>c.account===BUSINESS));
+});
+test('Leonaris never falls back to legacy, and a request ID cannot change recipient',async()=>{
+ const missing=harness({PAYPAL_CUSTOMER_CLIENT_SECRET:''});assert.equal((await missing.createCentral({account:'leonaris'})).status,503);assert.equal(missing.calls.length,0);
+ const h=harness();await h.createCentral();assert.equal((await h.createCentral({account:'leonaris'})).status,409);assert.equal(h.calls.filter(c=>c.url.endsWith('/v2/checkout/orders')).length,1);
+ assert.equal((await h.createCentral({account:'unknown'})).status,400);
+});
+
+test('Refund reconciliation stays on the stored account and never issues a refund or grants benefits',async()=>{
+ const h=harness();const row=h.seed(BUSINESS,{checkout_kind:'crm_collection',worker_id:id(3),purchaser_auth_user_id:null,status:'completed',capture_id:'CAPTURE010'});
+ const remote=h.completed(row,BUSINESS);remote.purchase_units[0].payments.captures[0].status='PARTIALLY_REFUNDED';
+ const result=await h.paypal.reconcilePayPal(h.admin,row,false,true);assert.equal(result.remote_status,'CAPTURE_PARTIALLY_REFUNDED');assert.equal(h.rpcCalls.length,0);assert.ok(h.calls.every(c=>c.account===BUSINESS));assert.ok(h.calls.every(c=>!c.url.endsWith('/capture')&&!c.url.endsWith('/refund')));
 });
