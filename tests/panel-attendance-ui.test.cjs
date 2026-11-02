@@ -8,7 +8,7 @@ function load(file, mocks, globals) {
   const source = ts.transpileModule(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
-  vm.runInNewContext(source, { exports, require: name => mocks[name] || (name==='@/hooks/usePanelSessionAccess' ? load('src/hooks/usePanelSessionAccess.ts',mocks,globals) : require(name)), process: { env: {} }, ...globals });
+  vm.runInNewContext(source, { exports, require: name => mocks[name] || (name==='@/hooks/usePanelSessionAccess' ? load('src/hooks/usePanelSessionAccess.ts',mocks,globals) : name==='./PanelInteractionContext' ? load('src/components/attendance/PanelInteractionContext.tsx',mocks,globals) : require(name)), process: { env: {} }, ...globals });
   return exports;
 }
 function clock() {

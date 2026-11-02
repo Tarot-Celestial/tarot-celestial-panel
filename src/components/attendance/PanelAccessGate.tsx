@@ -8,6 +8,7 @@ import { usePanelSessionAccess } from '@/hooks/usePanelSessionAccess';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import { isPanelPath } from '@/lib/attendance/panel-session';
 import styles from './PanelAccessGate.module.css';
+import { PanelInteractionContext } from './PanelInteractionContext';
 
 export default function PanelAccessGate({ children }: { children: ReactNode }) {
   const path = usePathname();
@@ -120,7 +121,7 @@ export default function PanelAccessGate({ children }: { children: ReactNode }) {
       {...(locked ? { inert: '' } as Record<string,string> : {})} aria-hidden={locked || undefined}>
       {consultationControls}
       {protectedPath && verificationPending && !showConsultation ? <div ref={consultationRef} className={`${styles.warning} ${styles.consultation} ${styles.verification}`} role="status">Verificando conexión. Se conserva el último estado confirmado hasta que caduque.</div> : null}
-      {children}
+      <PanelInteractionContext.Provider value={!locked}>{children}</PanelInteractionContext.Provider>
     </div>
     {locked ? <div ref={gateRef} className={styles.overlay} role="dialog" aria-modal="true" aria-labelledby="panel-connect-title">
       <div className={styles.card}>
