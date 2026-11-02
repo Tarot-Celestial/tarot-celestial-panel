@@ -7,12 +7,14 @@ const row = () => ({ id: 'reservation-a', fecha_reserva: '2026-10-16T18:00:00', 
 
 function fixture(options = {}) {
   let clock = options.now ?? due, tree, realtime, authCallback, session = { access_token: 'local-token' }, nextTimer = 0;
-  let blockedList, blockedReady, ownDeliveryEvent = false;
+  let blockedList, blockedReady, ownDeliveryEvent = false, locked = !!options.locked;
+  const modules = new Map(), dialogs = [];
+  class Element { constructor() { this.inert = false; this.tagName = 'DIV'; } contains(other) { return this === other; } blur() {} }
   const storage = options.storage || new Map();
   const localStorage = {getItem: key => storage.get(key) || null, setItem: (key,value) => storage.set(key,value)};
   const records = [row()], readyRows = [], calls = [], listeners = new Map(), intervals = new Map();
   class Clock extends Date { constructor(value) { super(arguments.length ? value : clock); } static now() { return clock; } }
-  const document = { visibilityState: 'visible', addEventListener: (name, cb) => listeners.set(name, cb), removeEventListener: name => listeners.delete(name) };
+  const document = { body: { children: [] }, activeElement: null, visibilityState: 'visible', addEventListener: (name, cb) => listeners.set(name, cb), removeEventListener: name => listeners.delete(name) };
   const window = {
     ...document,
     setInterval(cb, delay) { intervals.set(++nextTimer, { cb, delay }); return nextTimer; },
@@ -35,12 +37,18 @@ function fixture(options = {}) {
       ownDeliveryEvent = false;
       realtime({ eventType: 'UPDATE', new: { ...records[0], ready_notified_at: new Date(clock).toISOString() }, old: { id: records[0].id } });
     }
-    return { ok: true, json: async () => ({ ok: true, reservas: snapshot, serverNow: new Date(clock).toISOString() }) };
+    return { ok: true, json: async () => ({ ok: true, reservas: snapshot, serverNow: new Date(clock).toISOString(), workerId: 'worker-a' }) };
   };
   function load(file) {
-    const filename = path.resolve(__dirname, '..', file), exports = {};
+    const filename = path.resolve(__dirname, '..', file);
+    if (modules.has(filename)) return modules.get(filename);
+    const exports = {}; modules.set(filename, exports);
     const output = ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-    vm.runInNewContext(output, { exports, Date: Clock, AbortController, window, document, localStorage, fetch, console, require(name) {
+    vm.runInNewContext(output, { exports, Date: Clock, AbortController, window, document, localStorage, fetch, console, HTMLElement: Element, MutationObserver: class { observe() {} disconnect() {} }, require(name) {
+      if (name === 'next/navigation') return { usePathname: () => '/panel-central' };
+      if (name === '@/hooks/useAttendance') return { useAttendance: () => ({ status: locked ? 'offline' : 'working', refreshAttendance() {}, changeAttendance() {}, keepAttendanceActive() {} }) };
+      if (name === '@/hooks/usePanelSessionAccess') return { usePanelSessionAccess: () => ({ connected: !locked, expiresAt: clock + 600000, now: clock, expired: false, verificationPending: false }) };
+      if (name === '@/components/attendance/PanelInteractionContext' || name === './PanelInteractionContext') return load('src/components/attendance/PanelInteractionContext.tsx');
       if (name === '@/lib/supabase-browser') return { supabaseBrowser: () => sb };
       if (name === './ReservationAdvanceNotice') return { default: () => null };
       if (name.endsWith('.css')) return { default: new Proxy({}, { get: (_, key) => key }) };
@@ -52,12 +60,21 @@ function fixture(options = {}) {
     return exports;
   }
   const Component = load('src/components/reservas/ReservasGlobalWatcher.tsx').default;
+  const Gate = options.withGate ? load('src/components/attendance/PanelAccessGate.tsx').default : React.Fragment;
+  const view = () => React.createElement(Gate, {}, React.createElement(Component, { onGoToReserva: options.onGoToReserva }));
   const act = async cb => renderer.act(async () => { cb(); await new Promise(resolve => setImmediate(resolve)); });
   return {
-    records, readyRows, calls, storage,
+    records, readyRows, calls, storage, dialogs,
+    get reconnectVisible() { return tree.root.findAllByType('button').some(node => node.children.includes('Conectado')); },
+    async lock(value) { await act(() => { locked = value; tree.update(view()); }); },
+    async escape() { await act(() => tree.root.findByType('dialog').props.onCancel({preventDefault() {}})); },
+    async go() { await act(() => tree.root.findAllByType('button').find(node => node.children.includes('Ir hacia la reserva ')).props.onClick()); },
     async dismiss() { await act(() => tree.root.findAllByType("button").find(node => node.props["aria-label"] === "Cerrar aviso").props.onClick()); },
     get title() { return tree?.root.findAllByType('h2').map(node => node.children.join('')).join('') || ''; },
-    async mount() { await act(() => { tree = renderer.create(React.createElement(Component)); }); },
+    async mount() { await act(() => { tree = renderer.create(view(), { createNodeMock(node) {
+      if (node.type === 'dialog') { const dialog = { open: false, opened: 0, closed: 0, showModal() { this.open = true; this.opened++; }, close() { this.open = false; this.closed++; } }; dialogs.push(dialog); return dialog; }
+      return new Element();
+    } }); }); },
     async unmount() { await act(() => tree.unmount()); },
     async tick(delay) { await act(() => { for (const timer of intervals.values()) if (timer.delay === delay) timer.cb(); }); },
     async change(newRow, type = 'UPDATE') { await act(() => realtime({ eventType: type, new: newRow || {}, old: { id: 'reservation-a' } })); },
@@ -171,4 +188,77 @@ test('missed due alerts recover after 90 seconds and acknowledgement survives re
 });
 test('historic pending reservations do not flood the due dialog',async()=>{
   const f=fixture({now:due+86400001});await f.mount();assert.equal(f.title,'');await f.unmount();
+});
+
+
+test('locked Central never opens or claims a reservation until the access gate unlocks', async () => {
+  const f = fixture({ withGate: true, locked: true });
+  await f.mount();
+  assert.equal(f.title, '');
+  assert.equal(f.reconnectVisible, true);
+  assert.equal(f.calls.length, 0, 'no background availability claims while disconnected');
+  assert.equal(f.dialogs.length, 0);
+  await f.lock(false);
+  assert.equal(f.title, 'Es hora de la reserva');
+  assert.equal(f.reconnectVisible, false);
+  assert.equal(f.dialogs.at(-1).open, true);
+  await f.dismiss();
+  assert.equal(f.dialogs.at(-1).open, false, 'dismiss releases the captured native dialog');
+  assert.equal(f.records[0].estado, 'pendiente');
+  await f.unmount();
+});
+
+test('inactivity releases an open top-layer alert without acknowledging it; reconnect recovers it', async () => {
+  const f = fixture({ withGate: true });
+  await f.mount();
+  const dialog = f.dialogs.at(-1);
+  assert.equal(dialog.open, true);
+  await f.lock(true);
+  assert.equal(dialog.open, false);
+  assert.equal(dialog.closed, 1);
+  assert.equal(f.title, '');
+  assert.equal(f.reconnectVisible, true);
+  assert.equal(f.storage.size, 0, 'automatic lock is not a dismissal');
+  const requests = f.calls.length;
+  await f.tick(1000); await f.tick(15000);
+  assert.equal(f.calls.length, requests);
+  await f.lock(false);
+  assert.equal(f.title, 'Es hora de la reserva');
+  await f.escape();
+  assert.equal(f.title, '');
+  assert.equal(f.dialogs.at(-1).open, false);
+  await f.lock(true); await f.lock(false);
+  assert.equal(f.title, '', 'acknowledged alert stays closed after reconnect');
+  assert.equal(f.records[0].estado, 'pendiente');
+  await f.unmount();
+});
+
+test('locking while a schedule response is pending cannot reopen the blocking dialog', async () => {
+  const f = fixture({ withGate: true });
+  let release; f.blockList(new Promise(resolve => { release = resolve; }));
+  await f.mount(); await f.lock(true);
+  release(); await f.settle();
+  assert.equal(f.title, '');
+  assert.equal(f.reconnectVisible, true);
+  assert.equal(f.dialogs.length, 0);
+  await f.unmount();
+});
+
+test('availability dismissal survives reload; opening the reservation releases the modal without completing it', async () => {
+  let opened;
+  const f = fixture({ onGoToReserva: value => { opened = value; } });
+  f.readyRows.push(row());
+  await f.mount();
+  assert.equal(f.title, 'Tarotista disponible');
+  await f.go();
+  assert.equal(opened.id, row().id);
+  assert.equal(f.title, '');
+  assert.equal(f.dialogs.at(-1).open, false);
+  assert.equal(f.records[0].estado, 'pendiente');
+  await f.unmount();
+  const again = fixture({ storage: f.storage });
+  again.readyRows.push(row());
+  await again.mount();
+  assert.equal(again.title, '');
+  await again.unmount();
 });
