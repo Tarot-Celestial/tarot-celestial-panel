@@ -24,10 +24,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "RECOMPENSA_REQUIRED" }, { status: 400 });
     }
 
-    const { data: result, error: redeemError } = await gate.admin.rpc("cliente_canjear_coins_minutos_v1", {
+    if (!Number.isInteger(body.expected_coins) || body.expected_coins <= 0 ||
+        !Number.isInteger(body.expected_minutes) || body.expected_minutes <= 0) {
+      return NextResponse.json({ ok: false, error: "CATALOGO_ACTUALIZADO", message: "Actualiza el panel para confirmar el precio vigente." }, { status: 409 });
+    }
+
+    const { data: result, error: redeemError } = await gate.admin.rpc("cliente_canjear_coins_minutos_v2", {
       p_cliente_id: gate.cliente.id,
       p_recompensa_id: recompensaId,
       p_operation_id: operationId,
+      p_expected_coins: body.expected_coins,
+      p_expected_minutes: body.expected_minutes,
     });
     if (redeemError) throw redeemError;
 
@@ -72,10 +79,11 @@ export async function POST(req: Request) {
       "RECOMPENSA_SIN_COSTE_VALIDO",
       "RECOMPENSA_SIN_MINUTOS_VALIDOS",
       "PUNTOS_INSUFICIENTES",
+      "CATALOGO_ACTUALIZADO",
     ].find((code) => message.includes(code));
     return NextResponse.json(
       { ok: false, error: clientError || message },
-      { status: clientError ? (clientError === "RECOMPENSA_NO_ENCONTRADA" ? 404 : 400) : 500 }
+      { status: clientError === "CATALOGO_ACTUALIZADO" ? 409 : clientError ? (clientError === "RECOMPENSA_NO_ENCONTRADA" ? 404 : 400) : 500 }
     );
   }
 }

@@ -148,7 +148,7 @@ export default function ClientRanksPage() {
                       return <div key={level} className={styles.package}><strong>Paquete nivel {level}</strong>
                         <p>{labels.length ? labels.join(" · ") : "Sin extras de rango activos para este nivel."}</p></div>;
                     })}
-                  <p className={styles.extraNote}>Requieren compra confirmada, nivel asignado y entrega activada. Diamante recibe 300 Coins totales y un giro Diamante en las compras de nivel 1, 2 o 3, incluidas promociones. Los demás rangos conservan las condiciones de su matriz. Sus tiradas adicionales de Oráculo pueden aplicarse también a promociones con nivel asignado; los beneficios propios del paquete se calculan por separado.</p>
+                  <p className={styles.extraNote}>Requieren compra confirmada a tarifa normal, nivel asignado y entrega activada. Diamante recibe 300 Coins totales y un giro Diamante en las compras de nivel 1, 2 o 3. Los demás rangos conservan sus cantidades configuradas. Las compras Promo no conceden Coins ni giros de ruleta a ningún rango. Las tiradas adicionales de Oráculo conservan sus condiciones propias.</p>
                 </details>
                 <a href="#rank-conditions" className={styles.conditionsLink}>Consultar condiciones <ArrowRight size={13}/></a>
               </article>;

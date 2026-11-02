@@ -5,6 +5,12 @@ export const revalidate = 0;
 
 export const runtime = "nodejs";
 
+const headers = {
+  "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate",
+  Pragma: "no-cache",
+  Expires: "0",
+};
+
 export async function GET() {
   try {
     const admin = adminClient();
@@ -12,12 +18,16 @@ export async function GET() {
       .from("recompensas")
       .select("id, nombre, puntos_coste, minutos_otorgados, activo")
       .eq("activo", true)
-      .order("puntos_coste", { ascending: true });
+      .order("puntos_coste", { ascending: true })
+      .order("id", { ascending: true });
 
     if (error) throw error;
 
-    return NextResponse.json({ ok: true, recompensas: data || [] });
+    const rewards = Array.from(new Map((data || []).map(item => [
+      `${item.nombre}::${item.puntos_coste}::${item.minutos_otorgados}`, item,
+    ])).values());
+    return NextResponse.json({ ok: true, recompensas: rewards }, { headers });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "ERR_CLIENTE_RECOMPENSAS" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: e?.message || "ERR_CLIENTE_RECOMPENSAS" }, { status: 500, headers });
   }
 }

@@ -24,6 +24,7 @@ import BonusBienvenidaModal from "@/components/cliente/BonusBienvenidaModal";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import { clientLoginHref } from "@/lib/client-entry";
 import { useRouletteSignal } from "@/hooks/useRouletteSignal";
+import { useClientRewards } from "@/hooks/useClientRewards";
 import RouletteBenefit from "@/components/cliente/RouletteBenefit";
 import RankDailyBonus from "@/components/cliente/RankDailyBonus";
 import type { RouletteLevel, RouletteSummary } from "@/lib/ruleta";
@@ -52,13 +53,6 @@ type Cliente = {
   minutos_normales_pendientes?: number | null;
   minutos_totales?: number | null;
   onboarding_completado?: boolean | null;
-};
-
-type Recompensa = {
-  id: string;
-  nombre: string;
-  puntos_coste: number;
-  minutos_otorgados: number;
 };
 
 type RankInfo = {
@@ -157,7 +151,7 @@ function rankPackBenefitSummary(value: RankPackBenefit) {
 
 export default function ClienteDashboardPage() {
   const [cliente, setCliente] = useState<Cliente | null>(null);
-  const [recompensas, setRecompensas] = useState<Recompensa[]>([]);
+  const { rewards: recompensas, error: catalogError, refresh: refreshRewards } = useClientRewards();
   const [rankInfo, setRankInfo] = useState<RankInfo | null>(null);
   const [rankProgress, setRankProgress] = useState<RankProgress | null>(null);
   const [notificaciones, setNotificaciones] = useState<ClienteNotif[]>([]);
@@ -297,7 +291,6 @@ export default function ClienteDashboardPage() {
     } else {
       setCliente(null);
     }
-    setRecompensas(Array.isArray(json.recompensas) ? json.recompensas : []);
     setRankInfo(json.rank_info || null);
     setRankProgress(json.rank_progress || null);
     setNotificaciones(Array.isArray(json.cliente_notificaciones) ? json.cliente_notificaciones : []);
@@ -689,8 +682,7 @@ export default function ClienteDashboardPage() {
     }
   }
 
-  async function redeemReward(recompensaId: string) {
-    const reward = recompensas.find((item) => item.id === recompensaId);
+  async function redeemReward(recompensaId: string, expectedCoins: number, expectedMinutes: number) {
     try {
       setRedeeming(true);
       setMsg("");
@@ -709,6 +701,8 @@ export default function ClienteDashboardPage() {
         body: JSON.stringify({
           recompensa_id: recompensaId,
           operation_id: operationId,
+          expected_coins: expectedCoins,
+          expected_minutes: expectedMinutes,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -737,14 +731,15 @@ export default function ClienteDashboardPage() {
         id: `coins:${operationId}`,
         reaction: "coins",
         title: "Recompensa desbloqueada",
-        message: reward
-          ? `Has transformado ${Number(reward.puntos_coste).toLocaleString("es-ES")} Coins en ${Number(reward.minutos_otorgados)} minutos.`
-          : "El canje se ha confirmado y tus minutos ya están disponibles.",
+        message: `Has transformado ${Number(expectedCoins).toLocaleString("es-ES")} Coins en ${Number(expectedMinutes)} minutos.`,
         href: "/cliente/dashboard#saldo-minutes",
         actionLabel: "Ver mis minutos",
       });
     } catch (e: any) {
-      setMsg(e?.message || "No hemos podido canjear tus Coins");
+      if (String(e?.message).includes("CATALOGO_ACTUALIZADO")) {
+        await refreshRewards();
+        setMsg("El catálogo ha cambiado. Revisa el precio actualizado y confirma de nuevo; no se han descontado Coins.");
+      } else setMsg(e?.message || "No hemos podido canjear tus Coins");
       throw e;
     } finally {
       setRedeeming(false);
@@ -842,7 +837,7 @@ export default function ClienteDashboardPage() {
           oracleCredits={oracleCredits} oracleFree={oracleFreeAvailable} oracleCountdown={oracleRechargeLabel} roulette={rouletteSummary} highlight={rewardHighlight}
           benefits={rankInfo?.benefits || []} rankProgress={rankProgress} overrideLabel={rankInfo?.has_override ? (rankInfo.override_type === "permanent" ? "Asignación administrativa" : "Rango temporal" + (rankInfo.override_ends_at ? " · hasta " + new Date(rankInfo.override_ends_at).toLocaleDateString("es-ES") : "")) : undefined}>
           <RankDailyBonus/>
-          <section id="canjear-coins" aria-label="Canjear Coins por minutos"><CanjePuntos puntos={totalPoints} recompensas={recompensas} loading={redeeming} onRedeem={redeemReward}/></section>
+          <section id="canjear-coins" aria-label="Canjear Coins por minutos"><CanjePuntos puntos={totalPoints} recompensas={recompensas} loading={redeeming} onRedeem={redeemReward} catalogError={catalogError} onRefresh={refreshRewards}/></section>
         </HomeObservatory>
       </ClienteLayout>
 
