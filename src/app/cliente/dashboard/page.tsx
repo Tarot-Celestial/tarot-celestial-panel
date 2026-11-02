@@ -683,7 +683,6 @@ export default function ClienteDashboardPage() {
   }
 
   async function redeemReward(recompensaId: string, expectedCoins: number, expectedMinutes: number) {
-    const reward = recompensas.find((item) => item.id === recompensaId);
     try {
       setRedeeming(true);
       setMsg("");
@@ -732,9 +731,7 @@ export default function ClienteDashboardPage() {
         id: `coins:${operationId}`,
         reaction: "coins",
         title: "Recompensa desbloqueada",
-        message: reward
-          ? `Has transformado ${Number(reward.puntos_coste).toLocaleString("es-ES")} Coins en ${Number(reward.minutos_otorgados)} minutos.`
-          : "El canje se ha confirmado y tus minutos ya están disponibles.",
+        message: `Has transformado ${Number(expectedCoins).toLocaleString("es-ES")} Coins en ${Number(expectedMinutes)} minutos.`,
         href: "/cliente/dashboard#saldo-minutes",
         actionLabel: "Ver mis minutos",
       });
