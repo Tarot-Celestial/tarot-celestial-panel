@@ -230,6 +230,7 @@ export default function MyClientSummary({ clientId, lastPurchaseAt, summary, onR
   const currentMonth = purchaseOverview?.stats?.current_month || null;
   const rank = String(purchaseOverview?.rank?.effective || purchaseOverview?.rank?.current || "").toLowerCase();
   const rankMeta = rankInfo[rank] || rankInfo.sin_rango;
+  const rankPerks = purchaseOverview?.rank?.benefits ?? rankMeta.perks;
   const rankSpent = Number(purchaseOverview?.rank?.spent_30d || 0);
   const rankProgress = rankMeta.next ? Math.min(100, (rankSpent / rankMeta.next) * 100) : 100;
   const rankOverride = purchaseOverview?.rank?.override || null;
@@ -448,7 +449,7 @@ export default function MyClientSummary({ clientId, lastPurchaseAt, summary, onR
           <small>{purchaseOverview?.rank?.from || "—"} → {purchaseOverview?.rank?.to || "—"}</small>
           <div className={styles.rankBenefits}>
             <span>BENEFICIOS ACTIVOS</span>
-            {rankMeta.perks.length ? rankMeta.perks.map((perk) => <div key={perk}>✨ {perk}</div>) : <div>Sin beneficios de rango activos.</div>}
+            {rankPerks.length ? rankPerks.map((perk: string) => <div key={perk}>✨ {perk}</div>) : <div>Sin beneficios de rango activos.</div>}
           </div>
         </article>
         <article className={styles.timelineCard}>

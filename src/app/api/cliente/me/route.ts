@@ -1,5 +1,7 @@
 import { clientRankBenefits, rankPackageBenefitsForPacks } from "@/lib/server/rank-benefits";
 import { NextResponse } from "next/server";
+import { customerBenefitPolicy } from "@/lib/server/customer-benefits";
+import type { CustomerBenefitPolicy } from "@/lib/customer-benefits";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
 import {
   computeCurrentRankFromSpend,
@@ -24,7 +26,7 @@ type ClienteRow = Record<string, any> & {
   regalo_bienvenida_otorgado?: boolean | null;
 };
 
-function rankMeta(rank: string | null | undefined) {
+function rankMeta(rank: string | null | undefined, policy?: CustomerBenefitPolicy | null) {
   const key = normalizeClientRank(rank) || "sin_rango";
   const label = key === "diamante" ? "Diamante" : key === "oro" ? "Oro" : key === "plata" ? "Plata" : key === "bronce" ? "Bronce" : "Sin rango";
   const min = key === "diamante" ? 1000 : key === "oro" ? 500 : key === "plata" ? 100 : 1;
@@ -38,8 +40,8 @@ function rankMeta(rank: string | null | undefined) {
     nextRank,
     nextLabel: nextRank === "diamante" ? "Diamante" : nextRank === "oro" ? "Oro" : nextRank === "plata" ? "Plata" : null,
     nextTarget,
-    benefits: currentRankBenefits(key),
-    nextBenefits: nextRank ? currentRankBenefits(nextRank).filter(label => !label.includes("Mi Ritual")) : [],
+    benefits: currentRankBenefits(key, policy),
+    nextBenefits: nextRank ? currentRankBenefits(nextRank, policy).filter(label => !label.includes("Mi Ritual")) : [],
   };
 }
 
@@ -293,6 +295,7 @@ export async function GET(req: Request) {
     const liveRank = computeCurrentRankFromSpend(rolling30Spend, rolling30Purchases);
     const effectiveRankState = await loadEffectiveClientRank(gate.admin, cliente.id, rolling30Spend);
     const configuredBenefits = await clientRankBenefits(gate.admin, cliente.id);
+    const policy = await customerBenefitPolicy(gate.admin);
     const effectiveRank = String(snapshot.effective_rank || canonicalRankState?.effective || configuredBenefits.rank_key || "sin_rango");
 
     // rango_actual es un campo legado/cache. Lo mantenemos alineado con el rango
@@ -318,9 +321,9 @@ export async function GET(req: Request) {
     };
 
     const rank = {
-      ...rankMeta(effectiveRank),
+      ...rankMeta(effectiveRank, policy),
       benefits: [
-        ...currentRankBenefits(effectiveRank).filter(label => !label.includes("Mi Ritual")),
+        ...currentRankBenefits(effectiveRank, policy).filter(label => !label.includes("Mi Ritual")),
         ...(configuredBenefits.ritual_access ? ["Acceso a Mi ritual"] : []),
       ],
       automatic_rank: effectiveRankState.automatic || normalizeClientRank(liveRank),

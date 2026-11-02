@@ -11,6 +11,7 @@ export type GuideRank = {
   package_benefits: Omit<RankPackageBenefitConfig, "revision">[] | null;
 };
 export type ClientRankGuide = {
+  benefit_policy?: import("./customer-benefits").CustomerBenefitPolicy | null;
   ok: true;
   cliente_id: string;
   currency: "USD";

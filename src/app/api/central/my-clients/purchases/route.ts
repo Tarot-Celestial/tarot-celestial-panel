@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { customerBenefitPolicy } from "@/lib/server/customer-benefits";
+import { customerBenefitLabels } from "@/lib/customer-benefits";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 import { loadCanonicalClientRank } from "@/lib/server/client-rank-effective";
@@ -328,6 +330,7 @@ export async function GET(req: Request) {
     const sinceIso = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const effectiveRank = await loadCanonicalClientRank(admin, clientId);
     const rank = effectiveRank.effective;
+    const policy = await customerBenefitPolicy(admin);
 
     const total = allRows.length;
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -359,6 +362,7 @@ export async function GET(req: Request) {
           methods: [...methodMap.entries()].map(([method, count]) => ({ method, count })),
         },
         rank: {
+          benefits: policy?.activated_at ? customerBenefitLabels(policy, rank) : null,
           current: rank,
           automatic: effectiveRank.automatic,
           effective: effectiveRank.effective,

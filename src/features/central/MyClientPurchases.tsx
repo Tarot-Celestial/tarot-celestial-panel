@@ -63,7 +63,7 @@ export default function MyClientPurchases({ clientId, client, tarotists, onRefre
     }
   }, [clientId, page]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(true); }, [load, client]);
 
   useEffect(() => {
     if (refreshVersion > 0) void load(false);
@@ -72,6 +72,7 @@ export default function MyClientPurchases({ clientId, client, tarotists, onRefre
   const maxMonthly = useMemo(() => Math.max(1, ...(data?.stats?.monthly || []).map((item: any) => Number(item.amount) || 0)), [data]);
   const rank = String(data?.rank?.effective || data?.rank?.current || "").toLowerCase();
   const rankMeta = rankInfo[rank] || { label: "Sin rango", next: 100, perks: [] };
+  const rankPerks: string[] = data?.rank?.benefits ?? rankMeta.perks;
   const progress = rankMeta.next ? Math.min(100, ((Number(data?.rank?.spent_30d) || 0) / rankMeta.next) * 100) : 100;
 
   if (loading) return <div className={styles.state}>Cargando compras reales…</div>;
@@ -120,7 +121,7 @@ export default function MyClientPurchases({ clientId, client, tarotists, onRefre
           <div className={styles.rankNumbers}><span>{money(data.rank.spent_30d)} en 30 días</span><span>{data.rank.purchases_30d} compras</span></div>
           <div className={styles.progressTrack}><div style={{ width: `${progress}%` }} /></div>
           <small>{data.rank.from} → {data.rank.to}</small>
-          <div className={styles.perks}>{rankMeta.perks.map((perk) => <div key={perk}>✨ {perk}</div>)}</div>
+          <div className={styles.perks}>{rankPerks.map((perk) => <div key={perk}>✨ {perk}</div>)}</div>
         </section>
       </div>
 

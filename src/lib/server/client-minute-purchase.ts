@@ -19,6 +19,7 @@ export async function applyConfiguredMinutePurchase(
     paymentRef: string;
     paymentIntent?: string | null;
     stripeSessionId?: string | null;
+    benefitsStartedAt?: string | null;
     amount: number;
     currency: ClientPurchaseCurrency;
     metodo?: string;
@@ -53,6 +54,7 @@ export async function applyConfiguredMinutePurchase(
       roulette_level: rouletteLevel, roulette_spins: rouletteSpins,
       reward_policy_version: 1, pricing_mode: "regular", purchase_classification: "nada", rewards_eligible: true,
       package_level: pack.rouletteLevel,
+      benefits_started_at: params.benefitsStartedAt || null,
       notas: params.notas || "Compra automatizada desde panel cliente · " + pack.nombre },
   });
   if (transactionError) throw transactionError;
@@ -71,7 +73,7 @@ export async function applyConfiguredMinutePurchase(
     0,
   );
   const rankFreeMinutes = (appliedBenefitEvents || []).reduce(
-    (acc: number, row: any) => acc + (row?.benefit_key === "diamond_purchase_minutes" ? Math.max(0, Number(row.minutes || 0)) : 0), 0,
+    (acc: number, row: any) => acc + (["diamond_purchase_minutes", "regular_purchase_minutes"].includes(row?.benefit_key) ? Math.max(0, Number(row.minutes || 0)) : 0), 0,
   );
   // On retries use the saved purchase, even if the pack has since changed.
   const creditedMinutes = {

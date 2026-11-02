@@ -8,6 +8,16 @@ const spinId = n => `10000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const pendingId = '20000000-0000-4000-8000-000000000002';
 const key = 'tc-ruleta-pending:' + clientId;
 const clone = value => JSON.parse(JSON.stringify(value));
+
+test('server deadline drives the visible countdown and disables a stale wheel without sending', async () => {
+  const now=Date.parse('2026-11-02T03:00:00Z');
+  const f=fixture({now,summary:{server_now:new Date(now).toISOString(),next_spin_expires_at_1:new Date(now+2000).toISOString()}});
+  await f.mount();
+  try{
+    assert.match(text(f.tree.toJSON()),/00:00:02/);assert.equal(f.wheel().props.disabled,false);
+    await f.advance(2100);assert.equal(f.wheel().props.disabled,true);assert.equal(f.posts.length,0);
+  }finally{await f.unmount()}
+});
 const text = node => typeof node === 'string' ? node : node.children?.map(text).join('') || '';
 
 function evaluate(file, imports = {}, globals = {}) {
@@ -33,15 +43,19 @@ function fixture(options = {}) {
   const storage = options.storage || new Map(), listeners = new Map(), timers = new Map(), posts = [], announcements = [];
   if (options.saved) storage.set(key, JSON.stringify(options.saved));
   let summary = { ...summaryFor(), ...options.summary }, tree, refresh, timerId = 0;
-  let post = options.post;
+  let post = options.post, now = options.now ?? Date.now();
+  const intervals = new Map();
   const window = {
     location: { search: options.search ?? '?nivel=1' },
     matchMedia: () => ({ matches: true }),
+    setInterval: callback => { intervals.set(++timerId, callback); return timerId; },
+    clearInterval: id => intervals.delete(id),
     addEventListener(name, callback) { if (!listeners.has(name)) listeners.set(name, new Set()); listeners.get(name).add(callback); },
     removeEventListener(name, callback) { listeners.get(name)?.delete(callback); },
     dispatchEvent(event) { for (const callback of listeners.get(event.type) || []) callback(event); },
   };
   const globals = {
+    Date: class extends Date { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } },
     window, sessionStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) },
     CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
     requestAnimationFrame: callback => { callback(); return 1; },
@@ -64,6 +78,7 @@ function fixture(options = {}) {
     './PurchaseRoulette.module.css': { default: new Proxy({}, { get: (_, name) => String(name) }) },
     'lucide-react': new Proxy({}, { get: (_, name) => props => React.createElement('span', { ...props, 'data-icon': name }) }),
     '@/lib/ruleta': ruleta, '@/lib/roulette-pending': pending,
+    '@/lib/customer-benefits': evaluate('src/lib/customer-benefits.ts'),
     '@/lib/leo-guide': { LEO_SELECT_ROULETTE: 'tc-leo-select-roulette' },
     '@/lib/leo-celestial-events': { announceLeoCelestial: value => announcements.push(value) },
     '@/lib/supabase-browser': { supabaseClienteBrowser: () => ({ auth: { getSession: async () => ({ data: { session: { access_token: 'synthetic-token' } } }) } }) },
@@ -91,6 +106,7 @@ function fixture(options = {}) {
     async refresh() { await act(() => { void refresh(); }); },
     async animate() { await act(() => { for (const [id, timer] of [...timers]) { timers.delete(id); timer.callback(); } }); },
     async settle() { await act(() => {}); },
+    async advance(ms) { now += ms; await act(() => { for (const callback of intervals.values()) callback(); }); },
     async unmount() { await act(() => tree.unmount()); },
     setPost(handler) { post = handler; },
   };

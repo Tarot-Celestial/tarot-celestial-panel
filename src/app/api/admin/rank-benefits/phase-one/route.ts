@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { customerBenefitPolicy } from "@/lib/server/customer-benefits";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import { CLIENTE_MINUTE_PACKS } from "@/lib/server/cliente-minute-packs";
 import {
@@ -109,14 +110,15 @@ export async function GET(req: Request) {
     const gate = await requireAdmin(req);
     if (!gate.ok) return reply({ ok: false, error: gate.error }, 403);
 
+    const policy = await customerBenefitPolicy(gate.admin);
     const [ranks, matrix, assignments, promotionPacks, bonus, events, audit, passPolicy] = await Promise.all([
       gate.admin.from("tc_client_rank_benefits").select("rank_key,label,sort_order,is_active,coins_enabled,purchase_coins,roulette_enabled,roulette_level,roulette_spins,daily_bonus_enabled,ritual_access,revision,updated_at,updated_by").order("sort_order"),
       gate.admin.from("tc_rank_package_benefits").select("*").order("rank_key").order("package_level"),
       gate.admin.from("tc_purchase_package_levels").select("*").order("package_source").order("package_label"),
       gate.admin.from("tc_client_promotion_packages").select("id,name,promotion_id,is_active,price,currency,coins,oracle_credits,roulette_level,roulette_spins").order("created_at", { ascending: false }),
       gate.admin.from("tc_rank_daily_bonus_config").select("*").eq("rank_key", "diamante").maybeSingle(),
-      gate.admin.from("tc_client_benefit_events").select("id,cliente_id,payment_id,rank_at_event,benefit_key,benefit_type,package_level,delivery_key,snapshot,created_at").in("benefit_type", ["rank_package", "daily_rank_bonus"]).order("created_at", { ascending: false }).limit(80),
-      gate.admin.from("tc_client_benefit_audit").select("*").in("entity", ["rank_package_benefit", "rank_ritual_access", "package_level_assignment", "diamond_daily_bonus"]).order("created_at", { ascending: false }).limit(80),
+      gate.admin.from("tc_client_benefit_events").select("id,cliente_id,payment_id,rank_at_event,benefit_key,benefit_type,package_level,delivery_key,snapshot,created_at").in("benefit_type", ["rank_package", "daily_rank_bonus", "minutes", "raffle", "roulette"]).order("created_at", { ascending: false }).limit(80),
+      gate.admin.from("tc_client_benefit_audit").select("*").in("entity", ["rank_package_benefit", "rank_ritual_access", "package_level_assignment", "diamond_daily_bonus", "customer_benefit_policy"]).order("created_at", { ascending: false }).limit(80),
       gate.admin.from("crm_free_pass_policy").select("passes,minutes,cycle_days").eq("id", true).maybeSingle(),
     ]);
     for (const result of [ranks, matrix, assignments, promotionPacks, bonus, events, audit]) if (result.error) throw result.error;
@@ -153,13 +155,14 @@ export async function GET(req: Request) {
     return reply({
       ok: true,
       business_timezone: "Europe/Madrid",
+      benefit_policy: policy,
       free_pass_policy: passPolicy.error ? null : passPolicy.data,
       free_pass_policy_available: !passPolicy.error && !!passPolicy.data,
       ranks: (ranks.data || []).map((row: any) => ({ ...row, updated_by_name: namesByActor.get(String(row.updated_by || "")) || null })),
-      matrix: (matrix.data || []).map((row: any) => ({ ...row, updated_by_name: namesByActor.get(String(row.updated_by || "")) || null })),
+      matrix: (policy?.activated_at ? policy.package_benefits : matrix.data || []).map((row: any) => ({ ...row, updated_by_name: namesByActor.get(String(row.updated_by || "")) || null })),
       assignments: (assignments.data || []).map((row: any) => ({ ...row, updated_by_name: namesByActor.get(String(row.updated_by || "")) || null })),
       packages: [...standard, ...promotions],
-      diamond_bonus: bonus.data ? { ...bonus.data, updated_by_name: namesByActor.get(String(bonus.data.updated_by || "")) || null } : null,
+      diamond_bonus: policy?.activated_at ? null : bonus.data ? { ...bonus.data, updated_by_name: namesByActor.get(String(bonus.data.updated_by || "")) || null } : null,
       deliveries: (events.data || []).map((row: any) => ({ ...row, client_name: names.get(String(row.cliente_id)) || row.cliente_id })),
       audit: (audit.data || []).map((row: any) => ({ ...row, actor_name: namesByActor.get(String(row.actor_user_id || "")) || "Sistema / migración" })),
     });
@@ -172,6 +175,10 @@ export async function POST(req: Request) {
     if (!gate.ok) return reply({ ok: false, error: gate.error }, 403);
     const body = await req.json();
     const action = String(body?.action || "");
+    if (action === "save_bonus" || (action === "save_matrix" && body?.data?.rank_key === "diamante")) {
+      const policy = await customerBenefitPolicy(gate.admin);
+      if (policy?.activated_at) return reply({ ok: false, error: "Esta regla pertenece al programa vigente. El bono diario está retirado y la compra Diamante usa la configuración compartida." }, 409);
+    }
     let data: any;
     let rpc = "";
     let args: Record<string, unknown> = {};

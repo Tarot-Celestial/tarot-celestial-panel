@@ -18,8 +18,8 @@ const sb = supabaseClienteBrowser();
 
 type OraclePack = { id: string; nombre: string; descripcion: string; priceEur: number; credits: number };
 type QuestionPack = { id: string; nombre: string; descripcion: string; priceEur: number; questions: number };
-type RankPackBenefit = { enabled?: boolean; coins?: number; oracle_credits?: number; roulette_level_1_spins?: number; roulette_level_2_spins?: number; roulette_level_3_spins?: number; roulette_special_spins?: number };
-type MinutePack = { id: string; nombre: string; descripcion: string; priceUsd: number; totalMinutes: number; bonusMinutes: number; rouletteLevel: RouletteLevel; rouletteSpins: number; rewardCoins?: number; oracleCredits?: number; highlight?: boolean; packageLevel?: 1 | 2 | 3 | null; rankBenefits?: RankPackBenefit | null; rankBenefitsStatus?: string };
+type RankPackBenefit = { roulette_diamond_spins?: number; enabled?: boolean; coins?: number; oracle_credits?: number; roulette_level_1_spins?: number; roulette_level_2_spins?: number; roulette_level_3_spins?: number; roulette_special_spins?: number };
+type MinutePack = { regularBonusMinutes?: number | null; id: string; nombre: string; descripcion: string; priceUsd: number; totalMinutes: number; bonusMinutes: number; rouletteLevel: RouletteLevel; rouletteSpins: number; rewardCoins?: number; oracleCredits?: number; highlight?: boolean; packageLevel?: 1 | 2 | 3 | null; rankBenefits?: RankPackBenefit | null; rankBenefitsStatus?: string };
 type PromotionPack = { id: string; name: string; description?: string | null; paid_minutes: number; free_minutes: number; price: number; regular_price?: number | null; currency: "EUR" | "USD"; roulette_level?: RouletteLevel | null; roulette_spins: number; coins: number; oracle_credits: number; extra_benefit?: string | null; is_recommended: boolean; is_active: boolean; sort_order: number; packageLevel?: 1 | 2 | 3 | null; rankBenefits?: RankPackBenefit | null; rankBenefitsStatus?: string };
 type ActivePromotion = { id: string; name: string; subtitle?: string | null; description?: string | null; effective_status: string; starts_at?: string | null; ends_at?: string | null; active_until_disabled: boolean; packages: PromotionPack[] };
 
@@ -231,7 +231,7 @@ export default function PreciosOfertasPage() {
                   <div className={styles.promoMinutes}><strong>{pack.paid_minutes}</strong><span>minutos</span>{pack.free_minutes ? <><b>+</b><strong>{pack.free_minutes}</strong><span>GRATIS</span></> : null}</div>
                   <div className={styles.promoPrice}>{pack.regular_price && Number(pack.regular_price) > Number(pack.price) ? <del>{formatPromoMoney(pack.regular_price, pack.currency)}</del> : null}<strong>{formatPromoMoney(pack.price, pack.currency)}</strong></div>
                   <div className={styles.promoBenefits}>
-                    <span className={styles.promoRewardPolicy}>Precio promocional · Sin Coins ni giros de ruleta</span>
+                    <span className={styles.promoRewardPolicy}>{Number(pack.rankBenefits?.roulette_diamond_spins || 0) > 0 ? `${pack.rankBenefits?.coins} Coins totales + 1 giro Diamante` : "Precio promocional · Sin Coins ni giros de ruleta"}</span>
                     {pack.oracle_credits > 0 ? <span>🔮 +{pack.oracle_credits} tirada{pack.oracle_credits === 1 ? "" : "s"} del Oráculo</span> : null}
                     {extraBenefit ? <span>✦ {extraBenefit}</span> : null}
                     {pack.rankBenefits?.enabled && Number(pack.rankBenefits.oracle_credits || 0) > 0 ? <span><strong>Por tu rango:</strong> +{Number(pack.rankBenefits.oracle_credits)} Oráculo</span> : null}
@@ -379,18 +379,18 @@ function MinuteCard({ pack, packageLevel, rankLabel, busy, unavailable, onBuy, f
     <div className={styles.priceRow}><strong className={styles.price}>{formatPromoMoney(pack.priceUsd, "EUR")}</strong><span>Tu consulta</span></div>
     <div className={styles.includedBenefits} data-benefits="included">
       <strong className={styles.benefitLabel}>Tu paquete incluye</strong>
-      {pack.rouletteSpins > 0 && pack.rouletteLevel ? <Link className={styles.includedRow} href={`/cliente/ruleta?nivel=${pack.rouletteLevel}`}><span className={styles.benefitGlyph} aria-hidden="true"><Sun /></span><span><strong>{pack.rouletteSpins} {pack.rouletteSpins === 1 ? "giro" : "giros"}</strong> · Ruleta {pack.rouletteLevel === 4 ? "Especial" : `Nivel ${pack.rouletteLevel}`}<small>Ver sus premios <ArrowRight aria-hidden="true" /></small></span></Link> : null}
+      {pack.rouletteSpins > 0 && pack.rouletteLevel ? <Link className={styles.includedRow} href={`/cliente/ruleta?nivel=${pack.rouletteLevel}`}><span className={styles.benefitGlyph} aria-hidden="true"><Sun /></span><span><strong>{pack.rouletteSpins} {pack.rouletteSpins === 1 ? "giro" : "giros"}</strong> · Ruleta {pack.rouletteLevel === 5 ? "Diamante" : pack.rouletteLevel === 4 ? "Especial" : `Nivel ${pack.rouletteLevel}`}<small>Ver sus premios <ArrowRight aria-hidden="true" /></small></span></Link> : null}
       {Number(pack.oracleCredits || 0) > 0 ? <div className={styles.includedRow}><RouletteRewardArt type="oracle_credits" className={styles.benefitArt} /><span><strong>{pack.oracleCredits} {pack.oracleCredits === 1 ? "tirada" : "tiradas"}</strong> de Oráculo</span></div> : null}
       {rewardCoins > 0 ? <div className={styles.includedRow}><RouletteRewardArt type="coins" className={styles.benefitArt} /><span><strong>{rewardCoins.toLocaleString("es-ES")} Coins</strong> del paquete</span></div> : null}
       {pack.bonusMinutes > 0 ? <div className={styles.includedRow}><Sparkles aria-hidden="true" /><span><strong>{pack.bonusMinutes} minutos</strong> de regalo incluidos</span></div> : null}
     </div>
     <div className={styles.rankBenefitExtra} data-benefits="rank">
       <div className={styles.rankHeading}><strong>Beneficios por tu rango</strong>{rankLabel ? <span>{rankLabel}</span> : null}</div>
-      {rank?.enabled ? <>
+      {Number(pack.regularBonusMinutes || 0) > 0 && <p>+{pack.regularBonusMinutes} minutos FREE por tu rango al confirmar esta compra a precio regular.</p>}{rank?.enabled ? <>
         {Number(rank.coins || 0) > 0 ? <div className={styles.rankCoins}><RouletteRewardArt type="coins" className={styles.coinsArt} /><span><strong>+{Number(rank.coins).toLocaleString("es-ES")}</strong> Coins</span></div> : null}
         {Number(rank.oracle_credits || 0) > 0 ? <div className={styles.rankReward}><WandSparkles aria-hidden="true" /><span>+{rank.oracle_credits} {rank.oracle_credits === 1 ? "tirada" : "tiradas"} de Oráculo</span></div> : null}
         {rankSpins.map(item => <div key={item.level} className={styles.rankReward}><Sun aria-hidden="true" /><span>+{item.count} {item.count === 1 ? "giro" : "giros"} · Ruleta {item.level === 4 ? "Especial" : `Nivel ${item.level}`}</span></div>)}
-        {Number(rank.coins || 0) <= 0 && Number(rank.oracle_credits || 0) <= 0 && rankSpins.length === 0 ? <p>Este paquete no tiene extras de rango.</p> : <small>Se suman a lo incluido en tu paquete.</small>}
+        {Number(rank.coins || 0) <= 0 && Number(rank.oracle_credits || 0) <= 0 && rankSpins.length === 0 ? <p>Este paquete no tiene extras de rango.</p> : <small>{Number(rank.roulette_diamond_spins || 0) > 0 ? "Coins totales de la compra. El giro Diamante sustituye al giro de nivel, ya indicado arriba." : "Se suman a lo incluido en tu paquete."}</small>}
       </> : <p>{pack.rankBenefitsStatus === "unavailable" ? "Estamos comprobando tus beneficios. Consulta de nuevo en unos momentos." : pack.rankBenefitsStatus === "unmapped_package" ? "Los extras de este paquete todavía no están disponibles." : "Tu rango actual no añade extras a este paquete."}</p>}
     </div>
     <ClientPurchaseAction className={styles.buyButton} checkoutEnabled><button type="button" className={styles.buyButton} disabled={busy || unavailable} onClick={onBuy}>{busy ? "Preparando pago…" : <>Elegir paquete <ArrowRight aria-hidden="true" /></>}</button></ClientPurchaseAction>

@@ -148,7 +148,7 @@ export default function ClientRanksPage() {
                       return <div key={level} className={styles.package}><strong>Paquete nivel {level}</strong>
                         <p>{labels.length ? labels.join(" · ") : "Sin extras de rango activos para este nivel."}</p></div>;
                     })}
-                  <p className={styles.extraNote}>Requieren compra confirmada, nivel asignado y entrega activada. Los Coins y giros de esta matriz solo se entregan a tarifa regular. Sus tiradas adicionales de Oráculo pueden aplicarse también a promociones con nivel asignado; los beneficios propios del paquete se calculan por separado.</p>
+                  <p className={styles.extraNote}>Requieren compra confirmada, nivel asignado y entrega activada. Diamante recibe 300 Coins totales y un giro Diamante en las compras de nivel 1, 2 o 3, incluidas promociones. Los demás rangos conservan las condiciones de su matriz. Sus tiradas adicionales de Oráculo pueden aplicarse también a promociones con nivel asignado; los beneficios propios del paquete se calculan por separado.</p>
                 </details>
                 <a href="#rank-conditions" className={styles.conditionsLink}>Consultar condiciones <ArrowRight size={13}/></a>
               </article>;
@@ -156,7 +156,7 @@ export default function ClientRanksPage() {
           </div>
         </section>
 
-        <section className={styles.diamond} aria-labelledby="diamond-bonus-title">
+        {!guide.benefit_policy?.activated_at && <section className={styles.diamond} aria-labelledby="diamond-bonus-title">
           <CrystalEmblem tone="diamante" size={88}/>
           <div><span className={styles.eyebrow}>UN DETALLE CADA DÍA</span><h2 id="diamond-bonus-title">Bono diario Diamante</h2>
             {!guide.daily_bonus_available ? <p>La configuración del bono no está disponible. Vuelve a consultar más tarde.</p> :
@@ -165,7 +165,7 @@ export default function ClientRanksPage() {
                 <small>Requiere rango Diamante vigente. Un uso por día natural, según el horario de Madrid.</small></> :
                 <p>No hay un bono diario activo actualmente. Aquí verás sus recompensas cuando esté habilitado.</p>}
           </div>
-        </section>
+        </section>}
         {guide.state.effective === "diamante" && guide.daily_bonus && <RankDailyBonus/>}
         {guide.warnings.length > 0 && <div className={styles.notice} role="status">{guide.warnings.join(" ")}</div>}
 
@@ -174,8 +174,8 @@ export default function ClientRanksPage() {
           <details open><summary>¿Qué gasto cuenta para subir de rango?</summary><p>Cuenta el importe confirmado que registra tu cuenta para el rango durante los últimos 30 días. Tu progreso utiliza el mismo cálculo que el resto del panel. Los importes se muestran en USD; no se calculan con Coins ni con minutos consumidos.</p></details>
           <details><summary>¿Necesito una sola compra para alcanzar Diamante?</summary><p>No. Puedes alcanzarlo sumando varias compras válidas dentro de los últimos 30 días. El objetivo actual es {rankMoney(guide.ranks.find(rank => rank.key === "diamante")!.min_spend)} en ese período.</p></details>
           <details><summary>¿El rango se conserva para siempre?</summary><p>El cálculo se mueve día a día: las compras de hace más de 30 días salen del período. Para mantener tu rango por compras debes conservar el importe requerido dentro de esa ventana. Tu cuenta puede tener una asignación especial; si existe, la mostramos por separado.</p></details>
-          <details><summary>¿Cuándo recibo las ventajas y los extras?</summary><p>Diamante recibe 15 minutos GRATIS adicionales en compras de minutos confirmadas, incluidas las promociones; quedan fuera las compras de Oráculo y los registros manuales de llamada. Los +10 minutos de Plata y +12 de Oro a precio regular están configurados, pendientes de aplicación automática. Para conocer a cada nueva tarotista disponible hay una consulta de regalo por cliente y tarotista: 7 minutos sin rango o en Bronce, 10 en Plata, 12 en Oro y 15 en Diamante. Se confirma con Central al registrar la consulta. El regalo tiene sus propios minutos y mantiene tu saldo pendiente, aunque sea 0. Este regalo es independiente de los tres pases de 7 minutos, disponibles desde Plata, que requieren alguna compra confirmada y se renuevan cada 30 días. Bronce no incluye estos pases periódicos; sí incluye el regalo de 7 minutos para conocer a una tarotista nueva.</p><p>Los extras de la matriz dependen del rango efectivo, de un nivel de paquete asignado y de que la entrega esté activada. Sus Coins y giros, incluidos los 500 Coins de Diamante, solo corresponden a tarifa regular. Las tiradas adicionales de Oráculo de la matriz pueden aplicarse también a promociones con nivel asignado. Los beneficios propios del paquete se calculan por separado según su tarifa.</p></details>
-          <details><summary>¿Mi rango es lo mismo que el nivel de ruleta?</summary><p>No. Bronce, Plata, Oro y Diamante son rangos del cliente. El nivel del paquete y la ruleta son independientes. Una compra válida con rango Diamante aporta un giro Diamante, además de los giros que correspondan por el paquete.</p></details>
+          <details><summary>¿Cuándo recibo las ventajas y los extras?</summary><p>Los minutos extra de rango requieren una compra confirmada a precio regular. La presentación a una nueva tarotista se confirma al registrar esa consulta en Central; es independiente del saldo y de los pases.</p><p>El pase requiere una compra en los últimos 30 días y disponibilidad en su ciclo. Comprar otra vez o cambiar de rango no añade otro pase. Consulta los importes vigentes en las tarjetas de arriba.</p><p>Los giros muestran su propia cuenta atrás de 48 horas. Las Coins, los minutos y los premios obtenidos se conservan.</p></details>
+          <details><summary>¿Mi rango es lo mismo que el nivel de ruleta?</summary><p>No. Bronce, Plata, Oro y Diamante son rangos del cliente. El nivel del paquete y la ruleta son independientes. Una compra válida de nivel 1, 2 o 3 con rango Diamante aporta un giro Diamante que sustituye al giro de nivel del paquete.</p></details>
         </section>
       </>}
     </div>

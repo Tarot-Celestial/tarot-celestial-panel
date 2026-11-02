@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { customerBenefitPolicy } from "@/lib/server/customer-benefits";
+import { customerBenefitLabels } from "@/lib/customer-benefits";
 import { loadCanonicalClientRank } from "@/lib/server/client-rank-effective";
 import { createClient } from "@supabase/supabase-js";
 
@@ -92,14 +94,17 @@ export async function GET(req: Request) {
     if (rendimientoErr) throw rendimientoErr;
     if (!data) return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
 
-    const [effectiveRank, passResult] = await Promise.all([
+    const [effectiveRank, passResult, policy] = await Promise.all([
       loadCanonicalClientRank(admin, id),
       admin.rpc("crm_free_pass_status", { p_cliente_id: id }),
+      customerBenefitPolicy(admin),
     ]);
 
     const cliente = {
       ...data,
       free_passes: passResult.error ? null : passResult.data,
+      benefit_labels: policy?.activated_at ? customerBenefitLabels(policy, effectiveRank.effective) : null,
+      benefit_policy_version: policy?.version || null,
       etiquetas: mapEtiquetasFromRelations(data),
       rango_automatico: effectiveRank.automatic,
       rango_efectivo: effectiveRank.effective,

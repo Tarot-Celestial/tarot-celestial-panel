@@ -3,6 +3,8 @@ import { CALL_CODE_OPTIONS as CODIGO_OPTIONS } from "@/lib/activity-codes";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useRouletteSignal } from "@/hooks/useRouletteSignal";
+import { supabaseBrowser } from "@/lib/supabase-browser";
 import styles from "./RegistrarLlamadaModal.module.css";
 import { type FreePassStatus } from "./FreePassBenefits";
 import { tcToast } from "@/lib/tc-toast";
@@ -394,6 +396,10 @@ export default function RegistrarLlamadaModal({
   const [initialFreeSnapshot, setInitialFreeSnapshot] = useState<{ clienteId: string; preview: unknown } | null>(null);
   const [rankFreeWorkerId, setRankFreeWorkerId] = useState("");
   const [balanceError, setBalanceError] = useState("");
+  const [benefitRefreshTick, refreshBenefits] = useState(0);
+  const [benefitsRefreshing, setBenefitsRefreshing] = useState(false);
+  const benefitDb = useMemo(() => supabaseBrowser(), []);
+  useRouletteSignal(benefitDb, open ? cliente?.id : null, () => refreshBenefits(t => t + 1));
   const [clienteCompra, setClienteCompra] = useState<"si" | "no" | "">("");
   const [usoSinCompra, setUsoSinCompra] = useState<"minutos" | "initial_free" | "rank_free" | "">("");
   const [compraDestino, setCompraDestino] = useState<"usar_todo" | "guardar" | "">("");
@@ -465,24 +471,6 @@ export default function RegistrarLlamadaModal({
     void (async () => {
       try {
         const token = await getTokenRef.current();
-        if (!token) throw new Error("Sin sesión");
-        const response = await fetch(`/api/crm/rendimiento/registrar?mode=balance&cliente_id=${encodeURIComponent(String(cliente?.id))}`, {
-          headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
-        });
-        const json = await response.json();
-        if (!response.ok || !json.ok || !json.balance) throw new Error("Sin saldo");
-        if (!cancelled) {
-          setLiveBalance(json.balance);
-          setRankFreeSnapshot({ clienteId: String(cliente?.id), preview: json.rank_free });
-          setInitialFreeSnapshot({ clienteId: String(cliente?.id), preview: json.initial_free });
-        }
-      } catch {
-        if (!cancelled) setBalanceError("No se pudo consultar el saldo actual. Cierra y vuelve a abrir el registro.");
-      }
-    })();
-    void (async () => {
-      try {
-        const token = await getTokenRef.current();
         if (!token || cancelled || !isUuid(cliente?.id)) return;
         const response = await fetch(`/api/crm/rendimiento/registrar?cliente_id=${encodeURIComponent(String(cliente?.id))}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
         const json = await response.json();
@@ -493,6 +481,29 @@ export default function RegistrarLlamadaModal({
     })();
     return () => { cancelled = true; modalGenerationRef.current += 1; };
   }, [open, cliente?.id]);
+
+  useEffect(() => {
+    if (!open || !isUuid(cliente?.id)) return;
+    const controller = new AbortController();
+    const clientId = String(cliente?.id);
+    setBenefitsRefreshing(true); setBalanceError("");
+    void (async () => {
+      try {
+        const token = await getTokenRef.current();
+        if (!token) throw new Error("Sin sesión");
+        const response = await fetch(`/api/crm/rendimiento/registrar?mode=balance&cliente_id=${encodeURIComponent(clientId)}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: controller.signal });
+        const json = await response.json();
+        if (!response.ok || !json.ok || !json.balance) throw new Error("No se pudo consultar el beneficio actual.");
+        if (controller.signal.aborted) return;
+        setLiveBalance(json.balance);
+        setRankFreeSnapshot({ clienteId: clientId, preview: json.rank_free });
+        setInitialFreeSnapshot({ clienteId: clientId, preview: json.initial_free });
+      } catch (error) {
+        if (!controller.signal.aborted) { setRankFreeSnapshot(null); setInitialFreeSnapshot(null); setBalanceError("No se pudo comprobar el beneficio. Actualiza antes de registrar."); }
+      } finally { if (!controller.signal.aborted) setBenefitsRefreshing(false); }
+    })();
+    return () => controller.abort();
+  }, [open, cliente?.id, tarotistaId, rankFreeWorkerId, clienteCompra, usoSinCompra, benefitRefreshTick]);
 
   useEffect(() => {
     setCollectionChoice("");
@@ -716,6 +727,7 @@ export default function RegistrarLlamadaModal({
   }
 
   async function submit() {
+    if (benefitsRefreshing) return;
     if (submitInFlightRef.current) return;
     const modalGeneration = modalGenerationRef.current;
 
@@ -944,7 +956,7 @@ export default function RegistrarLlamadaModal({
                   {!rankFreeSnapshot || rankFreeSnapshot.clienteId !== cliente.id ? <p role="status">{balanceError || "Comprobando regalos disponibles…"}</p> : <>
                     {!rankFree.available.length && <p>{rankFree.explanation}</p>}
                   </>}
-                  <p>Este regalo tiene sus propios minutos, aunque el saldo pendiente sea 0. No consume los pases periódicos de 7 minutos ni la consulta inicial.</p>
+                  <p>Este regalo tiene sus propios minutos, aunque el saldo pendiente sea 0. No consume los pases periódicos ni la consulta inicial.</p>
                   <small>Elegir una opción no añade minutos. El regalo y la llamada solo se confirman al pulsar Registrar llamada.</small>
                 </section>
                 <section className={styles.confirmedPayments} aria-label="Regalo de primera consulta">
@@ -959,9 +971,12 @@ export default function RegistrarLlamadaModal({
             )}
 
             {current?.key === "rank_free_tarotista" && <div className={styles.giftOptions}>
+              <p>Cliente: {cliente.nombre} {cliente.apellido} · Rango: {rankFree.rankLabel || "comprobando"}. Origen: presentación a nueva tarotista.</p>
+              {benefitsRefreshing && <p role="status">Actualizando disponibilidad…</p>}
+              {selectedRankFree && <p>Consulta con {selectedRankFree.workerName}: {selectedRankFree.remainingMinutes} minutos disponibles · {selectedRankFree.usedMinutes} minutos utilizados. Se conceden y consumen al confirmar esta llamada.</p>}
               <p>{rankFreeOfferLabel(rankFree)}. El saldo pendiente del cliente se mantiene.</p>
               {rankFree.available.map(offer => <button key={offer.workerId} type="button" aria-pressed={rankFreeWorkerId === offer.workerId} className={`${styles.choiceButton} ${rankFreeWorkerId === offer.workerId ? styles.choiceSelected : ""}`} onClick={() => chooseRankFree(offer)}><strong>Atender con {offer.workerName}</strong><small>{offer.consumeMinutes} minutos FREE · regalo disponible</small></button>)}
-              {rankFree.offers.filter(offer => !offer.eligible).map(offer => <p key={offer.workerId}>{offer.workerName}: {rankFreeReason(offer.reason)}</p>)}
+              {rankFree.offers.filter(offer => !offer.eligible).map(offer => <p key={offer.workerId}>{offer.workerName}: {rankFreeReason(offer.reason)}{offer.usedMinutes > 0 && <> · {offer.usedMinutes} minutos utilizados{offer.usedAt ? ` el ${new Date(offer.usedAt).toLocaleDateString("es-ES")}` : ""}</>}</p>)}
             </div>}
 
             {current?.key === "initial_free_tarotista" && <div className={styles.giftOptions}>
@@ -1115,7 +1130,7 @@ export default function RegistrarLlamadaModal({
                 {CLASIF_OPTIONS.map((opt) => (
                   <button key={opt.value} type="button" aria-pressed={clasificacion === opt.value} className={`${styles.choiceButton} ${styles[`classification_${opt.value}`]} ${clasificacion === opt.value ? styles.choiceSelected : ""}`} onClick={() => setClasificacion(opt.value)}>
                     <span className={styles.classificationIcon} aria-hidden="true">{opt.value === "captado" ? "★" : opt.value === "promo" ? "✦" : opt.value === "recuperado" ? "↗" : opt.value === "super_promo_ruleta" ? "🎡" : "•"}</span>
-                    <span><b>{opt.label}</b>{opt.value === "nada" ? <small>{isManualCollection ? "Cobro manual · Sin Coins ni giros" : "Tarifa normal · Coins y ruleta según el importe y el rango"}</small> : opt.value === "promo" ? <small>Precio promocional · Sin Coins ni giros de ruleta</small> : opt.value === "captado" ? <small>{captureXp?.eligible ? `${captureXp.owner_name || "La captadora histórica"} recibirá +${captureXp.xp.toLocaleString("es-ES")} XP` : captureXp?.already_awarded ? "XP de captación ya concedido" : "Se validará la primera gestora"} · {isManualCollection ? "Sin Coins ni giros" : "Beneficios de tarifa normal"}</small> : opt.value === "recuperado" ? <small>Compra confirmada tras el contacto · +75 XP una sola vez · Cuenta para las 5 recuperaciones de tu turno · {isManualCollection ? "Sin Coins ni giros" : "Beneficios de tarifa normal"}</small> : opt.value === "super_promo_ruleta" ? <small>{isManualCollection ? "Este cobro manual no permite conceder giros" : "+1 giro exclusivo · Super Ruleta Nivel Especial"}</small> : null}</span>
+                    <span><b>{opt.label}</b>{opt.value === "nada" ? <small>{isManualCollection ? "Cobro manual · Sin Coins ni giros" : "Tarifa normal · Coins y ruleta según el importe y el rango"}</small> : opt.value === "promo" ? <small>Precio promocional · Beneficios según nivel y rango confirmados</small> : opt.value === "captado" ? <small>{captureXp?.eligible ? `${captureXp.owner_name || "La captadora histórica"} recibirá +${captureXp.xp.toLocaleString("es-ES")} XP` : captureXp?.already_awarded ? "XP de captación ya concedido" : "Se validará la primera gestora"} · {isManualCollection ? "Sin Coins ni giros" : "Beneficios de tarifa normal"}</small> : opt.value === "recuperado" ? <small>Compra confirmada tras el contacto · +75 XP una sola vez · Cuenta para las 5 recuperaciones de tu turno · {isManualCollection ? "Sin Coins ni giros" : "Beneficios de tarifa normal"}</small> : opt.value === "super_promo_ruleta" ? <small>{isManualCollection ? "Este cobro manual no permite conceder giros" : "+1 giro exclusivo · Super Ruleta Nivel Especial"}</small> : null}</span>
                     {opt.value === "captado" && captureXp?.eligible ? <strong>+{captureXp.xp.toLocaleString("es-ES")} XP</strong> : null}
                   </button>
                 ))}
@@ -1134,13 +1149,13 @@ export default function RegistrarLlamadaModal({
                       <span>Quedan de esta compra: {remainingFree} FREE + {remainingNormal} normales.</span>
                       {liveBalance && <strong>Saldo previsto al guardar: {freePend + remainingFree} FREE + {normalesPend + remainingNormal} normales.</strong>}
                     </>}
-                    <small>{isManualCollection ? "Cobro manual: no se añaden Coins ni giros de ruleta." : clasificacion === "promo" ? "Compra promocional: no se añaden Coins ni giros de ruleta." : "Los bonos de rango se suman aparte y quedan detallados en la nota final."}</small>
+                    <small>{isManualCollection ? "Cobro manual: no se añaden Coins ni giros de ruleta." : clasificacion === "promo" ? "Compra promocional: los beneficios se validan según el nivel y el rango. No añade el bono de minutos de tarifa regular." : "Los bonos de rango se suman aparte y quedan detallados en la nota final."}</small>
                   </> : isRankFree && selectedRankFree ? <>
                     <span>Regalo para conocer a {selectedRankFree.workerName} · {rankFree.rankLabel} · una vez por cliente y tarotista.</span>
                     <span>Se utilizan {selectedRankFree.consumeMinutes} minutos FREE del regalo de bienvenida. Su saldo pendiente se mantiene.</span>
                     <span>Consumo ahora: {selectedRankFree.consumeMinutes} FREE con {selectedRankFree.workerName}.</span>
                     {balanceValidationError ? <strong role="alert">{balanceValidationError}</strong> : <strong>Saldo previsto al guardar: {freePend} FREE + {normalesPend} normales.</strong>}
-                    <small>La llamada contará con sus {selectedRankFree.consumeMinutes} minutos FREE en el rendimiento de {selectedRankFree.workerName}. No es una compra ni utiliza un pase de 7 minutos.</small>
+                    <small>La llamada contará con sus {selectedRankFree.consumeMinutes} minutos FREE en el rendimiento de {selectedRankFree.workerName}. No es una compra ni utiliza un pase periódico.</small>
                   </> : isRankFree ? <strong role="alert">{balanceValidationError}</strong> : isInitialFree ? <>
                     <span>Regalo de primera consulta · una sola vez por cliente.</span>
                     <span>Consumo ahora: 7 FREE con {tarotistaLabel}. El regalo tiene sus propios minutos.</span>
@@ -1230,7 +1245,7 @@ export default function RegistrarLlamadaModal({
             {current?.key !== "resumen" ? (
               <button type="button" className={`${styles.gameButton} ${styles.primaryButton}`} onClick={next}>Siguiente</button>
             ) : (
-              <button type="button" className={`${styles.gameButton} ${styles.primaryButton}`} onClick={submit} disabled={loading || (isFreeGift && Boolean(balanceValidationError))}>{loading ? "Guardando..." : "Registrar llamada"}</button>
+              <button type="button" className={`${styles.gameButton} ${styles.primaryButton}`} onClick={submit} disabled={loading || benefitsRefreshing || (isFreeGift && Boolean(balanceValidationError))}>{loading ? "Guardando..." : "Registrar llamada"}</button>
             )}
           </div>
         </div>

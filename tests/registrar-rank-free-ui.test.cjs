@@ -23,13 +23,15 @@ function loadComponent(fetch) {
     if (name.endsWith('.css')) return { default: new Proxy({}, { get: (_, key) => key }) };
     if (name === '@/lib/activity-codes') return { CALL_CODE_OPTIONS: [{ value: 'FREE', label: 'FREE' }, { value: 'TC', label: 'TC' }] };
     if (name === '@/lib/tc-toast') return { tcToast() {} };
+    if (name === '@/hooks/useRouletteSignal') return { useRouletteSignal() {} };
+    if (name === '@/lib/supabase-browser') return { supabaseBrowser: () => ({}) };
     const file = name === 'modal' ? 'src/components/crm/RegistrarLlamadaModal.tsx' : name === '@/lib/client-rank-free-usage' ? 'src/lib/client-rank-free-usage.ts' : name === '@/lib/client-initial-free' ? 'src/lib/client-initial-free.ts' : null;
     if (!file) throw Error(`Unexpected import ${name}`);
     if (cache.has(file)) return cache.get(file);
     const exports = {};
     cache.set(file, exports);
     const code = ts.transpileModule(fs.readFileSync(path.join(root, file), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
-    vm.runInNewContext(code, { exports, require: load, fetch, document: { body: {} }, crypto: { randomUUID: () => operation }, console: { error() {} } });
+    vm.runInNewContext(code, { exports, require: load, fetch, AbortController, document: { body: {} }, crypto: { randomUUID: () => operation }, console: { error() {} } });
     return exports;
   };
   return load('modal').default;
@@ -76,7 +78,7 @@ async function chooseInitial(tree) {
 test('Silver zero balance: selecting Josefa is read-only; saving records exactly ten FREE minutes with the real worker', async () => {
   const h = await mount();
   await openConsultation(h.tree);
-  assert.match(contents(h.tree), /No consume los pases periódicos de 7 minutos ni la consulta inicial/);
+  assert.match(contents(h.tree), /No consume los pases periódicos ni la consulta inicial/);
   await chooseNewGift(h.tree);
   assert.equal(h.posts().length, 0);
   await click(h.tree, 'Siguiente');
@@ -207,7 +209,11 @@ test('a concurrent gift redemption updates the preview and prevents a second sav
 });
 
 test('a changed effective rank requires selecting the updated gift before another save', async () => {
-  const h = await mount({ post: () => jsonResponse({ ok: false, error: 'RANK_CHANGED', rank_free: preview('oro'), balance: { minutos_free_pendientes: 0, minutos_normales_pendientes: 0 } }, 409) });
+  let liveRank = 'plata';
+  const h = await mount({
+    balanceFetch: () => jsonResponse({ok:true, rank_free:preview(liveRank), balance:{minutos_free_pendientes:0,minutos_normales_pendientes:0}}),
+    post: () => { liveRank = 'oro'; return jsonResponse({ ok: false, error: 'RANK_CHANGED', rank_free: preview('oro'), balance: { minutos_free_pendientes: 0, minutos_normales_pendientes: 0 } }, 409); }
+  });
   await openConsultation(h.tree); await chooseNewGift(h.tree); await click(h.tree, 'Siguiente');
   await click(h.tree, 'Registrar llamada');
   assert.equal(h.tree.root.findAllByType('button').find(button => text(button) === 'Registrar llamada').props.disabled, true);

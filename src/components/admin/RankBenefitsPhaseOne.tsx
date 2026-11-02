@@ -1,4 +1,5 @@
 "use client";
+import { customerBenefitLabels, type CustomerBenefitPolicy } from "@/lib/customer-benefits";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Coins, Diamond, Eye, Gift, PlusCircle, RefreshCw, RotateCw, Save, Search, ShieldCheck, Sparkles } from "lucide-react";
@@ -15,6 +16,7 @@ import { freePassPolicyLabel, rankHasFreePasses, type FreePassPolicy } from "@/l
 import styles from "./RankBenefitsAdminPanel.module.css";
 
 type AdminData = {
+  benefit_policy?: CustomerBenefitPolicy | null;
   ranks: (RankBenefitConfig & { updated_by_name?: string | null })[];
   matrix: (RankPackageBenefitConfig & { updated_by_name?: string | null })[];
   assignments: PackageLevelAssignment[];
@@ -94,6 +96,7 @@ export default function RankBenefitsPhaseOne() {
     {!loading && !data && <button className={styles.secondary} onClick={() => void load()}><RefreshCw size={16}/> Reintentar</button>}
 
     {data && <>
+      {data.benefit_policy && <section className={styles.rankCard}><h2>Reglas vigentes</h2><p>Versión {data.benefit_policy.version} · Activación: {fmt(data.benefit_policy.activated_at)}</p><p>Coins sin caducidad. Giros de nivel 1, 2, 3 y Diamante: {data.benefit_policy.spin_lifetime_hours} horas desde cada concesión.</p><p>Inicio de cuenta atrás de giros antiguos: {fmt(data.benefit_policy.legacy_spin_clock_started_at)}. Los usos del ciclo actual cuentan para el pase nuevo.</p></section>}
       <RankBenefitsComparison data={data}/>
       <nav className={styles.tabs} aria-label="Rangos">
         {data.ranks.map((item) => <button key={item.rank_key} aria-pressed={selectedRank === item.rank_key} onClick={() => setSelectedRank(item.rank_key)}>{item.label}{item.rank_key === "diamante" ? " 💎" : ""}</button>)}
@@ -106,13 +109,13 @@ export default function RankBenefitsPhaseOne() {
       <section className={styles.rankAdminGrid}>
         <div className={styles.rankAdminMain}>
           {section === "purchase" ? <div className={styles.rankCard} data-rank={selectedRank}>
-            <div className={styles.rankHeader}><CrystalEmblem tone={selectedRank}/><div><h2>{rank?.label || selectedRank}</h2><p className={styles.note}>La matriz requiere un nivel de paquete asignado y la entrega activada. Sus Coins y giros solo se entregan a tarifa regular. Las tiradas adicionales de Oráculo pueden aplicarse también a promociones con nivel asignado. Los beneficios propios del paquete se calculan por separado según su tarifa; el nivel del paquete y el de ruleta son independientes.</p></div></div>
+            <div className={styles.rankHeader}><CrystalEmblem tone={selectedRank}/><div><h2>{rank?.label || selectedRank}</h2><p className={styles.note}>La matriz requiere un nivel de paquete asignado y la entrega activada. Diamante tiene una regla total de 300 Coins y un giro Diamante, también en promociones con nivel. Los demás rangos mantienen su matriz. Las tiradas adicionales de Oráculo pueden aplicarse también a promociones con nivel asignado. Los beneficios propios del paquete se calculan por separado según su tarifa; el nivel del paquete y el de ruleta son independientes.</p></div></div>
             <div className={styles.rankSectionTitle}><span><Gift size={17}/> Beneficios por compra</span><small>Nivel del paquete ≠ nivel de ruleta</small></div>
             <div className={styles.levelTabs}>{([1,2,3] as const).map((value) => <button key={value} type="button" aria-pressed={level === value} onClick={() => setLevel(value)}>Nivel {value}</button>)}</div>
             <PackagesUsingLevel packages={packagesForLevel} />
-            <MatrixEditor key={`${selectedRank}-${level}-${matrix.revision}`} row={matrix} packages={packagesForLevel} onSaved={load} notify={saveResult}/>
+            {data.benefit_policy?.activated_at && selectedRank === "diamante" ? <div className={styles.rankPreview}><strong>300 Coins totales + 1 giro Diamante</strong><span>Regla vigente para cualquier compra con nivel 1, 2 o 3. Sustituye Coins y giros de nivel del paquete. Se mantienen las tiradas de Oráculo configuradas.</span></div> : <MatrixEditor key={`${selectedRank}-${level}-${matrix.revision}`} row={matrix} packages={packagesForLevel} onSaved={load} notify={saveResult}/>}
           </div> : <>
-            {rank && <GeneralRankSummary row={rank}/>}
+            {rank && (data.benefit_policy?.activated_at ? <div className={styles.rankCard}><h2>{rank.label}</h2>{customerBenefitLabels(data.benefit_policy, rank.rank_key).map(label => <p key={label}>{label}</p>)}</div> : <GeneralRankSummary row={rank}/>)}
             {rank && <RitualEditor key={`${rank.rank_key}-${rank.revision}`} row={rank} onSaved={load} notify={saveResult}/>}
             {selectedRank === "diamante" && data.diamond_bonus && <DiamondBonusEditor key={`${data.diamond_bonus.id}-${data.diamond_bonus.revision}`} row={data.diamond_bonus} timezone={data.business_timezone} onSaved={load} notify={saveResult}/>}
           </>}
@@ -142,6 +145,7 @@ export default function RankBenefitsPhaseOne() {
 }
 
 export function RankBenefitsComparison({ data }: { data: AdminData }) {
+  if (data.benefit_policy?.activated_at) return <section className={styles.rankCard} aria-label="Comparación de beneficios por rango"><h2>Beneficios de clientes</h2><div className={styles.rankAdminGrid}>{data.ranks.map(rank => <article key={rank.rank_key}><h3>{rank.label}</h3>{customerBenefitLabels(data.benefit_policy!, rank.rank_key).map(label => <p key={label}>{label}</p>)}</article>)}</div></section>;
   const ranks = data.ranks.filter(row => ["bronce", "plata", "oro", "diamante"].includes(row.rank_key));
   const passLabel = data.free_pass_policy_available === false ? null : freePassPolicyLabel(data.free_pass_policy);
   const packageCell = (rank: string, level: number) => {

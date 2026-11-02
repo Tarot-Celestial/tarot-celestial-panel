@@ -29,9 +29,11 @@ export async function GET(req: Request) {
     if (raffle.error) throw raffle.error;
     if (!raffle.data) return NextResponse.json({ ok: true, client_id: gate.cliente.id, raffle: null, numbers: [] });
 
+    const assignment = await gate.admin.rpc("tc_assign_rank_raffle", { p_cliente_id: gate.cliente.id });
+    if (assignment.error && !["42883", "PGRST202"].includes(assignment.error.code)) throw assignment.error;
     const entries = await gate.admin
       .from("raffle_entries")
-      .select("id,raffle_number,assigned_at,client_auth_user_id")
+      .select("id,raffle_number,assigned_at,client_auth_user_id,benefit_origin")
       .eq("raffle_id", raffle.data.id)
       .eq("client_id", gate.cliente.id)
       .order("raffle_number", { ascending: true });

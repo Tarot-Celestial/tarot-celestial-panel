@@ -43,6 +43,7 @@ function endpoint({total=650,matrixFailure=false,stateFailure=false,configFailur
  };
  const access=load('src/lib/server/ruleta-access.ts',{'@supabase/supabase-js':{createClient:()=>admin}},{process:{env:{}}});
  const api=load('src/app/api/cliente/rangos/route.ts',{
+  '@/lib/server/customer-benefits':{customerBenefitPolicy:async()=>null},
   'next/server':{NextResponse:{json:(body,options)=>new Response(JSON.stringify(body),{...options,headers:{...options?.headers,'Content-Type':'application/json'}})}},
   '@/lib/server/ruleta-access':access,'@/lib/client-rank-guide':guide,
   '@/lib/server/cliente-platform':{currentRankBenefits:()=>['Ventaja del programa','Acceso a Mi Ritual']},
