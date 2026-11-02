@@ -23,8 +23,8 @@ const clientId = '10000000-0000-4000-8000-000000000001';
 const id = '20000000-0000-4000-8000-000000000001';
 const row = (milliseconds) => ({ id, clientId, clientName: 'Cliente de prueba', tarotistName: 'Luna', scheduledAt: new Date(now + milliseconds).toISOString(), actionPath: '/panel-central?tab=reservas' });
 
-test('threshold boundaries are 10, 5 and 1 minutes, never early or after the scheduled time', () => {
-  for (const [remaining, expected] of [[600001,null],[600000,10],[300001,10],[300000,5],[60001,5],[60000,1],[1,1],[0,null],[-1,null]]) {
+test('five-minute reminder never fires early or after the scheduled time', () => {
+  for (const [remaining, expected] of [[600001,null],[600000,null],[300001,null],[300000,5],[60001,5],[60000,5],[1,5],[0,null],[-1,null]]) {
     assert.equal(helpers.reservationThreshold(row(remaining).scheduledAt, now), expected, `${remaining}ms`);
   }
   assert.equal(helpers.reservationThreshold('invalid', now), null);
@@ -32,18 +32,18 @@ test('threshold boundaries are 10, 5 and 1 minutes, never early or after the sch
 
 test('late entry produces a single current threshold and UTC-naive timestamps preserve the established storage convention', () => {
   assert.deepEqual(Array.from(helpers.reservationCandidates([row(240000)], now), item => item.threshold), [5]);
-  assert.deepEqual(Array.from(helpers.reservationCandidates([row(50000)], now), item => item.threshold), [1]);
+  assert.deepEqual(Array.from(helpers.reservationCandidates([row(50000)], now), item => item.threshold), [5]);
   assert.equal(helpers.reservationThreshold('2026-10-12T12:05:00', now), 5);
   assert.equal(helpers.reservationThreshold('2026-10-12T14:05:00+02:00', now), 5);
 });
 
 test('rescheduling changes deduplication identity and removes an old displayed reminder', () => {
-  const old = row(240000), changed = row(540000);
+  const old = row(240000), changed = row(280000);
   const reminder = helpers.reservationCandidates([old], now)[0];
   assert.notEqual(reminder.key, helpers.reservationCandidates([changed], now)[0].key);
   assert.equal(helpers.isCurrentReservationReminder(reminder, [changed], now), false);
   assert.equal(helpers.isCurrentReservationReminder(reminder, [], now), false);
-  assert.equal(helpers.isCurrentReservationReminder(reminder, [old], now + 181000), false);
+  assert.equal(helpers.isCurrentReservationReminder(reminder, [old], now + 241000), false);
   assert.equal(helpers.isCurrentReservationReminder(reminder, [old], now), true);
 });
 
@@ -80,21 +80,17 @@ function fixture(extra = {}) {
   return { server, ctx, tables, deliveries, queries, schedule };
 }
 
-test('server only returns imminent active reservations for currently assigned Celestial clients', async () => {
-  const f = fixture();
-  const allowed = await f.server.upcomingReservations(f.ctx);
-  assert.equal(allowed.length, 1);
-  assert.deepEqual(Object.keys(allowed[0]).sort(), ['actionPath','clientId','clientName','id','scheduledAt','tarotistName']);
-  assert.equal(allowed[0].scheduledAt, f.schedule);
-  assert.ok(f.queries.find(query => query.table === 'crm_client_capture_assignments').filters.some(filter => filter.field === 'responsible_worker_id'));
-  f.tables.crm_client_capture_assignments[0].responsible_worker_id = 'other-worker';
-  assert.equal((await f.server.upcomingReservations(f.ctx)).length, 0);
-  f.tables.crm_client_capture_assignments[0].responsible_worker_id = 'worker-a';
-  f.tables.crm_clientes[0].is_active = false;
-  assert.equal((await f.server.upcomingReservations(f.ctx)).length, 0);
-  f.tables.crm_clientes[0].is_active = true;
-  f.tables.crm_clientes[0].origen = 'orion';
-  assert.equal((await f.server.upcomingReservations(f.ctx)).length, 0);
+test('shared operational agenda includes unassigned clients for both Admin and Central, respecting brand', async () => {
+  for (const role of ['admin','central']) {
+    const f=fixture();f.ctx.worker.role=role;
+    f.tables.crm_client_capture_assignments=[];
+    const rows=await f.server.upcomingReservations(f.ctx);
+    assert.equal(rows.length,1);
+    assert.ok(rows[0].actionPath.startsWith(role==='admin'?'/admin?':'/panel-central?'));
+    assert.equal(f.queries.some(q=>q.table==='crm_client_capture_assignments'),false);
+    f.tables.crm_clientes[0].origen='orion';
+    assert.equal((await f.server.upcomingReservations(f.ctx)).length,0);
+  }
 });
 
 test('cancelled, completed, unknown and expired reservations never produce reminders', async () => {
@@ -128,20 +124,20 @@ test('simultaneous tabs and refresh claim a threshold only once per worker and s
   assert.equal(f.deliveries.size, 2);
 });
 
-test('delivery rechecks cancellation and assignment after a schedule was fetched', async () => {
+test('delivery rechecks cancellation and brand after a schedule was fetched', async () => {
   const f = fixture(), input = { id, scheduledAt: f.schedule, threshold: 5 };
   await f.server.upcomingReservations(f.ctx);
   f.tables.reservas[0].estado = 'cancelada';
   assert.equal((await f.server.claimReservationReminder(f.ctx, input)).reason, 'stale');
   f.tables.reservas[0].estado = 'pendiente';
-  f.tables.crm_client_capture_assignments[0].status = 'cancelled';
+  f.tables.crm_clientes[0].origen = 'orion';
   assert.equal((await f.server.claimReservationReminder(f.ctx, input)).reason, 'stale');
   assert.equal(f.deliveries.size, 0);
 });
 
 test('stale thresholds cannot claim later reminders early or produce a cascade', async () => {
   const f = fixture();
-  for (const threshold of [10,1]) assert.equal((await f.server.claimReservationReminder(f.ctx, { id, scheduledAt: f.schedule, threshold })).reason, 'stale');
+  for (const threshold of [10,1]) await assert.rejects(f.server.claimReservationReminder(f.ctx, { id, scheduledAt: f.schedule, threshold }), /no válido/);
   assert.equal(f.deliveries.size, 0);
 });
 

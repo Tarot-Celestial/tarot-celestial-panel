@@ -25,7 +25,8 @@ test('20:00 Madrid never triggers the scheduled popup at creation or even 1ms ea
   for (const now of [Date.parse('2026-10-16T17:25:16Z'), due - 30000, due - 1]) assert.equal(helpers.reservationAlertDue(row, now), false);
   assert.equal(helpers.reservationAlertDue(row, due), true);
   assert.equal(helpers.reservationAlertDue(row, due + 5000), true);
-  assert.equal(helpers.reservationAlertDue(row, due + 30001), false);
+  assert.equal(helpers.reservationAlertDue(row, due + 30001), true);
+  assert.equal(helpers.reservationAlertDue(row, due + 86400001), false);
   assert.equal(helpers.reservationAlertDate(reservation({ fecha_reserva: '2026-10-16T20:00:00+02:00' })).getTime(), due);
 });
 
@@ -63,6 +64,7 @@ function fixture(options = {}) {
         select() { return this; }, eq(field, value) { filters.push(['eq', field, value]); return this; },
         is(field, value) { filters.push(['is', field, value]); return this; },
         in(field, value) { filters.push(['in', field, value]); return this; },
+        gte(field, value) { filters.push(["gte", field, value]); return this; },
         lte(field, value) { filters.push(['lte', field, value]); return this; },
         order() { return this; }, limit(value) { limit = value; return this; },
         maybeSingle() { single = true; return this; },
@@ -70,7 +72,7 @@ function fixture(options = {}) {
         then(resolve, reject) {
           if (patch && options.beforeClaim) options.beforeClaim(tables.reservas[0]);
           calls.push({ kind: patch ? 'update' : 'query', table, filters: clone(filters), patch: patch ? clone(patch) : undefined });
-          const rows = tables[table].filter(row => filters.every(([op, field, value]) => op === 'is' ? (row[field] ?? null) === value : op === 'in' ? value.includes(row[field]) : op === 'lte' ? Date.parse(row[field] + (/(?:Z|[+-]\d{2}:\d{2})$/i.test(row[field]) ? '' : 'Z')) <= Date.parse(value) : row[field] === value)).slice(0, limit);
+          const rows = tables[table].filter(row => filters.every(([op, field, value]) => op === 'is' ? (row[field] ?? null) === value : op === 'in' ? value.includes(row[field]) : op === 'gte' ? Date.parse(row[field] + (/(?:Z|[+-]\d{2}:\d{2})$/i.test(row[field]) ? '' : 'Z')) >= Date.parse(value) : op === 'lte' ? Date.parse(row[field] + (/(?:Z|[+-]\d{2}:\d{2})$/i.test(row[field]) ? '' : 'Z')) <= Date.parse(value) : row[field] === value)).slice(0, limit);
           if (patch) rows.forEach(row => Object.assign(row, patch));
           return Promise.resolve({ data: clone(single ? rows[0] || null : rows), error: null }).then(resolve, reject);
         },

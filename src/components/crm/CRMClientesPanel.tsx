@@ -763,7 +763,7 @@ export default function CRMClientesPanel({
   }, []);
 
   useEffect(() => {
-    const openClienteId = String(searchParams?.get("open_cliente_id") || "").trim();
+    const openClienteId = String(searchParams?.get("open_cliente_id") || searchParams?.get("cliente") || "").trim();
     const phoneFromUrl = String(searchParams?.get("telefono") || "").trim();
 
     if (openClienteId) {
@@ -1613,7 +1613,11 @@ export default function CRMClientesPanel({
     }
   }
 
+  const reservationSaving = useRef(false);
+  const reservationOperation = useRef<{ fingerprint: string; id: string } | null>(null);
+  const [createdReservation, setCreatedReservation] = useState<any>(null);
   async function crearReservaCRM() {
+    if (reservationSaving.current) return;
     const clienteId = String(crmClienteFicha?.id || crmClienteSelId || "").trim();
     if (!clienteId) {
       setCrmReservaMsg("⚠️ Primero abre una ficha de cliente");
@@ -1629,12 +1633,14 @@ export default function CRMClientesPanel({
       return;
     }
 
-    if (!fecha_reserva) {
-      setCrmReservaMsg("⚠️ Selecciona fecha y hora para la reserva");
+    if (!fecha_reserva || !Number.isFinite(new Date(fecha_reserva).getTime()) || new Date(fecha_reserva).getTime() <= Date.now()) {
+      setCrmReservaMsg("⚠️ Selecciona una fecha y hora futuras para la reserva");
       return;
     }
 
     try {
+      reservationSaving.current = true;
+      setCreatedReservation(null);
       setCrmReservaLoading(true);
       setCrmReservaMsg("");
 
@@ -1651,6 +1657,9 @@ export default function CRMClientesPanel({
       if (tarotista_worker_id) payload.tarotista_worker_id = tarotista_worker_id;
       if (tarotista_nombre_manual) payload.tarotista_nombre_manual = tarotista_nombre_manual;
 
+      const fingerprint = JSON.stringify(payload);
+      if (reservationOperation.current?.fingerprint !== fingerprint) reservationOperation.current = { fingerprint, id: crypto.randomUUID() };
+      payload.operation_id = reservationOperation.current.id;
       const r = await fetch("/api/crm/reservas/crear", {
         method: "POST",
         headers: {
@@ -1664,7 +1673,10 @@ export default function CRMClientesPanel({
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
 
       const createdReserva = j?.reserva || (j?.id ? { id: j.id } : null);
-      setCrmReservaMsg("✅ Reserva creada y sincronizada con la agenda");
+      if (visibleClientRef.current !== clienteId) return;
+      setCreatedReservation(createdReserva);
+      reservationOperation.current = null;
+      setCrmReservaMsg(`✅ Reserva R-${String(createdReserva?.numero_reserva || "").padStart(5, "0")} guardada y sincronizada con la agenda.`);
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("tc-reservation-changed", { detail: { id: String(createdReserva?.id || ""), reserva: createdReserva } }));
         window.dispatchEvent(new Event("tc-notifications-refresh"));
@@ -1675,8 +1687,9 @@ export default function CRMClientesPanel({
       setCrmReservaNota("");
       setCrmReservaAvisarCuandoLibre(false);
     } catch (e: any) {
-      setCrmReservaMsg(`❌ ${e?.message || "Error creando reserva"}`);
+      if (visibleClientRef.current === clienteId) setCrmReservaMsg(`❌ ${e?.message || "Error creando reserva"}`);
     } finally {
+      reservationSaving.current = false;
       setCrmReservaLoading(false);
     }
   }
@@ -2474,7 +2487,7 @@ export default function CRMClientesPanel({
               </div>
 
               <div id="crm-reserva-card" className={reservationStyles.missionCard}>
-                <div className={reservationStyles.cardHead}><span className={reservationStyles.icon}><CalendarClock /></span><div><span className={reservationStyles.eyebrow}><Sparkles /> MISIÓN PROGRAMADA</span><div className={reservationStyles.title}>Reservar tarotista</div><div className={reservationStyles.subtitle}>Programa la conexión y el sistema avisará en pantalla cuando llegue el momento.</div></div><span className={reservationStyles.live}><i /> EN VIVO</span></div>
+                <div className={reservationStyles.cardHead}><span className={reservationStyles.icon}><CalendarClock /></span><div><span className={reservationStyles.eyebrow}><Sparkles /> MISIÓN PROGRAMADA</span><div className={reservationStyles.title}>Reservar tarotista</div><div className={reservationStyles.subtitle}>Aviso del asistente cinco minutos antes y alerta central a la hora reservada. Mantén el panel abierto y conectado.</div></div><span className={reservationStyles.live}><i /> EN VIVO</span></div>
 
                 <div className={reservationStyles.grid}>
                   <label className={reservationStyles.field}>
@@ -2509,7 +2522,7 @@ export default function CRMClientesPanel({
 
                 <div className={reservationStyles.grid}>
                   <label className={reservationStyles.field}>
-                    <span>Fecha y hora</span>
+                    <span>Fecha y hora · {Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
                     <input
                       className={reservationStyles.control}
                       type="datetime-local"
@@ -2542,14 +2555,18 @@ export default function CRMClientesPanel({
                   <button
                     className={reservationStyles.createButton}
                     onClick={crearReservaCRM}
-                    disabled={crmReservaLoading || !crmClienteSelId}
+                    disabled={crmReservaLoading || !(crmClienteFicha?.id || crmClienteSelId)}
                   >
                     <CalendarClock />{crmReservaLoading ? "Sincronizando..." : "Crear reserva"}
                   </button>
                 </div>
 
-                <div className={reservationStyles.feedback}>
+                <div className={reservationStyles.feedback} role="status" aria-live="polite">
                   {crmReservaMsg || " "}
+                  {createdReservation?.id && createdReservation.cliente_id === crmClienteFicha?.id && <button type="button" className="tc-btn tc-btn-gold" onClick={() => {
+                    const url = new URL(window.location.href); url.searchParams.set("tab", "reservas"); url.searchParams.set("reserva", createdReservation.id);
+                    window.location.assign(url.toString());
+                  }}>Ver reserva en la agenda</button>}
                 </div>
               </div>
 
