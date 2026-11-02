@@ -16,10 +16,12 @@ type Props = {
   puntos: number;
   recompensas: Recompensa[];
   loading: boolean;
-  onRedeem: (recompensaId: string) => Promise<void>;
+  onRedeem: (recompensaId: string, expectedCoins: number, expectedMinutes: number) => Promise<void>;
+  catalogError?: string;
+  onRefresh?: () => Promise<void>;
 };
 
-export default function CanjePuntos({ puntos, recompensas, loading, onRedeem }: Props) {
+export default function CanjePuntos({ puntos, recompensas, loading, onRedeem, catalogError, onRefresh }: Props) {
   const [selected, setSelected] = useState<Recompensa | null>(null);
   const [rewardUnlocked, setRewardUnlocked] = useState<Recompensa | null>(null);
 
@@ -32,11 +34,11 @@ export default function CanjePuntos({ puntos, recompensas, loading, onRedeem }: 
     if (!selected || loading) return;
     const redeemed = selected;
     try {
-      await onRedeem(redeemed.id);
+      await onRedeem(redeemed.id, redeemed.puntos_coste, redeemed.minutos_otorgados);
       setSelected(null);
       setRewardUnlocked(redeemed);
-    } catch {
-      // El mensaje funcional lo gestiona el dashboard; el modal queda abierto para poder reintentar.
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("CATALOGO_ACTUALIZADO")) setSelected(null);
     }
   }
 
@@ -51,6 +53,8 @@ export default function CanjePuntos({ puntos, recompensas, loading, onRedeem }: 
           <div className="tc-coin-balance-mini"><Coins size={16} /> {puntos.toLocaleString("es-ES")} Coins</div>
         </div>
 
+        {catalogError ? <p role="alert">{catalogError} <button type="button" onClick={() => void onRefresh?.()}>Actualizar catálogo</button></p> : null}
+        {!recompensasUnicas.length && !catalogError ? <p role="status">Consultando recompensas disponibles…</p> : null}
         <div className="tc-reward-grid">
           {recompensasUnicas.map((item) => {
             const cost = Number(item.puntos_coste || 0);
@@ -69,7 +73,7 @@ export default function CanjePuntos({ puntos, recompensas, loading, onRedeem }: 
                 {!affordable ? <div className="tc-reward-missing">Te faltan {missing.toLocaleString("es-ES")} Coins</div> : <div className="tc-reward-ready">Disponible para desbloquear</div>}
                 <button
                   className="tc-btn tc-btn-gold tc-reward-button"
-                  disabled={loading || !affordable}
+                  disabled={loading || !affordable || Boolean(catalogError)}
                   onClick={() => setSelected(item)}
                 >
                   {!affordable ? "Bloqueado" : loading ? "Canjeando..." : "Canjear"}
@@ -97,7 +101,7 @@ export default function CanjePuntos({ puntos, recompensas, loading, onRedeem }: 
             </div>
             <div className="tc-redeem-actions">
               <button className="tc-btn" disabled={loading} onClick={() => setSelected(null)}>Cancelar</button>
-              <button className="tc-btn tc-btn-gold" disabled={loading} onClick={confirmRedeem}>{loading ? "Canjeando..." : "Confirmar canje"}</button>
+              <button className="tc-btn tc-btn-gold" disabled={loading || Boolean(catalogError)} onClick={confirmRedeem}>{loading ? "Canjeando..." : "Confirmar canje"}</button>
             </div>
           </div>
         </div>

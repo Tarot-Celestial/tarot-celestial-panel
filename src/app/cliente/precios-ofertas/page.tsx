@@ -231,7 +231,7 @@ export default function PreciosOfertasPage() {
                   <div className={styles.promoMinutes}><strong>{pack.paid_minutes}</strong><span>minutos</span>{pack.free_minutes ? <><b>+</b><strong>{pack.free_minutes}</strong><span>GRATIS</span></> : null}</div>
                   <div className={styles.promoPrice}>{pack.regular_price && Number(pack.regular_price) > Number(pack.price) ? <del>{formatPromoMoney(pack.regular_price, pack.currency)}</del> : null}<strong>{formatPromoMoney(pack.price, pack.currency)}</strong></div>
                   <div className={styles.promoBenefits}>
-                    <span className={styles.promoRewardPolicy}>{Number(pack.rankBenefits?.roulette_diamond_spins || 0) > 0 ? `${pack.rankBenefits?.coins} Coins totales + 1 giro Diamante` : "Precio promocional · Sin Coins ni giros de ruleta"}</span>
+                    <span className={styles.promoRewardPolicy}>Precio promocional · Sin Coins ni giros de ruleta para ningún rango</span>
                     {pack.oracle_credits > 0 ? <span>🔮 +{pack.oracle_credits} tirada{pack.oracle_credits === 1 ? "" : "s"} del Oráculo</span> : null}
                     {extraBenefit ? <span>✦ {extraBenefit}</span> : null}
                     {pack.rankBenefits?.enabled && Number(pack.rankBenefits.oracle_credits || 0) > 0 ? <span><strong>Por tu rango:</strong> +{Number(pack.rankBenefits.oracle_credits)} Oráculo</span> : null}
