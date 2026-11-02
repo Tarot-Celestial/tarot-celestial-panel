@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import styles from "./payment.module.css";
 
-type Session = { amount: number; currency: string; description: string; status: string; remote_status: string;
+type Session = { paypal_account?: string; recipient_label?: string; amount: number; currency: string; description: string; status: string; remote_status: string;
   can_pay: boolean; client_id?: string; client_token?: string; environment?: string; last_error?: string | null;
   checkout_kind?: string; attempt_id?: string; can_cancel?: boolean; credited?: boolean;
   purchase_kind?: 'oracle' | 'minutes';
@@ -35,6 +35,7 @@ export default function CardPayment() {
     return data;
   }
   function showResult(data: Session) {
+    if (["CAPTURE_REFUNDED", "CAPTURE_PARTIALLY_REFUNDED"].includes(data.remote_status)) { setSession(data); setPhase("refunded"); setMessage(data.remote_status === "CAPTURE_PARTIALLY_REFUNDED" ? "Este pago tiene un reembolso parcial. Contacta con tu central para conocer su detalle." : "Este pago ha sido reembolsado. Contacta con tu central si necesitas ayuda."); return; }
     if (!alive.current) return;
     setSession(data);
     const clientPurchase = data.checkout_kind === "client_purchase";
@@ -181,17 +182,19 @@ export default function CardPayment() {
     } finally { busy.current = false; }
   }
   const money = session ? new Intl.NumberFormat("es-ES", { style: "currency", currency: session.currency }).format(session.amount) : "";
+  const leonaris = session?.paypal_account === "client_business_v1";
   const clientPurchase = session?.checkout_kind === "client_purchase";
   const oraclePurchase = clientPurchase && isOraclePurchase(session);
   const oracleCredits = Number(session?.purchase_summary?.oracleCredits || 0);
   const oracleQuestions = Number(session?.purchase_summary?.oracleQuestions || 0);
   const showForm = ["loading", "ready", "paying"].includes(phase) || (phase === "cancelling" && Boolean(fields.current));
-  return <main className={styles.page}>
-    <div className={styles.brand}><span aria-hidden="true">✦</span> TAROT CELESTIAL</div>
+  return <main className={`${styles.page} ${leonaris ? styles.leonaris : ""}`}>
+    <div className={styles.brand}><span aria-hidden="true">✦</span> {leonaris ? "TAROT LEONARIS" : "TAROT CELESTIAL"}</div>
     <section className={styles.card} aria-labelledby="payment-title">
       <div className={styles.topline}><span>PAGO SEGURO</span><span>Tarjeta de crédito o débito</span></div>
       <h1 id="payment-title">{phase === "completed" ? "Pago confirmado" : phase === "cancelled" ? session?.remote_status === "CANCELLED_BY_STAFF" ? "Enlace cancelado" : session?.remote_status === "CANCELLED_BY_CLIENT" ? "Compra cancelada" : "Pago no completado" : "Tu consulta, a un paso"}</h1>
-      <p className={styles.intro}>{phase === "completed" ? "Gracias por confiar en Tarot Celestial." : "Paga con tu tarjeta. No necesitas una cuenta PayPal."}</p>
+      <p className={styles.intro}>{phase === "completed" ? `Gracias por confiar en ${leonaris ? "Tarot Leonaris" : "Tarot Celestial"}.` : "Paga con tu tarjeta. No necesitas una cuenta PayPal."}</p>
+      {leonaris && <p className={styles.recipient}>Cobro Leonaris · leonarisignis@gmail.com</p>}
       {session && <div className={styles.summary}><span>{session.description}<small>Importe total</small></span><strong>{money}</strong></div>}
       {clientPurchase && session.purchase_summary ? oraclePurchase ? <div className={styles.purchaseSummary} aria-label="Oráculo de tu compra">
         {oracleCredits > 0 ? <strong>{oracleCredits} <span>{oracleCredits === 1 ? "tirada del Oráculo" : "tiradas del Oráculo"}</span></strong> : null}

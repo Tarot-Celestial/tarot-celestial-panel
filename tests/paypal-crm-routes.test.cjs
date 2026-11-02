@@ -4,9 +4,9 @@ const id=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0');
 function harness(){
  const rows=new Map();let remoteCreates=0,authChecks=0,api;
  const worker={id:id(1),role:'central'},client={id:id(2)};
- const admin={from:table=>{
+ const admin={rpc:async(name,{p_attempt:v})=>{if(name!=='tc_create_paypal_crm_attempt')throw Error(name);if(rows.has(v.id))return {data:rows.get(v.id)};if([...rows.values()].some(a=>a.cliente_id===v.cliente_id&&a.environment===v.environment&&a.status==='pending'))return {error:{message:'PAYPAL_PENDING_COLLECTION'}};rows.set(v.id,{checkout_kind:'crm_collection',...v,created_at:new Date().toISOString(),status:'pending',remote_status:'CREATING'});return {data:rows.get(v.id)};},from:table=>{
    let filters=[],mode='read',value,one=false,lim;
-   const q={select:()=>q,eq:(k,v)=>{filters.push(r=>r[k]===v);return q;},is:(k,v)=>{filters.push(r=>(r[k]??null)===v);return q;},order:()=>q,limit:n=>{lim=n;return q;},
+   const q={or:()=>q,select:()=>q,eq:(k,v)=>{filters.push(r=>r[k]===v);return q;},is:(k,v)=>{filters.push(r=>(r[k]??null)===v);return q;},order:()=>q,limit:n=>{lim=n;return q;},
    insert:v=>{value=v;mode='insert';return q;},update:v=>{value=v;mode='update';return q;},single:()=>{one=true;return q;},maybeSingle:()=>{one=true;return q;},
    then:resolve=>{
     let data,error=null;
@@ -17,7 +17,7 @@ function harness(){
  }};
  class PayPalError extends Error{constructor(m,status=502){super(m);this.status=status;}}
  const config={account:'legacy',environment:'sandbox',origin:'https://panel.test'};
- const paypal={PAYPAL_TABLE:'crm_paypal_orders',PayPalError,paypalConfig:()=>config,
+ const paypal={paypalAccountForAttempt:a=>a.purchase_payload?.paypal_account||'legacy',PAYPAL_TABLE:'crm_paypal_orders',PayPalError,paypalConfig:()=>config,
    paypalConfigForAttempt:a=>{if(a.environment!==config.environment)throw new PayPalError('Wrong environment',409);return config;},
    testPayPalConnection:async()=>{authChecks++;return {environment:'sandbox',message:'OAuth OK'};},
    cancelPayPalLink:async(_,a)=>{a.status='cancelled';a.remote_status='CANCELLED_BY_STAFF';return a;},

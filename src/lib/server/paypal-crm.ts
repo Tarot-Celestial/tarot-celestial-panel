@@ -47,7 +47,7 @@ export function paypalAccountForAttempt(attempt: any): PayPalAccount {
   // purchases. Never infer an account from checkout_kind or today's switch.
   const marker = attempt.purchase_payload?.paypal_account;
   const account = marker === undefined ? "legacy" : checkedPayPalAccount(marker);
-  if (account === "client_business_v1" && (attempt.checkout_kind !== "client_purchase" ||
+  if (account === "client_business_v1" && (!["client_purchase", "crm_collection"].includes(attempt.checkout_kind) ||
       typeof attempt.purchase_payload?.paypal_merchant_id !== "string" || !attempt.purchase_payload.paypal_merchant_id.trim()))
     throw new PayPalError("La cuenta PayPal guardada en esta compra no es válida. Contacta con tu central.", 409);
   return account;
@@ -115,8 +115,9 @@ async function paypalAccessToken(config: ReturnType<typeof paypalAuthConfig>): P
     : "PayPal no devolvió un token de acceso válido. Comparte este código de diagnóstico, sin tus credenciales.";
   throw new PayPalError(`[${label} · HTTP ${auth.status} · ${code}] ${reason}`, 502);
 }
-export async function testPayPalConnection() {
-  const config = paypalAuthConfig();
+export async function testPayPalConnection(account: PayPalAccount = "legacy") {
+  if (account === "client_business_v1") return diagnoseCustomerPayPalConfiguration();
+  const config = paypalAuthConfig(account);
   await paypalAccessToken(config);
   return { environment: config.environment, diagnostic_version: "PP-AUTH-2", message: `Conexión de autenticación correcta · ${config.environment.toUpperCase()} · PP-AUTH-2. No se ha creado ni cobrado ningún pago. Falta comprobar el circuito de compra y webhook.` };
 }
@@ -233,9 +234,9 @@ async function latestAttempt(admin: any, id: string) {
   if (error) throw error;
   return data;
 }
-export async function reconcilePayPal(admin: any, attempt: any, captureApproved = true) {
+export async function reconcilePayPal(admin: any, attempt: any, captureApproved = true, refreshCompleted = false) {
   const account = paypalAccountForAttempt(attempt);
-  if (attempt.status === "completed" || !attempt.order_id) return attempt;
+  if ((attempt.status === "completed" && !refreshCompleted) || !attempt.order_id) return attempt;
   paypalConfigForAttempt(attempt);
   let order;
   try { order = await paypalRequest(`/v2/checkout/orders/${encodeURIComponent(attempt.order_id)}`, undefined, undefined, account); }
@@ -283,6 +284,13 @@ export async function reconcilePayPal(admin: any, attempt: any, captureApproved 
   const captures = unit.payments?.captures || [];
   const capture = captures[0];
   if (captures.length > 1) throw new PayPalError("PayPal tiene varias capturas. Revisión necesaria.");
+  if (attempt.status === "completed" && ["REFUNDED", "PARTIALLY_REFUNDED"].includes(capture?.status)) {
+    if (capture.id !== attempt.capture_id || capture.amount?.currency_code !== attempt.currency || Number(capture.amount?.value) !== Number(attempt.amount)) throw new PayPalError("El reembolso necesita revisión: su captura no coincide.", 409);
+    const saved = await admin.from(PAYPAL_TABLE).update({ remote_status: `CAPTURE_${capture.status}`, checked_at: new Date().toISOString() }).eq("id", attempt.id).eq("status", "completed");
+    if (saved.error) throw saved.error;
+    return latestAttempt(admin, attempt.id);
+  }
+  if (attempt.status === "completed") return attempt;
   if (capture?.status === "COMPLETED") {
     if (order.status !== "COMPLETED" || !capture.id || capture.amount?.currency_code !== attempt.currency || Number(capture.amount?.value) !== Number(attempt.amount)) throw new PayPalError("La captura de PayPal no coincide con el cobro.");
     // Both browser callbacks and the signed webhook use the same atomic

@@ -1,0 +1,9 @@
+const {test}=require('node:test'),assert=require('node:assert/strict');const {verify}=require('../scripts/check-paypal-leonaris.cjs');
+const env={PAYPAL_CUSTOMER_CHECKOUT_ACCOUNT:'client_business_v1',PAYPAL_CUSTOMER_ENVIRONMENT:'live',PAYPAL_CUSTOMER_CLIENT_ID:'fixture-client',PAYPAL_CUSTOMER_CLIENT_SECRET:'fixture-secret',PAYPAL_CUSTOMER_WEBHOOK_ID:'WH1',PAYPAL_CUSTOMER_MERCHANT_ID:'MERCHANT1',VERCEL_ENV:'production'};
+const webhook={id:'WH1',url:'https://clientestarotcelestial.es/api/webhooks/paypal-cliente',event_types:['CHECKOUT.ORDER.APPROVED','PAYMENT.CAPTURE.COMPLETED','PAYMENT.CAPTURE.PENDING','PAYMENT.CAPTURE.DECLINED','PAYMENT.CAPTURE.DENIED'].map(name=>({name}))};
+const request=(data=webhook,status=200,calls=[])=>async(url,opts)=>{calls.push([url,opts.method]);return {ok:status===200,status,json:async()=>url.endsWith('/token')?{access_token:'fixture-token'}:data};};
+test('Build gate only calls OAuth and GET webhook, prints no secrets and cannot create/capture',async()=>{const calls=[];const result=await verify(env,request(webhook,200,calls));assert.equal(result.webhook_verified,true);assert.equal(result.payment_flow_verified,false);assert.equal(calls.length,2);assert.match(calls[0][0],/oauth2\/token$/);assert.equal(calls[1][1],'GET');assert.doesNotMatch(JSON.stringify(result),/fixture|WH1|MERCHANT1/);});
+test('Wrong app webhook, missing events, failed auth and Sandbox production all block activation',async()=>{
+ await assert.rejects(verify(env,request({...webhook,url:'https://wrong.test'})),/MISMATCH/);await assert.rejects(verify(env,request({...webhook,event_types:[]})),/EVENTS_MISSING/);await assert.rejects(verify(env,request(webhook,401)),/AUTH_FAILED/);await assert.rejects(verify({...env,PAYPAL_CUSTOMER_ENVIRONMENT:'sandbox'},request()),/REQUIRES_LIVE/);
+});
+test('Legacy rollout does not require new-account credentials or network',async()=>assert.deepEqual(await verify({},()=>assert.fail('Unexpected call')),{active:false}));

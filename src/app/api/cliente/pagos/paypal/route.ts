@@ -59,7 +59,8 @@ export async function POST(req: Request) {
         amount = pack!.priceUsd;
       }
       const createPayload = { intent: "CAPTURE", purchase_units: [{ reference_id: id, custom_id: id, invoice_id: `TC-${id}`,
-        description: `Tarot Celestial · ${payload.pack_name}`, amount: { currency_code: "EUR", value: amount.toFixed(2) } }],
+        description: `${config.account === "client_business_v1" ? "Tarot Leonaris" : "Tarot Celestial"} · ${payload.pack_name}`,
+        ...(config.merchantId ? { payee: { merchant_id: config.merchantId } } : {}), amount: { currency_code: "EUR", value: amount.toFixed(2) } }],
         payment_source: { card: { attributes: { verification: { method: "SCA_WHEN_REQUIRED" } }, experience_context: {
           shipping_preference: "NO_SHIPPING", return_url: `${origin}/pago-tarjeta?ref=${token}`,
           cancel_url: `${origin}/pago-tarjeta?ref=${token}&cancel=1`,

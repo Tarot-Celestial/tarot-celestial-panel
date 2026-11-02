@@ -428,6 +428,7 @@ export default function CRMClientesPanel({
   const [crmPinningNoteId, setCrmPinningNoteId] = useState("");
   const [crmRegistrarOpen, setCrmRegistrarOpen] = useState(false);
   const [crmMollieOpen, setCrmMollieOpen] = useState(false);
+  const [crmPaymentAccount, setCrmPaymentAccount] = useState<"legacy" | "leonaris">("legacy");
   const [crmNotesExpanded, setCrmNotesExpanded] = useState(false);
 
   async function getTokenOrLogin() {
@@ -2278,7 +2279,8 @@ export default function CRMClientesPanel({
 
             {!crmFichaLoading ? (
               <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                <button className="tc-btn tc-btn-gold" onClick={() => setCrmMollieOpen(true)}>💳 Realizar pago</button>
+                <button className="tc-btn tc-btn-gold" onClick={() => { setCrmPaymentAccount("legacy"); setCrmMollieOpen(true); }}>💳 Realizar pago</button>
+                <button className="tc-btn tc-btn-gold" style={{ background: "linear-gradient(120deg,#16130c,#302511)", borderColor: "#d8ad4f", color: "#ffe1a0" }} onClick={() => { setCrmPaymentAccount("leonaris"); setCrmMollieOpen(true); }}>✦ Realizar pago Leonaris</button>
                 <button className="tc-btn" onClick={closeCRMFicha}>Cerrar ficha</button>
               </div>
             ) : null}
@@ -2812,6 +2814,8 @@ export default function CRMClientesPanel({
 
 
       <PayPalCrmPaymentModal
+        key={crmPaymentAccount}
+        account={crmPaymentAccount}
         open={crmMollieOpen}
         onClose={() => setCrmMollieOpen(false)}
         cliente={crmClienteFicha ? {

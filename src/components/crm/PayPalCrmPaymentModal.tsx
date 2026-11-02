@@ -58,7 +58,10 @@ type PaymentState = {
   whatsapp?: { status?: string; missing?: string[] };
 };
 
+type HistoryItem = { id: string; amount: number; status: string; remote_status?: string; created_at: string; pack_name: string; payment_id?: string; capture_id?: string; checkout_url?: string; currency: string; last_error?: string; };
+
 type Props = {
+  account?: "legacy" | "leonaris";
   open: boolean;
   cliente: ClientRef | null;
   getToken: () => Promise<string | null>;
@@ -70,12 +73,13 @@ function money(value: number) {
   return Number(value || 0).toLocaleString("es-ES", { style: "currency", currency: "EUR" });
 }
 
-type PaymentVisualState = "waiting" | "success" | "rejected" | "processing" | "review";
+type PaymentVisualState = "waiting" | "success" | "rejected" | "processing" | "review" | "refund";
 
 function paymentVisualState(status: string, remote?: string | null, error?: string | null): PaymentVisualState {
   const localStatus = String(status || "").toLowerCase();
   const remoteStatus = String(remote || "").toLowerCase();
 
+  if (["capture_refunded", "capture_partially_refunded"].includes(remoteStatus)) return "refund";
   if (localStatus === "completed") return "success";
   if (remoteStatus === "capture_completed") return error ? "review" : "processing";
   if (
@@ -86,7 +90,11 @@ function paymentVisualState(status: string, remote?: string | null, error?: stri
   return "waiting";
 }
 
-export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose, onPaid }: Props) {
+export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose, onPaid, account = "legacy" }: Props) {
+  const leonaris = account === "leonaris";
+  const brand = leonaris ? "Tarot Leonaris" : "Tarot Celestial";
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [ready, setReady] = useState(false);
   const [packs, setPacks] = useState<Pack[]>([]);
   const [mode, setMode] = useState<"pack" | "manual">("pack");
   const [packId, setPackId] = useState("");
@@ -118,7 +126,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
     getTokenRef.current = getToken;
   }, [getToken]);
 
-  const paymentStorageKey = cliente?.id ? `tc:crm:paypal:pending:${cliente.id}` : "";
+  const paymentStorageKey = cliente?.id ? `tc:crm:paypal:${account}:pending:${cliente.id}` : "";
 
   async function checkConnection() {
     if (connectionBusy.current) return;
@@ -130,7 +138,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
       const token = await getTokenRef.current();
       if (!token) throw new Error("Tu sesión ha caducado. Vuelve a entrar.");
       const response = await fetch("/api/crm/pagos/paypal", { method: "POST", cache: "no-store",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "test_connection" }) });
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "test_connection", account }) });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.error || "No se pudo comprobar la conexión.");
       if (contextRef.current === expectedClient) setConnectionMessage(data.message);
@@ -164,6 +172,8 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
   useEffect(() => {
     if (!open || !cliente?.id) return;
     setInitializing(true);
+    setReady(false);
+    setHistory([]);
     setPacks([]);
     setMode("pack");
     setManualAmount("");
@@ -180,7 +190,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
       try {
         const token = await getTokenRef.current();
         if (!token) throw new Error("Inicia sesión para cargar el cobrador.");
-        const response = await fetch(`/api/crm/pagos/paypal?cliente_id=${encodeURIComponent(cliente.id)}`, {
+        const response = await fetch(`/api/crm/pagos/paypal?cliente_id=${encodeURIComponent(cliente.id)}&account=${account}`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         });
@@ -189,10 +199,12 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
         if (cancelled) return;
         const nextPacks = Array.isArray(json.packs) ? json.packs : [];
         setPacks(nextPacks);
+        setHistory(json.history || []);
+        setReady(true);
         setEnvironment(json.environment || "");
         if (json.latest) {
           const a = json.latest;
-          if (!a.checkout_url && !a.payment_id) {
+          if (a.status === "pending" && !a.checkout_url && !a.payment_id) {
             const suffix = a.pack_id === "crm_manual_amount" ? a.amount : a.pack_id;
             operationIds.current[`${paymentStorageKey}:operation:${suffix}`] = a.id;
             try { sessionStorage.setItem(`${paymentStorageKey}:operation:${suffix}`, a.id); } catch {}
@@ -219,7 +231,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
       if (!silent) setLoading(true);
       const token = await getToken();
       if (!token) return;
-      const response = await fetch(`/api/crm/pagos/paypal?attempt_id=${encodeURIComponent(payment.attempt_id)}&reconcile=${reconcile ? "1" : "0"}`, {
+      const response = await fetch(`/api/crm/pagos/paypal?attempt_id=${encodeURIComponent(payment.attempt_id)}&reconcile=${reconcile ? "1" : "0"}&account=${account}`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
@@ -238,7 +250,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
         url: attempt.checkout_url || current.url,
       } : current);
 
-      if (attempt.status === "completed" && !notifiedPaid.current) {
+      if (attempt.status === "completed" && !["CAPTURE_REFUNDED", "CAPTURE_PARTIALLY_REFUNDED"].includes(attempt.remote_status) && !notifiedPaid.current) {
         notifiedPaid.current = true;
         setMessage("✅ Pago realizado correctamente. Para registrar la compra, abre «Registrar llamada» → «Registrar una compra nueva».");
         await Promise.resolve(onPaid?.());
@@ -254,7 +266,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
   refreshRef.current = refreshStatus;
   useEffect(() => {
     if (!open || !payment?.attempt_id) return;
-    const refresh = () => { if (document.visibilityState === "visible") void refreshRef.current(true, true); };
+    const refresh = () => { if (payment.status !== "completed" && document.visibilityState === "visible") void refreshRef.current(true, true); };
     // Payment rows are server-only; check while this modal is visible.
     refresh();
     // Safety recovery for a missed webhook or disconnected realtime, only in a visible tab.
@@ -267,7 +279,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
       window.removeEventListener("focus", refresh); window.removeEventListener("online", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [open, payment?.attempt_id]);
+  }, [open, payment?.attempt_id, payment?.status]);
 
   async function createPayment(clickedPack?: Pack) {
     if (createBusy.current) return;
@@ -302,6 +314,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({
+          account,
           request_id: requestId,
           cliente_id: cliente.id,
           pack_id: mode === "pack" ? chosen?.id : "crm_manual_amount",
@@ -377,7 +390,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
       if (!token) throw new Error("Tu sesión ha caducado.");
       const response = await fetch("/api/crm/pagos/paypal", { method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "cancel", attempt_id: expectedId }) });
+        body: JSON.stringify({ action: "cancel", attempt_id: expectedId, account }) });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.error || "No se pudo cancelar. Comprueba el estado.");
       if (contextRef.current !== expectedClient || currentAttempt.current !== expectedId) return;
@@ -401,7 +414,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
 
   function whatsappUrl(url: string, amount: number, packName?: string) {
     const who = String(cliente?.nombre || "").trim() || nombre;
-    const text = `Hola, ${who}. Aquí tienes el enlace de pago de Tarot Celestial${packName ? ` para tu consulta de ${packName}` : ""} por ${money(amount)}: \n${url}\nGracias por confiar en nosotros.`;
+    const text = `Hola, ${who}. Aquí tienes el enlace de pago de ${brand}${packName ? ` para tu consulta de ${packName}` : ""} por ${money(amount)}: \n${url}\nGracias por confiar en nosotros.`;
     return `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(text)}`;
   }
 
@@ -410,19 +423,20 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
 
   return createPortal(
     <div className={styles.backdrop} onMouseDown={(event) => event.target === event.currentTarget && !loading && onClose()}>
-      <section className={styles.modal} role="dialog" aria-modal="true" aria-label="Cobrador PayPal">
+      <section className={`${styles.modal} ${leonaris ? styles.leonaris : ""}`} role="dialog" aria-modal="true" aria-label="Cobrador PayPal">
         <button className={styles.close} type="button" onClick={onClose} disabled={loading} aria-label="Cerrar"><X /></button>
 
         <header className={styles.header}>
           <div className={styles.icon}><CreditCard /></div>
           <div>
-            <span className={styles.eyebrow}>COBRADOR SEGURO · PAYPAL</span>
-            <h2>Realizar pago</h2>
+            <span className={styles.eyebrow}>{leonaris ? "LEONARIS · PAYPAL BUSINESS" : "COBRADOR SEGURO · PAYPAL"}</span>
+            <h2>{leonaris ? "Cobro Leonaris" : "Realizar pago"}</h2>
             <p>{nombre} · {cliente.telefono_normalizado || cliente.telefono || "Sin teléfono"}</p>
           </div>
           <span className={styles.secure}><ShieldCheck /> Seguro</span>
         </header>
 
+        <p className={styles.recipient}>Cuenta receptora: <strong>{leonaris ? "Tarot Leonaris · leonarisignis@gmail.com" : "Tarot Celestial · cuenta habitual"}</strong></p>
         <div className={styles.actions}>
           <button type="button" disabled={checkingConnection || loading} onClick={() => void checkConnection()}>
             <RefreshCw className={checkingConnection ? styles.spinIcon : ""} /> {checkingConnection ? "Comprobando…" : "Comprobar conexión PayPal"}
@@ -474,10 +488,10 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
             </label>
 
             <div className={styles.summary}>
-              <span>Total a cobrar</span><strong>{requestedAmount > 0 ? money(requestedAmount) : "—"}</strong>
+              <span>Resumen del cobro<br />{nombre}<br />{mode === "pack" ? selectedPack?.nombre : "Importe manual"}<br />{brand} · Total a cobrar</span><strong>{requestedAmount > 0 ? money(requestedAmount) : "—"}</strong>
             </div>
 
-            <button className={styles.generate} type="button" disabled={loading || initializing || requestedAmount <= 0} onClick={() => void createPayment()}>
+            <button className={styles.generate} type="button" disabled={loading || initializing || !ready || requestedAmount <= 0} onClick={() => void createPayment()}>
               {loading ? <RefreshCw className={styles.spinIcon} /> : <CreditCard />} {loading ? "Generando..." : "Crear pago con tarjeta y abrir WhatsApp"}
             </button>
           </>
@@ -501,7 +515,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
               </div>
 
               <span className={styles.paymentStateEyebrow}>
-                {visualPaymentState === "success"
+                {visualPaymentState === "refund" ? "PAYPAL · REEMBOLSO" : visualPaymentState === "success"
                   ? "PAYPAL · PAGO CONFIRMADO"
                   : visualPaymentState === "rejected"
                     ? "PAYPAL · COBRO NO COMPLETADO"
@@ -509,7 +523,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
               </span>
 
               <strong className={styles.paymentStateTitle}>
-                {visualPaymentState === "success"
+                {visualPaymentState === "refund" ? (payment.remote_status === "CAPTURE_PARTIALLY_REFUNDED" ? "REEMBOLSO PARCIAL" : "PAGO REEMBOLSADO") : visualPaymentState === "success"
                   ? "PAGO REALIZADO CORRECTAMENTE"
                   : visualPaymentState === "rejected"
                     ? (payment.remote_status === "expired" ? "PAGO CADUCADO" : ["canceled", "cancelled", "CANCELLED_BY_STAFF"].includes(payment.remote_status || "") ? "PAGO CANCELADO" : "PAGO RECHAZADO")
@@ -519,7 +533,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
               </strong>
 
               <p className={styles.paymentStateText}>
-                {visualPaymentState === "success"
+                {visualPaymentState === "refund" ? "PayPal confirma un reembolso de esta captura. Consulta allí su importe y detalle. La compra y sus beneficios requieren revisión por separado." : visualPaymentState === "success"
                   ? `PayPal ha confirmado correctamente el pago de ${money(payment.amount)}.`
                   : visualPaymentState === "rejected"
                     ? `${payment.last_error || `El pago de ${money(payment.amount)} no ha podido completarse.`}`
@@ -550,11 +564,12 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
             </div>
 
             <p className={styles.help}>Abrir WhatsApp prepara el mensaje. La central debe pulsar Enviar; no se envía automáticamente.</p>
-            {["success", "rejected"].includes(visualPaymentState) && <button className={styles.generate} disabled={loading} onClick={() => { resetPayment(); setMessage("Elige el paquete para el nuevo cobro."); }}>Elegir tarifa · Nuevo cobro</button>}
+            {["success", "rejected", "refund"].includes(visualPaymentState) && <button className={styles.generate} disabled={loading} onClick={() => { resetPayment(); setMessage("Elige el paquete para el nuevo cobro."); }}>Elegir tarifa · Nuevo cobro</button>}
             <p className={styles.help}>El envío por WhatsApp abrirá la conversación con el mensaje y el enlace ya preparados. La central solo tiene que pulsar <b>Enviar</b>. El servidor verifica el cobro en PayPal. La central registra la compra después desde «Registrar llamada».</p>
           </div>
         )}
 
+        {history.length > 0 && <details className={styles.paymentHistory}><summary>Historial · {brand} ({history.length})</summary><p>Últimos 50 cobros de esta cuenta. Abre un cobro y pulsa Comprobar para actualizar su estado. Consulta PayPal para el importe de reembolsos.</p>{history.map(a => <article key={a.id}><div><strong>{a.pack_name} · {money(a.amount)}</strong><span>{new Date(a.created_at).toLocaleString("es-ES")} · {a.remote_status === "CAPTURE_REFUNDED" ? "Reembolsado" : a.remote_status === "CAPTURE_PARTIALLY_REFUNDED" ? "Reembolso parcial" : a.status === "completed" ? "Pagado" : a.status === "cancelled" ? "Cancelado" : "Pendiente"}</span><small>Pedido: {a.payment_id || "Pendiente de generar"}{a.capture_id ? ` · Captura: ${a.capture_id}` : ""}</small></div><button type="button" disabled={loading} onClick={() => { setPayment({ cliente_id: cliente.id, attempt_id: a.id, amount: a.amount, status: a.status, remote_status: a.remote_status, currency: a.currency, url: a.checkout_url || "", payment_id: a.payment_id, last_error: a.last_error }); notifiedPaid.current = false; }}>Ver cobro</button></article>)}</details>}
         {message ? <div className={styles.message}>{message}</div> : null}
       </section>
     </div>,
