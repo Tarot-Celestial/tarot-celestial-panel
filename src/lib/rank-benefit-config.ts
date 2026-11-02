@@ -16,6 +16,7 @@ export type RankBenefitConfig = {
 };
 
 export type RankPackageBenefitConfig = {
+  roulette_diamond_spins?: number;
   rank_key: string;
   package_level: 1 | 2 | 3;
   enabled: boolean;
@@ -151,5 +152,6 @@ export function matrixBenefitLabels(value: Partial<RankPackageBenefitConfig> | n
     Number(value.roulette_level_2_spins) > 0 ? `+${Number(value.roulette_level_2_spins)} giro N2` : null,
     Number(value.roulette_level_3_spins) > 0 ? `+${Number(value.roulette_level_3_spins)} giro N3` : null,
     Number(value.roulette_special_spins) > 0 ? `+${Number(value.roulette_special_spins)} giro Especial` : null,
+    Number(value.roulette_diamond_spins) > 0 ? `+${Number(value.roulette_diamond_spins)} giro Diamante` : null,
   ].filter(Boolean) as string[];
 }

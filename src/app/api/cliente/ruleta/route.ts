@@ -10,6 +10,7 @@ function failure(error: unknown) {
     return NextResponse.json({ ok: false, error: error.message }, { status: error.status, headers });
   }
   const message = error && typeof error === "object" && "message" in error ? String((error as any).message) : "";
+  if (message.includes("SPIN_EXPIRED")) return NextResponse.json({ ok: false, code: "SPIN_EXPIRED", error: "Han pasado las 48 horas de este giro. Tus Coins y premios obtenidos se conservan." }, { status: 409, headers });
   const invalidSpinCode = ["INVALID_SPIN", "LEGACY_SPIN_ALREADY_USED"].find((code) => message.includes(code));
   if (invalidSpinCode) {
     return NextResponse.json({ ok: false, code: invalidSpinCode, error: "Este giro ya no está disponible. Actualiza para ver tus giros actuales." }, { status: 409, headers });

@@ -14,6 +14,7 @@ const override = {
 };
 const compiled = new Map();
 function load(file, deps) {
+  deps = { '@/lib/server/customer-benefits': { customerBenefitPolicy: async () => null }, '@/lib/customer-benefits': { customerBenefitLabels: () => [] }, ...deps };
   if (!compiled.has(file)) compiled.set(file, ts.transpileModule(
     fs.readFileSync(path.join(__dirname, '..', file), 'utf8'),
     { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },

@@ -1427,8 +1427,10 @@ export default function CRMClientesPanel({
         const rankChanged = Object.entries(rankPatch).some(([key, value]) => JSON.stringify(previous[key]) !== JSON.stringify(value));
         if (!changed && Number(previous?.puntos || 0) === Number(current.puntos || 0)
             && previous?.updated_at === current.updated_at && !rankChanged
-            && JSON.stringify(previous.free_passes) === JSON.stringify(current.free_passes)) return previous;
+            && JSON.stringify(previous.free_passes) === JSON.stringify(current.free_passes)
+            && JSON.stringify(previous.benefit_labels) === JSON.stringify(current.benefit_labels)) return previous;
         return { ...previous, ...rankPatch, free_passes: current.free_passes,
+          benefit_labels: current.benefit_labels, benefit_policy_version: current.benefit_policy_version,
           puntos: current.puntos,
           minutos_free_pendientes: current.minutos_free_pendientes,
           minutos_normales_pendientes: current.minutos_normales_pendientes,
@@ -2632,7 +2634,7 @@ export default function CRMClientesPanel({
                 </div>
 
                 <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
-                  {rankMeta(crmClienteFicha?.rango_actual).perks.map((perk: string) => (
+                  {(crmClienteFicha?.benefit_labels ?? rankMeta(crmClienteFicha?.rango_actual).perks).map((perk: string) => (
                     <div key={perk} className="tc-sub" style={{ padding: "10px 12px", borderRadius: 12, background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.08)" }}>
                       ✨ {perk}
                     </div>

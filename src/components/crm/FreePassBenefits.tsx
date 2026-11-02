@@ -3,9 +3,11 @@ import { useRef, useState } from "react";
 import styles from "./CRMNuevaEra.module.css";
 
 export type FreePassStatus = {
+  policy_version?: string;
+  purchase_window_days?: number;
   effective_rank?: string | null;
   rank_eligible?: boolean;
-  eligibility_reason?: "RANK_NOT_ELIGIBLE" | "NO_CONFIRMED_PURCHASE" | null;
+  eligibility_reason?: "RANK_NOT_ELIGIBLE" | "NO_CONFIRMED_PURCHASE" | "NO_RECENT_PURCHASE" | "PASS_COOLDOWN" | null;
   eligible_until?: string | null;
   eligible: boolean; total: number; available: number; used: number;
   minutes: number; cycle_days: number; cycle_start: string | null; renews_at: string | null;
@@ -50,7 +52,9 @@ export default function FreePassBenefits({ benefits, clienteId, getToken, onRefr
     {benefits ? <>
       <div className={styles.passCount}><strong>{benefits.rank_eligible === false ? "No incluidos" : <>{benefits.available} <span>/ {benefits.total}</span></>}</strong><span>Pases FREE disponibles</span></div>
       <p>{benefits.minutes} minutos FREE por pase · Cada {benefits.cycle_days} días</p>
-      <p>Disponibles con rango efectivo Plata, Oro o Diamante y alguna compra confirmada. Bronce no incluye estos pases.</p>
+      <p>Disponibles con rango efectivo Plata, Oro o Diamante y {benefits.purchase_window_days ? `una compra confirmada en los últimos ${benefits.purchase_window_days} días` : "alguna compra confirmada"}. Bronce no incluye estos pases.</p>
+      {benefits.eligibility_reason === "NO_RECENT_PURCHASE" && <p>Necesita una compra confirmada en los últimos 30 días.</p>}
+      {benefits.eligibility_reason === "PASS_COOLDOWN" && <p>Ya se utilizó un pase. Deben pasar 30 días desde su concesión, aunque cambie el rango.</p>}
       {benefits.eligible ? <p>Comprar de nuevo no añade pases ni reinicia el ciclo.</p> : <p>{benefits.rank_eligible === false || benefits.eligibility_reason === "RANK_NOT_ELIGIBLE" ? "Tu rango actual no incluye pases FREE." : benefits.eligibility_reason === "NO_CONFIRMED_PURCHASE" ? "Sin pases habilitados: se necesita alguna compra confirmada." : "Sin pases habilitados. Revisa el rango efectivo y las compras confirmadas."}</p>}
       {benefits.eligible && benefits.renews_at ? <p>Renovación: {new Date(benefits.renews_at).toLocaleDateString("es-ES")} · No se acumulan.</p> : null}
       {benefits.rank_eligible === false && benefits.used > 0 ? <p>Pases utilizados en el ciclo registrado: {benefits.used}. El historial se conserva.</p> : null}

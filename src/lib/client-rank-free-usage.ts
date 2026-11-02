@@ -8,14 +8,19 @@ export type RankFreeOffer = {
   reason: string | null;
   grantMinutes: number;
   consumeMinutes: number;
+  usedMinutes: number;
+  remainingMinutes: number;
+  usedAt: string | null;
+  benefitEventId: string | null;
+  callId: string | null;
 };
 
-const RANK_FREE_BLOCKS: Record<RankFreeUsageRank, { label: string; minutes: number }> = {
-  sin_rango: { label: "Sin rango", minutes: 7 },
-  bronce: { label: "Bronce", minutes: 7 },
-  plata: { label: "Plata", minutes: 10 },
-  oro: { label: "Oro", minutes: 12 },
-  diamante: { label: "Diamante", minutes: 15 },
+const RANK_FREE_BLOCKS: Record<RankFreeUsageRank, { label: string }> = {
+  sin_rango: { label: "Sin rango" },
+  bronce: { label: "Bronce" },
+  plata: { label: "Plata" },
+  oro: { label: "Oro" },
+  diamante: { label: "Diamante" },
 };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -44,7 +49,8 @@ export function rankFreeUsage(value: unknown) {
   const rank: RankFreeUsageRank | null = rawRank === "sin_rango" || rawRank === "bronce" || rawRank === "plata" || rawRank === "oro" || rawRank === "diamante" ? rawRank : null;
   const block = rank ? RANK_FREE_BLOCKS[rank] : null;
   const policyKey = typeof preview.policy_key === "string" ? preview.policy_key.trim() : "";
-  const valid = Boolean(block && Number(preview.minutes) === block.minutes && policyKey === "new_tarotista_once_v1");
+  const minutes = Number(preview.minutes);
+  const valid = Boolean(block && Number.isSafeInteger(minutes) && minutes > 0 && minutes <= 60 && policyKey === "new_tarotista_once_v1");
   const seen = new Set<string>();
   const offers: RankFreeOffer[] = [];
   for (const entry of Array.isArray(preview.offers) ? preview.offers : []) {
@@ -56,14 +62,20 @@ export function rankFreeUsage(value: unknown) {
     seen.add(workerId);
     const grantMinutes = typeof offer.grant_minutes === "number" ? offer.grant_minutes : NaN;
     const consumeMinutes = typeof offer.consume_minutes === "number" ? offer.consume_minutes : NaN;
-    const eligible = valid && offer.eligible === true && offer.reason == null && consumeMinutes === block?.minutes
-      && grantMinutes === block?.minutes;
-    offers.push({ workerId, workerName, eligibilityKey, eligible, reason: typeof offer.reason === "string" ? offer.reason : null, grantMinutes, consumeMinutes });
+    const eligible = valid && offer.eligible === true && offer.reason == null && consumeMinutes === minutes
+      && grantMinutes === minutes;
+    offers.push({ workerId, workerName, eligibilityKey, eligible, reason: typeof offer.reason === "string" ? offer.reason : null, grantMinutes, consumeMinutes,
+      usedMinutes: Math.max(0, Number(offer.used_minutes) || 0),
+      remainingMinutes: Math.max(0, Number(offer.remaining_minutes ?? (eligible ? consumeMinutes : 0)) || 0),
+      usedAt: typeof offer.used_at === "string" ? offer.used_at : null,
+      benefitEventId: typeof offer.benefit_event_id === "string" ? offer.benefit_event_id : null,
+      callId: typeof offer.call_id === "string" ? offer.call_id : null,
+    });
   }
   return {
     rank,
     rankLabel: block?.label || null,
-    minutes: valid && block ? block.minutes : 0,
+    minutes: valid ? minutes : 0,
     policyKey,
     offers,
     available: offers.filter(offer => offer.eligible),

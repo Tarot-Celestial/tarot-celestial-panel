@@ -8,6 +8,7 @@ const text = node => typeof node === 'string' || typeof node === 'number' ? Stri
 const flush = async fn => act(async () => { fn?.(); await new Promise(resolve => setImmediate(resolve)); });
 const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 function load(file, mocks = {}, globals = {}) {
+  if (file !== 'src/lib/customer-benefits.ts') mocks = { '@/lib/customer-benefits': load('src/lib/customer-benefits.ts'), '@/lib/server/customer-benefits': { customerBenefitPolicy: async () => null }, ...mocks };
   const exports = {};
   const code = ts.transpileModule(read(file), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText;
   vm.runInNewContext(code, { exports, console, Date, Request, Response, URL, crypto: { randomUUID }, require: name => name in mocks ? mocks[name] : name.endsWith('.module.css') ? { __esModule: true, default: new Proxy({}, { get: (_, key) => String(key) }) } : require(name), ...globals });
@@ -148,10 +149,10 @@ test('every legacy Bronze description and the client FAQ use the corrected scope
   const crm = read('src/components/crm/CRMClientesPanel.tsx');
   assert.doesNotMatch(crm.slice(crm.indexOf('  if (r === "bronce")'), crm.indexOf('  return {\n    icon: "▫️"')), /3 pases/);
   for (const file of ['src/lib/server/cliente-platform.ts', 'src/features/central/MyClientSummary.tsx', 'src/components/crm/CRMClientesPanel.tsx', 'src/components/crm/FreePassBenefits.tsx', 'src/app/cliente/rangos/page.tsx']) assert.doesNotMatch(read(file), /pases[^\n]{0,200}(?:4 meses|cuatro meses)/i, file);
-  assert.match(read('src/app/cliente/rangos/page.tsx'), /Bronce no incluye estos pases periódicos; sí incluye el regalo de 7 minutos/);
+  assert.match(read('src/app/cliente/rangos/page.tsx'), /El pase requiere una compra en los últimos 30 días/);
   assert.match(summary.slice(summary.indexOf('  bronce: {'), summary.indexOf('  plata: {')), /7 minutos GRATIS para conocer a cada nueva tarotista/);
   assert.match(crm.slice(crm.indexOf('  if (r === "bronce")'), crm.indexOf('function rankChip(')), /7 min GRATIS para conocer a cada nueva tarotista/);
-  assert.match(read('src/app/cliente/rangos/page.tsx'), /Coins y giros, incluidos los 500 Coins de Diamante, solo corresponden a tarifa regular/);
+  assert.match(read('src/app/cliente/rangos/page.tsx'), /Diamante recibe 300 Coins totales y un giro Diamante/);
 });
 
 const next = { NextResponse: { json: (body, options) => new Response(JSON.stringify(body), { ...options, headers: { ...options?.headers, 'Content-Type': 'application/json' } }) } };

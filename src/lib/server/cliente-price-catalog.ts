@@ -6,7 +6,7 @@ import type { RankPackageResolution } from "@/lib/server/rank-benefits";
 
 const BENEFITS_TIMEOUT_MS = 5000;
 const resolutionStatuses = new Set(["ready", "disabled", "unmapped_package", "no_effective_rank", "config_missing"]);
-const visibleBenefitFields = ["enabled", "coins", "oracle_credits", "roulette_level_1_spins", "roulette_level_2_spins", "roulette_level_3_spins", "roulette_special_spins"] as const;
+const visibleBenefitFields = ["enabled", "coins", "oracle_credits", "roulette_level_1_spins", "roulette_level_2_spins", "roulette_level_3_spins", "roulette_special_spins", "roulette_diamond_spins"] as const;
 
 function unavailableCatalog() {
   return {
@@ -53,6 +53,8 @@ async function resolveCatalogPacks(admin: any, clientId: string, signal: AbortSi
         ? Object.fromEntries(visibleBenefitFields.map(key => [key, resolved.rank_benefits[key]]))
         : null,
       rankBenefitsStatus: valid ? resolved.status : "unavailable",
+      regularBonusMinutes: valid ? resolved.regular_bonus_minutes ?? null : null,
+      ...(valid && resolved.replaces_level_spin ? { rouletteLevel: 5 as const, rouletteSpins: 1, rewardCoins: 0 } : {}),
     };
   });
   return {

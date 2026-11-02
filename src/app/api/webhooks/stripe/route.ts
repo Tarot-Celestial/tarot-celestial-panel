@@ -178,6 +178,7 @@ export async function POST(req: Request) {
                 ? session.payment_intent
                 : session.payment_intent?.id || null,
             stripeSessionId: session.id,
+            benefitsStartedAt: new Date(session.created * 1000).toISOString(),
             amount: amountTotal,
             currency: session.currency === "eur" ? "EUR" : "USD",
             metodo: "stripe_checkout",
@@ -195,6 +196,7 @@ export async function POST(req: Request) {
                 ? session.payment_intent
                 : session.payment_intent?.id || null,
             stripeSessionId: session.id,
+            benefitsStartedAt: new Date(session.created * 1000).toISOString(),
             amountUsd: amountTotal || legacyPack!.priceUsd,
             totalMinutes: Number(session.metadata?.total_minutes || legacyPack!.totalMinutes),
             metodo: "stripe_checkout",

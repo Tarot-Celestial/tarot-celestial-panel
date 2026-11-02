@@ -170,6 +170,7 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
     };
     const channel = supabase
       .channel(`my-client-summary-${clientId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "cliente_ruleta_signal", filter: `cliente_id=eq.${clientId}` }, refresh)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "crm_clientes", filter: `id=eq.${clientId}` }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_notes", filter: `cliente_id=eq.${clientId}` }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos", filter: `cliente_id=eq.${clientId}` }, refresh)
@@ -180,7 +181,14 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
       .on("postgres_changes", { event: "*", schema: "public", table: "client_rank_overrides", filter: `client_id=eq.${clientId}` }, refresh)
       .subscribe();
 
+    const visible = () => { if (!document.hidden) refresh(); };
+    window.addEventListener("focus", visible);
+    window.addEventListener("online", visible);
+    document.addEventListener("visibilitychange", visible);
     return () => {
+      window.removeEventListener("focus", visible);
+      window.removeEventListener("online", visible);
+      document.removeEventListener("visibilitychange", visible);
       if (timer) clearTimeout(timer);
       void supabase.removeChannel(channel);
     };

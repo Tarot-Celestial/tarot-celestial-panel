@@ -1066,3 +1066,4 @@
 @media (prefers-reduced-motion: reduce) {
   .orbPurchase { transition: none; }
 }
+ .expiryClock { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; font-variant-numeric: tabular-nums; color: #f8d9a0; margin-top: 8px; }

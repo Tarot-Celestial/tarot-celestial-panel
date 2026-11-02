@@ -40,11 +40,13 @@ test('old promotion copy cannot promise Coins or wheels and keeps separate minut
 function loadComponent(file, fetch) {
   const exports = {};
   vm.runInNewContext(compile(file), {
-    exports, fetch, console, Date, Intl, document: { body: {}, addEventListener() {}, removeEventListener() {} },
+    exports, fetch, console, Date, Intl, AbortController, document: { body: {}, addEventListener() {}, removeEventListener() {} },
     window: { addEventListener() {}, removeEventListener() {}, dispatchEvent() {} },
     crypto: { randomUUID: () => '00000000-0000-4000-8000-000000000099' },
     Event: class {}, CustomEvent: class {}, BroadcastChannel: class { postMessage() {} close() {} },
     require(name) {
+      if (name === '@/hooks/useRouletteSignal') return { useRouletteSignal() {} };
+      if (name === '@/lib/supabase-browser') return { supabaseBrowser: () => ({}) };
       if (name === 'react') return React;
       if (name === 'react-dom') return { createPortal: child => child };
       if (name === 'react/jsx-runtime') return require(name);

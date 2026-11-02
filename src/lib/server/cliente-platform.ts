@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { customerBenefitLabels } from "@/lib/customer-benefits";
 
 export const PUNTOS_POR_DOLAR = 10;
 
@@ -100,7 +101,8 @@ export function computeCurrentRankFromSpend(spend: number, purchases: number) {
   return null;
 }
 
-export function currentRankBenefits(rank: string | null | undefined) {
+export function currentRankBenefits(rank: string | null | undefined, policy?: import("@/lib/customer-benefits").CustomerBenefitPolicy | null) {
+  if (policy?.activated_at) return customerBenefitLabels(policy, String(rank || "sin_rango").toLowerCase());
   const key = String(rank || "").toLowerCase();
   if (key === "diamante") {
     return [
@@ -242,6 +244,7 @@ export async function applyClientPurchase(
     paymentRef: string;
     paymentIntent?: string | null;
     stripeSessionId?: string | null;
+    benefitsStartedAt?: string | null;
     amountUsd: number;
     totalMinutes: number;
     metodo?: string;
@@ -263,6 +266,7 @@ export async function applyClientPurchase(
       free: minutesSplit.free, normal: minutesSplit.normal,
       points: pointsFromAmount(amountUsd),
       stripe_session_id: params.stripeSessionId || null, payment_intent: params.paymentIntent || null,
+      benefits_started_at: params.benefitsStartedAt || null,
       created_by_role: "cliente_webhook", notas: params.notas || `Compra ${packName}`,
     },
   });

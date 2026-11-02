@@ -13,6 +13,7 @@ import { announceLeoCelestial } from "@/lib/leo-celestial-events";
 import { LEO_SELECT_ROULETTE } from "@/lib/leo-guide";
 import { clearRoulettePending, confirmedRouletteReward, readRoulettePending, validRouletteSpinId, writeRoulettePending, type PendingRouletteSpins } from "@/lib/roulette-pending";
 import styles from "./PurchaseRoulette.module.css";
+import { spinSecondsRemaining, spinCountdownLabel } from "@/lib/customer-benefits";
 
 const sb = supabaseClienteBrowser();
 
@@ -56,6 +57,15 @@ function RewardGlyph({ type, size = 18 }: { type: RouletteRewardType; size?: num
 export default function PurchaseRoulette({ onReward }: { onReward?: () => void | Promise<void> }) {
   const router = useRouter();
   const [summary, setSummary] = useState<RouletteSummary | null>(null);
+  const [clockTick, setClockTick] = useState(0);
+  const clockSync = useRef({ received: Date.now(), server: Date.now() });
+  const expiredSeen = useRef(new Set<string>());
+  useEffect(() => {
+    clockSync.current = { received: Date.now(), server: summary?.server_now ? Date.parse(summary.server_now) : Date.now() };
+  }, [summary]);
+  useEffect(() => { const timer = window.setInterval(() => setClockTick(t => t + 1), 1000); return () => window.clearInterval(timer); }, []);
+  const serverNow = clockSync.current.server + Date.now() - clockSync.current.received;
+  const expiresIn = (n: RouletteLevel) => spinSecondsRemaining(summary?.[`next_spin_expires_at_${n}`], serverNow);
   const [level, setLevel] = useState<RouletteLevel>(1);
   const [busy, setBusy] = useState(false);
   const [spinning, setSpinning] = useState(false);
@@ -125,6 +135,14 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
 
   useRouletteSignal(sb, summary?.cliente_id, load);
   useEffect(() => {
+    for (const n of [1, 2, 3, 4, 5] as const) {
+      const id = summary?.[`next_spin_${n}`];
+      if (id && expiresIn(n) === 0 && !expiredSeen.current.has(id) && !inFlight.current) {
+        expiredSeen.current.add(id); void load(); break;
+      }
+    }
+  }, [clockTick, summary, load]);
+  useEffect(() => {
     const select = (event: Event) => {
       const requested = Number((event as CustomEvent).detail?.level);
       if (inFlight.current || ![1,2,3,4,5].includes(requested)) return;
@@ -149,7 +167,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   const available = spinsByLevel?.[level] ?? null;
   const selectedMeta = levelMeta[level];
   const isDiamondView = level === 5;
-  const unavailableReason = isDiamondView && summary && !summary.diamond_access
+  const unavailableReason = expiresIn(level) === 0 ? "Este giro ha caducado. Actualizando…" : isDiamondView && summary && !summary.diamond_access
     ? "La ruleta Diamante no está disponible con tu acceso actual."
     : prizes.length === 0 ? "No hay premios configurados para este nivel."
       : !available ? "No hay giros disponibles para este nivel."
@@ -217,7 +235,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       const json = await response.json().catch(() => null);
       if (!response.ok || !json?.ok) {
         // Auth, campaign and connection failures do not establish whether an earlier request succeeded.
-        if (["INVALID_SPIN", "LEGACY_SPIN_ALREADY_USED"].includes(json?.code)) clearPending();
+        if (["INVALID_SPIN", "LEGACY_SPIN_ALREADY_USED", "SPIN_EXPIRED"].includes(json?.code)) clearPending();
         throw new Error(json?.error || "No se ha podido confirmar el giro. Puedes comprobarlo de nuevo sin gastar otro.");
       }
       if (!confirmedRouletteReward(json, request, summary.cliente_id)) throw new Error("No hemos recibido un resultado completo de este giro. Puedes comprobarlo de nuevo sin gastar otro.");
@@ -338,6 +356,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
               <span className={styles.cardInfo}>
                 <span className={styles.levelMain}><strong>{title}</strong>
                   <b>{count ?? "—"} <small>{count === 1 ? "giro" : "giros"}</small></b></span>
+                {expiresIn(n) !== null && <span className={styles.expiryClock}><Clock3 size={14}/> Próximo giro: {spinCountdownLabel(expiresIn(n)!)} restantes</span>}
                 <span className={styles.cardDescription}>{description}</span>
               </span>
             </button>

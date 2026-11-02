@@ -161,6 +161,8 @@ export async function GET(req: Request) {
     }
 
     const raffle = await getOrCreateActiveRaffle(gate.admin, gate.worker.id);
+    const sync = await gate.admin.rpc("tc_sync_rank_raffles");
+    if (sync.error && !["42883", "PGRST202"].includes(sync.error.code)) throw sync.error;
     const entries = await loadEntries(gate.admin, raffle.id);
     return NextResponse.json({ ok: true, raffle, entries }, { headers: noStore });
   } catch (error) { return failed(error); }

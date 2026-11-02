@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { customerBenefitPolicy } from "@/lib/server/customer-benefits";
 import { rouletteClient, RouletteAccessError } from "@/lib/server/ruleta-access";
 import { currentRankBenefits } from "@/lib/server/cliente-platform";
 import { CLIENT_GUIDE_RANKS, guideRankKey, type ClientRankGuide } from "@/lib/client-rank-guide";
@@ -12,6 +13,7 @@ export async function GET(req: Request) {
   try {
     // Client identity comes from the verified token; no caller-supplied client id.
     const { admin, cliente } = await rouletteClient(req);
+    const policy = await customerBenefitPolicy(admin);
     const [stateResult, catalogue, matrix, daily] = await Promise.all([
       admin.rpc("tc_client_rank_state", { p_cliente_id: cliente.id }),
       admin.from("tc_client_rank_benefits")
@@ -48,18 +50,19 @@ export async function GET(req: Request) {
         const row = rows.find(item => item.rank_key === key)!;
         // is_active controls legacy global grants; it does not disable the rank programme or its matrix.
         const active = true;
-        const benefits = active ? currentRankBenefits(key).filter(label => !label.includes("Mi Ritual")) : [];
+        const benefits = active ? currentRankBenefits(key, policy).filter(label => !label.includes("Mi Ritual")) : [];
         if (active && row.ritual_access) benefits.unshift("Acceso a Mi ritual y seguimiento de tus rituales");
         if (key !== "diamante" && active && row.coins_enabled && Number(row.purchase_coins) > 0) benefits.push("+" + row.purchase_coins + " Coins adicionales por compra válida");
         if (active && row.roulette_enabled && Number(row.roulette_spins) > 0) benefits.push("+" + row.roulette_spins + " giro(s) de ruleta nivel " + row.roulette_level + " por compra válida");
-        if (key === "diamante") benefits.push("1 giro de Ruleta Diamante por cada compra válida confirmada con rango Diamante");
+        if (key === "diamante" && !policy?.activated_at) benefits.push("1 giro de Ruleta Diamante por cada compra válida confirmada con rango Diamante");
         return {
           key, label: String(row.label || key), min_spend: Number(row.min_spend), active, benefits,
-          package_benefits: matrix.error ? null : (matrix.data || []).filter(item => item.rank_key === key),
+          package_benefits: policy?.activated_at ? policy.package_benefits.filter(item => item.rank_key === key) : matrix.error ? null : (matrix.data || []).filter(item => item.rank_key === key),
         };
       }),
       // Only public programme fields are returned; no notes, audits or staff ids.
-      daily_bonus: daily.error ? null : daily.data,
+      benefit_policy: policy,
+      daily_bonus: policy?.activated_at || daily.error ? null : daily.data,
       daily_bonus_available: !daily.error,
       warnings: [
         ...(matrix.error ? ["No hemos podido consultar los extras por paquete."] : []),

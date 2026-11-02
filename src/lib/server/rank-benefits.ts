@@ -20,6 +20,9 @@ export type RankPackageResolution = {
   rank_benefits: any | null;
   legacy_purchase_benefits?: any | null;
   legacy_general_applies?: boolean;
+  replaces_native_coins?: boolean;
+  replaces_level_spin?: boolean;
+  regular_bonus_minutes?: number;
 };
 
 export async function clientRankBenefits(admin: any, clientId: string): Promise<ClientRankBenefits> {
@@ -130,6 +133,8 @@ export async function rankPackageBenefitsForPacks(
       rankBenefits: resolution?.rank_benefits ?? null,
       rankBenefitsStatus: resolution?.status ?? "unavailable",
       rankBenefitsResolution: resolution,
+      regularBonusMinutes: resolution?.regular_bonus_minutes ?? null,
+      ...(resolution?.replaces_level_spin ? { rouletteLevel: 5, rouletteSpins: 1, roulette_level: 5, roulette_spins: 1, rewardCoins: 0, coins: 0 } : {}),
     };
   });
 }

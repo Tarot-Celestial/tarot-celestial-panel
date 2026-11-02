@@ -60,6 +60,12 @@ export type RouletteCampaign = {
 };
 
 export type RouletteSummary = {
+  server_now?: string;
+  next_spin_expires_at_1?: string | null;
+  next_spin_expires_at_2?: string | null;
+  next_spin_expires_at_3?: string | null;
+  next_spin_expires_at_4?: string | null;
+  next_spin_expires_at_5?: string | null;
   cliente_id: string;
   available_spins: number;
   level_1_spins: number;
