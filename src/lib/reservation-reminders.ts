@@ -1,6 +1,6 @@
 import { reservaDate } from './reservas';
 
-export const RESERVATION_THRESHOLDS = [10, 5, 1] as const;
+export const RESERVATION_THRESHOLDS = [5] as const;
 export type ReservationThreshold = typeof RESERVATION_THRESHOLDS[number];
 export type UpcomingReservation = {
   id: string;
@@ -16,13 +16,11 @@ export type ReservationReminder = UpcomingReservation & {
   minutesRemaining: number;
 };
 
-// A late arrival receives only the most urgent applicable reminder, never 10 + 5 + 1.
+// Deliver one operational notice within the five minutes before the appointment.
 export function reservationThreshold(scheduledAt: string, now: number): ReservationThreshold | null {
   const remaining = reservaDate(scheduledAt).getTime() - now;
-  if (!Number.isFinite(remaining) || remaining <= 0 || remaining > 600_000) return null;
-  if (remaining <= 60_000) return 1;
-  if (remaining <= 300_000) return 5;
-  return 10;
+  if (!Number.isFinite(remaining) || remaining <= 0 || remaining > 300_000) return null;
+  return 5;
 }
 
 export function reservationReminderKey(id: string, scheduledAt: string, threshold: ReservationThreshold) {

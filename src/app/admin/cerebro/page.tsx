@@ -71,8 +71,8 @@ export default function CelestialBrainPage() {
     <>
       <AppHeader />
       <ReservasGlobalWatcher
-        enabled={authorized}
-        onGoToReserva={() => router.push("/admin?tab=reservas")}
+        advanceNotice enabled={authorized}
+        onGoToReserva={row => router.push(`/admin?tab=reservas&reserva=${encodeURIComponent(row.id)}`)}
       />
       <PaymentMotivationWatcher mode="admin" />
       {authorized ? (

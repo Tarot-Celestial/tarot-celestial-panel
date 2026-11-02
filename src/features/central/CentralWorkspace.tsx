@@ -1194,6 +1194,10 @@ function CentralPage({ expectedRole }: { expectedRole: "central" | "admin" }) {
   }, []);
 
   function openReservaFromPopup(reserva: any) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", "reservas");
+    url.searchParams.set("reserva", String(reserva?.id || ""));
+    window.history.replaceState(null, "", url.toString());
     setTab("reservas" as any);
     window.setTimeout(() => {
       if (typeof window !== "undefined") {

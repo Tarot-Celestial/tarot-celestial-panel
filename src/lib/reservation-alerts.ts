@@ -26,8 +26,8 @@ export function reservationAlertKey(row: Reservation, kind = "due") {
 
 export function reservationAlertDue(row: Reservation, now: number) {
   const due = reservationAlertDate(row)?.getTime();
-  // Never fire before the scheduled time; catch the next five-second clock tick.
-  return reservationAlertOpen(row) && due !== undefined && due <= now && now - due <= 30_000;
+  // Recover a missed alert after sleep/reload; historic backlog stays in the agenda.
+  return reservationAlertOpen(row) && due !== undefined && due <= now && now - due <= 24 * 60 * 60_000;
 }
 
 export function sameReservationAlert(a: Reservation, b: Reservation) {

@@ -19,6 +19,7 @@ export async function GET(req: Request) {
       .is("ready_notified_at", null)
       .is("deleted_at", null)
       .in("estado", OPEN_STATES)
+      .gte("fecha_reserva", new Date(now.getTime() - 24 * 60 * 60_000).toISOString())
       .lte("fecha_reserva", now.toISOString())
       .order("fecha_reserva", { ascending: true })
       .limit(100);
@@ -26,7 +27,7 @@ export async function GET(req: Request) {
 
     for (const reserva of reservas || []) {
       const due = reservaDate(String(reserva.fecha_reserva || "")).getTime();
-      if (!Number.isFinite(due) || due > now.getTime() || !reserva.tarotista_id) continue;
+      if (!Number.isFinite(due) || due > now.getTime() || now.getTime() - due > 24 * 60 * 60_000 || !reserva.tarotista_id) continue;
       const { data: ext, error: extensionError } = await admin
         .from("pbx_extensions")
         .select("extension,status,active_call_count,registered,is_active,worker_id,label,last_seen_at,updated_at")

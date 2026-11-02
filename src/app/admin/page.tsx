@@ -638,6 +638,10 @@ function AdminPage() {
   }, []);
 
   function openReservaFromPopup(reserva: any) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", "reservas");
+    url.searchParams.set("reserva", String(reserva?.id || ""));
+    window.history.replaceState(null, "", url.toString());
     setTab("reservas");
     window.setTimeout(() => {
       if (typeof window !== "undefined") {
@@ -1780,7 +1784,7 @@ function AdminPage() {
       </div>
       <AppHeader />
       {ok && <a href="/admin/companions" className="tc-btn" style={{display:'inline-block',margin:'12px 24px'}}>Sol y Draco · mascotas y conocimientos</a>}
-      <ReservasGlobalWatcher enabled={ok} onGoToReserva={openReservaFromPopup} />
+      <ReservasGlobalWatcher advanceNotice enabled={ok} onGoToReserva={openReservaFromPopup} />
       <PaymentMotivationWatcher mode="admin" />
 
       <div className={`tc-shell tc-shell-premium ${adminStyles.adminShell}`}>
