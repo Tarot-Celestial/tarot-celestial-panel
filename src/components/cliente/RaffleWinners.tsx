@@ -12,37 +12,62 @@ export default function RaffleWinners() {
     const sb = supabaseClienteBrowser();
     let alive = true, running = false, again = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let requestTimer: ReturnType<typeof setTimeout> | undefined;
+    let controller: AbortController | undefined;
     async function load() {
       if (!alive) return;
       if (running) { again = true; return; }
       running = true;
+      setLoading(true);
       try {
         const token = (await sb.auth.getSession()).data.session?.access_token;
+        if (!alive) return;
         if (!token) throw new Error("Inicia sesión para ver los ganadores.");
-        const response = await fetch("/api/cliente/raffle/winners", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+        controller = new AbortController();
+        requestTimer = setTimeout(() => controller?.abort(), 15000);
+        const response = await fetch(`/api/cliente/raffle/winners?fresh=${Date.now()}`, {
+          headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: controller.signal,
+        });
         const json = await response.json();
-        if (!response.ok || !json.ok) throw new Error(json.error || "No se pudieron cargar los ganadores.");
-        if (alive) { setWinners(json.winners || []); setError(""); }
+        if (!response.ok || !json.ok || !Array.isArray(json.winners)) throw new Error(json.error || "No se pudieron cargar los ganadores.");
+        if (alive) { setWinners(json.winners); setError(""); }
       } catch (e) {
-        if (alive) setError(e instanceof Error ? e.message : "No se pudieron cargar los ganadores.");
+        if (alive) setError(controller?.signal.aborted ? "La consulta tardó demasiado. Volveremos a intentarlo automáticamente." : e instanceof Error ? e.message : "No se pudieron cargar los ganadores.");
       } finally {
+        if (requestTimer) clearTimeout(requestTimer);
+        controller = undefined;
         running = false;
         if (alive) setLoading(false);
         if (again && alive) { again = false; schedule(); }
       }
     }
-    function schedule() { if (timer) clearTimeout(timer); timer = setTimeout(() => void load(), 250); }
+    function schedule() { if (!alive) return; if (timer) clearTimeout(timer); timer = setTimeout(() => void load(), 250); }
     function visible() { if (document.visibilityState === "visible") schedule(); }
     void load();
+    // Realtime can disconnect or miss an event while a client keeps the page open.
+    const poll = window.setInterval(visible, 30000);
     const channel = sb.channel("cliente:raffle:public-winners")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "raffle_public_winners" }, schedule)
+      .on("postgres_changes", { event: "*", schema: "public", table: "raffle_public_winners" }, visible)
+      .on("postgres_changes", { event: "*", schema: "public", table: "raffles" }, visible)
       .subscribe((status) => { if (status === "SUBSCRIBED") schedule(); });
     window.addEventListener("focus", visible);
+    window.addEventListener("online", visible);
     document.addEventListener("visibilitychange", visible);
-    return () => { alive = false; if (timer) clearTimeout(timer); void sb.removeChannel(channel); window.removeEventListener("focus", visible); document.removeEventListener("visibilitychange", visible); };
+    return () => {
+      alive = false;
+      if (timer) clearTimeout(timer);
+      if (requestTimer) clearTimeout(requestTimer);
+      controller?.abort();
+      window.clearInterval(poll);
+      void sb.removeChannel(channel);
+      window.removeEventListener("focus", visible);
+      window.removeEventListener("online", visible);
+      document.removeEventListener("visibilitychange", visible);
+    };
   }, [refresh]);
   return <section className={styles.root} aria-labelledby="raffle-winners-title">
-    <header><h2 id="raffle-winners-title">Ganadores del sorteo</h2><button type="button" onClick={() => setRefresh((n) => n + 1)}>Actualizar ganadores</button></header>
+    <header><h2 id="raffle-winners-title">Ganadores del sorteo</h2><button type="button" disabled={loading} onClick={() => setRefresh((n) => n + 1)}>{loading ? "Actualizando…" : "Actualizar ganadores"}</button></header>
+    {winners.length ? <p>{winners.length} premios confirmados · Resultados disponibles para todos los clientes.</p> : null}
     {error ? <p role="alert">{error}</p> : null}
     <div className={styles.grid} aria-live="polite">
       {winners.map((winner) => <article key={winner.position}><span>Premio puesto N{winner.position}</span><h3>{winner.prize_name}</h3><p>GANADOR NÚMERO</p><strong>{winner.winning_number}</strong><small>{winner.selection_method === "manual" ? "Selección manual" : "Selección aleatoria"}{winner.is_test ? " · PRUEBA IDENTIFICADA" : ""}</small></article>)}
