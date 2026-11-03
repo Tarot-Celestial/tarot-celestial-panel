@@ -22,7 +22,7 @@ export function useCompanionMotion(enabled: boolean, busy: boolean, workerId?: s
     const el = ref.current; if (!el) return;
     const p = position.current;
     el.style.transform = `translate3d(${p.x.toFixed(2)}px,${p.y.toFixed(2)}px,0)`;
-    const bubble = el.querySelector<HTMLElement>('[role="status"]'), bubbleWidth = bubble?.offsetWidth || 248, bubbleHeight = bubble?.offsetHeight || 170;
+    const bubble = el.querySelector<HTMLElement>('[data-companion-bubble]') || el.querySelector<HTMLElement>('[role="status"]'), bubbleWidth = bubble?.offsetWidth || 248, bubbleHeight = bubble?.offsetHeight || 170;
     const originalLeft = p.x + el.offsetWidth - 4 - bubbleWidth;
     const bubbleLeft = Math.max(8, Math.min(window.innerWidth - bubbleWidth - 8, originalLeft));
     const desiredTop = p.y >= bubbleHeight + 18 ? p.y - bubbleHeight - 14 : p.y + el.offsetHeight + 12;
@@ -103,7 +103,14 @@ export function useCompanionMotion(enabled: boolean, busy: boolean, workerId?: s
     place(saved?.x ?? window.innerWidth - 156, saved?.y ?? window.innerHeight - 218);
   }, [workerId, clearHighlight, place]);
   // Parent-rendered bubbles can change size without any character movement.
-  useEffect(() => { renderPosition(); });
+  useEffect(() => {
+    renderPosition();
+    const bubble=ref.current?.querySelector<HTMLElement>('[data-companion-bubble]');
+    if(!bubble)return;
+    const observer=new ResizeObserver(renderPosition);
+    observer.observe(bubble);
+    return()=>observer.disconnect();
+  });
   useEffect(() => {
     let raf = 0, last = 0, wasMoving = false, lastHighlightCheck = 0;
     const wake = () => {

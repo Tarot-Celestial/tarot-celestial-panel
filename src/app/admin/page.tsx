@@ -2947,7 +2947,7 @@ function AdminPage() {
       </main>
     </div>
 
-      {tab !== "atlas" && <AtlasLauncher workerId={atlasWorkerId} alert={atlasWatchAlerts[0]} unreadCount={atlasWatchAlerts.length} stale={atlasWatches.stale} onOpen={() => { setAtlasOpenView(atlasWatchAlerts.length ? 'supervision' : 'chat'); setTab("atlas"); }} />}
+      <AtlasLauncher workerId={atlasWorkerId} alert={atlasWatchAlerts[0]} unreadCount={atlasWatchAlerts.length} stale={atlasWatches.stale} onOpen={() => { setAtlasOpenView(atlasWatchAlerts.length ? 'supervision' : 'chat'); setTab("atlas"); }} />
 
       {crmCloseNotif && (
         <div
