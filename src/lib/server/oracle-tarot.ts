@@ -1,6 +1,8 @@
 import { createHash } from "crypto";
 
-export type OracleTopic = "general" | "amor" | "dinero" | "energia";
+import { ORACLE_TOPICS, type OracleTopic } from "@/lib/oracle-catalog";
+import { MINOR_CARDS } from "./oracle-minors";
+export type { OracleTopic } from "@/lib/oracle-catalog";
 
 export type TarotCard = {
   id: string;
@@ -9,14 +11,14 @@ export type TarotCard = {
   keyword: string;
   advice: string;
   base: string;
-  topics: Record<OracleTopic, string>;
+  topics: Partial<Record<OracleTopic, string>> & { general: string };
 };
 
 function commonsImage(filename: string) {
   return `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(filename)}?width=520`;
 }
 
-export const TAROT_CARDS: TarotCard[] = [
+export const MAJOR_CARDS: TarotCard[] = [
   {
     id: "fool",
     name: "El Loco",
@@ -327,9 +329,11 @@ export const TAROT_CARDS: TarotCard[] = [
   },
 ];
 
+export const TAROT_CARDS: TarotCard[] = [...MAJOR_CARDS, ...MINOR_CARDS];
+
 export function normalizeOracleTopic(value: unknown): OracleTopic {
   const key = String(value || "general").trim().toLowerCase();
-  return key === "amor" || key === "dinero" || key === "energia" ? key : "general";
+  return ORACLE_TOPICS.some(t => t.id === key) ? key as OracleTopic : "general";
 }
 
 export function resolveTarotCard(params: {
@@ -347,11 +351,18 @@ export function resolveTarotCard(params: {
   return TAROT_CARDS[index];
 }
 
+function topicMeaning(card: TarotCard, topic: OracleTopic) {
+  if (card.topics[topic]) return card.topics[topic]!;
+  if (topic === 'familia') return 'En la familia, observa cómo se reparten el cuidado, las decisiones y el espacio personal. ' + card.base;
+  if (topic === 'decisiones') return 'Al comparar opciones, distingue tus valores de la presión externa. ' + card.base;
+  return card.topics.general;
+}
+
 export function buildTarotReading(card: TarotCard, topic: OracleTopic) {
-  const topicText = card.topics[topic] || card.topics.general;
+  const topicText = topicMeaning(card, topic);
   return {
     title: card.name,
-    message: `${card.base}\n\n${topicText}`,
+    message: `${card.base}\n\n${topicText}\n\nPara llevarlo a lo concreto: ${card.advice} Esta carta ofrece una perspectiva; contrástala con tu situación y con los hechos que conoces.`,
     keyword: card.keyword,
     advice: card.advice,
   };
@@ -376,11 +387,14 @@ export function answerTarotFollowup(params: {
   const direct = /por qu[eé]|porque/.test(lower)
     ? `${continuity}${positionLead}la lectura pone el foco en ${keyword}, no como una sentencia literal, sino como una forma de entender el patrón que estás señalando.`
     : /puede|podr[ií]a|es posible|significa/.test(lower)
-    ? `Sí, puede encajar con esa posibilidad. ${positionLead}lo importante es cómo se manifiesta ${keyword} en los hechos y en tus decisiones, más que tomar el símbolo de forma literal.`
+    ? `La carta no permite confirmar esa posibilidad como un hecho. ${positionLead}puedes explorar ${keyword}, contrastándolo con lo que sabes y con las decisiones que dependen de ti.`
     : `${continuity}${positionLead}${interpretation.charAt(0).toLowerCase()}${interpretation.slice(1)}`;
   const contextLine = params.initialQuestion ? `En relación con tu pregunta inicial —“${params.initialQuestion.slice(0,160)}”— conviene contrastarlo con lo que estás viviendo ahora y observar qué parte se repite de forma concreta.` : `Úsalo como una orientación para observar hechos, emociones y decisiones concretas, no como una certeza inevitable.`;
-  const suggestion = (params.history || []).length % 4 === 0 ? `\n\nSi quieres profundizar, puedes preguntarme cómo se manifiesta esta posición en una situación concreta.` : "";
-  return `${direct}\n\n${contextLine}${suggestion}`;
+  const related = cards.length > 1 ? '\n\nEn conjunto: ' + cards.map(c => c.cardName + ' (' + (c.position || 'Mensaje') + ')').join(', ') + '. Lee estas posiciones como perspectivas complementarias, no como pruebas de lo que otra persona piensa.' : '';
+  const adviceCard = TAROT_CARDS.find(c => c.name === cardName) || params.card;
+  const action = '\n\nUn paso práctico: ' + adviceCard.advice;
+  if (/embaraz|enfermedad|c[aá]ncer|morir|muerte real|diagn[oó]stico/.test(lower)) return 'Las cartas no pueden confirmar un embarazo, una enfermedad ni una muerte. Para esa duda necesitas información sanitaria fiable. En el plano simbólico, ' + cardName + ' permite explorar cómo te sientes ante la incertidumbre, sin hacer un diagnóstico.';
+  return `${direct}\n\n${contextLine}${related}${action}`;
 }
 
 export function resolveTarotSpreadCard(params: {
@@ -390,6 +404,7 @@ export function resolveTarotSpreadCard(params: {
   pickIndex: number;
   topic: OracleTopic;
   secret: string;
+  excludedCardIds?: string[];
 }): TarotCard {
   const ordered = TAROT_CARDS.map((card) => ({
     card,
@@ -398,8 +413,13 @@ export function resolveTarotSpreadCard(params: {
       .digest("hex"),
   })).sort((a, b) => a.key.localeCompare(b.key));
   const visualPosition = Math.max(0, Math.floor(params.position));
-  const pickIndex = Math.max(0, Math.floor(params.pickIndex));
-  return ordered[(visualPosition + pickIndex * 7) % ordered.length].card;
+  // Stable mapping; saved cards are excluded when resuming an older session.
+  const excluded = new Set(params.excludedCardIds || []);
+  for (let offset = 0; offset < ordered.length; offset++) {
+    const candidate = ordered[(visualPosition + offset) % ordered.length].card;
+    if (!excluded.has(candidate.id)) return candidate;
+  }
+  throw new Error('NO_CARDS_REMAINING');
 }
 
 export function buildPositionReading(params: {
@@ -409,8 +429,14 @@ export function buildPositionReading(params: {
   question?: string;
   context?: string;
 }) {
-  const topicText = params.card.topics[params.topic] || params.card.topics.general;
+  const topicText = topicMeaning(params.card, params.topic);
   const role: Record<string, string> = {
+    Situación: 'invita a observar el punto de partida',
+    Dificultad: 'ilumina una tensión que conviene reconocer',
+    'Siguiente paso': 'propone una actitud que puedes llevar a la práctica',
+    Necesidades: 'ayuda a poner nombre a lo que necesitas cuidar',
+    Recursos: 'señala capacidades y apoyos que puedes revisar',
+    'Lo que falta saber': 'recuerda contrastar la información antes de decidir',
     "Situación actual": "describe la energía que domina ahora mismo",
     Fortaleza: "señala el recurso que juega a tu favor",
     Obstáculo: "muestra aquello que puede frenar o confundir el avance",
@@ -421,7 +447,7 @@ export function buildPositionReading(params: {
     Futuro: "señala la tendencia que puede desarrollarse próximamente",
   };
   const positionText = role[params.position] || "aporta una pieza concreta a esta lectura";
-  const context = params.context ? ` En el contexto “${params.context}”,` : "";
-  const question = params.question ? ` respecto a “${params.question}”` : "";
-  return `${params.card.name} ${positionText}.${context} ${topicText}${question}. ${params.card.advice}`.replace(/\s+/g, " ").trim();
+  const context = params.context ? ` Contexto de tu consulta: “${params.context}”.` : "";
+  const question = params.question ? ` Tu pregunta: “${params.question}”.` : "";
+  return `${params.card.name} ${positionText}.${context} ${topicText}${question} ${params.card.advice}`.replace(/\s+/g, " ").trim();
 }
