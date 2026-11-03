@@ -23,7 +23,8 @@ function accountQuery(query: any, account: string) {
 }
 function publicAttempt(a: any) { return { id: a.id, pack_id: a.pack_id, amount: Number(a.amount), currency: a.currency, status: a.status,
   paypal_account: paypalAccountForAttempt(a), created_at: a.created_at, capture_id: a.capture_id,
-  remote_status: a.remote_status, payment_id: a.order_id, checkout_url: a.approval_url, last_error: a.last_error, pack_name: a.pack_name }; }
+  remote_status: a.remote_status, payment_id: a.order_id, checkout_url: a.approval_url, last_error: a.last_error, pack_name: a.pack_name,
+  cancellation_blocked: a.status === "completed" || !!a.capture_id || !!a.payment_id || ["CAPTURE_REQUESTED", "CAPTURE_PENDING", "CAPTURE_COMPLETED"].includes(a.remote_status) }; }
 function fail(error: any) { return NextResponse.json({ ok: false, error: error instanceof PayPalError || error.status ? error.message : "No se pudo guardar o comprobar el cobro. Revisa la migración y vuelve a intentarlo con la misma operación." }, { status: error.status || 500, headers }); }
 export async function GET(req: Request) {
   try {
@@ -31,6 +32,16 @@ export async function GET(req: Request) {
     const params = new URL(req.url).searchParams;
     const account = selectedAccount(params.get("account"));
     const config = paypalConfig(account);
+    if (params.get("pending_all") === "1") {
+      const clientId = params.get("cliente_id");
+      if (!clientId || !uuid.test(clientId)) throw new PayPalError("Clienta no válida.", 400);
+      let pendingQuery = admin.from(PAYPAL_TABLE).select("*").eq("environment", config.environment)
+        .eq("checkout_kind", "crm_collection").eq("cliente_id", clientId).eq("status", "pending");
+      if (worker.role !== "admin") pendingQuery = pendingQuery.eq("worker_id", worker.id);
+      const { data, error } = await pendingQuery.order("created_at", { ascending: false }).limit(50);
+      if (error) throw error;
+      return NextResponse.json({ ok: true, pending: (data || []).map(publicAttempt) }, { headers });
+    }
     let query = accountQuery(admin.from(PAYPAL_TABLE).select("*").eq("environment", config.environment).eq("checkout_kind", "crm_collection"), account);
     if (worker.role !== "admin") query = query.eq("worker_id", worker.id);
     const id = params.get("attempt_id");
@@ -69,14 +80,14 @@ export async function POST(req: Request) {
     // Staff-only OAuth check: no purchase, no WhatsApp, no database mutations.
     if (body.action === "test_connection") return NextResponse.json({ ok: true, ...await testPayPalConnection(account) }, { headers });
     const config = paypalConfig(account);
-    if (body.action === "cancel") {
+    if (body.action === "cancel" || body.action === "inspect") {
       if (!uuid.test(body.attempt_id || "")) throw new PayPalError("Cobro no válido.", 400);
       let query = accountQuery(admin.from(PAYPAL_TABLE).select("*").eq("id", body.attempt_id).eq("environment", config.environment).eq("checkout_kind", "crm_collection"), account);
       if (worker.role !== "admin") query = query.eq("worker_id", worker.id);
       const { data, error } = await query.maybeSingle();
       if (error) throw error;
       if (!data) throw new PayPalError("Cobro no encontrado.", 404);
-      const cancelled = await cancelPayPalLink(admin, data);
+      const cancelled = body.action === "cancel" ? await cancelPayPalLink(admin, data) : await reconcilePayPal(admin, data, false, true);
       return NextResponse.json({ ok: true, attempt: publicAttempt(cancelled) }, { headers });
     }
     if (!uuid.test(body.request_id || "") || !uuid.test(body.cliente_id || "")) throw new PayPalError("Identificador no válido.", 400);
@@ -134,7 +145,7 @@ export async function POST(req: Request) {
       // Existing wallet attempts retain their original payload and approval link.
       const url = attempt.create_payload?.payment_source?.card
         ? `${config.origin}/pago-tarjeta?ref=${attempt.public_token}` : approvalUrl(order, attemptConfig.account);
-      const saved = await admin.from(PAYPAL_TABLE).update({ order_id: order.id, approval_url: url, remote_status: order.status }).eq("id", id).is("order_id", null);
+      const saved = await admin.from(PAYPAL_TABLE).update({ order_id: order.id, approval_url: url, remote_status: order.status }).eq("id", id).eq("status", "pending").is("order_id", null);
       if (saved.error) throw saved.error;
       const current = await admin.from(PAYPAL_TABLE).select("*").eq("id", id).single();
       if (current.error) throw current.error;

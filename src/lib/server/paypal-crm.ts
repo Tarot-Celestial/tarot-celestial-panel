@@ -321,6 +321,16 @@ export async function reconcilePayPal(admin: any, attempt: any, captureApproved 
   if (error) throw error;
   return data;
 }
+// No reference or approval URL was ever persisted. Legacy wallet creation is
+// releasable only after our five-hour retry window and with its original identity.
+function unissuedCrmAttempt(a: any) {
+  if (a.checkout_kind !== "crm_collection" || a.status !== "pending" || a.remote_status !== "CREATING" ||
+      a.order_id || a.approval_url || a.capture_id || a.payment_id) return false;
+  if (a.create_payload?.payment_source?.card) return true;
+  const unit = a.create_payload?.purchase_units?.[0];
+  return a.create_payload?.intent === "CAPTURE" && unit?.custom_id === a.id && unit?.invoice_id === `TC-${a.id}` &&
+    Date.now() - Date.parse(a.created_at) >= 5 * 60 * 60 * 1000;
+}
 // Read-only provider checks. Cancellation and replacement are committed together
 // by tc_replace_paypal_crm_attempt, after rechecking these snapshots under lock.
 export async function preparePayPalCrmReplacement(admin: any, options: {
@@ -355,13 +365,15 @@ export async function preparePayPalCrmReplacement(admin: any, options: {
         note += limited ? " PayPal limitó la consulta; se desactiva el enlace del panel."
           : " PayPal no encontró la referencia antigua; su historial se conserva para revisión.";
       }
-    } else if (!cardCheckout || current.remote_status !== "CREATING") {
-      throw new PayPalError("No se pudo comprobar el enlace anterior. Revisa su estado antes de crear otro cobro.", 409);
+    } else if (!unissuedCrmAttempt(current)) {
+      throw new PayPalError("El intento anterior necesita revisión. Abre Gestionar enlaces anteriores para comprobarlo o cancelarlo.", 409);
+    } else {
+      note = "Intento de creación incompleto cerrado al preparar otro cobro. No tenía referencia ni enlace emitido. No es un reembolso.";
     }
     if (processing(current)) throw new PayPalError("El pago anterior ya está cobrado o procesándose. Comprueba su estado antes de solicitar otro cobro.", 409);
     const safeState = current.status === "cancelled" || (current.status === "pending" &&
       (current.order_id ? ["CREATED", "SAVED", "PAYER_ACTION_REQUIRED", "APPROVED", "VOIDED"].includes(current.remote_status)
-        : cardCheckout && current.remote_status === "CREATING"));
+        : unissuedCrmAttempt(current)));
     if (!safeState) throw new PayPalError("PayPal aún no confirma el estado del enlace anterior. Comprueba el cobro antes de sustituirlo.", 409);
     previous.push({ id: current.id, status: current.status, remote_status: current.remote_status,
       order_id: current.order_id || null, note });
@@ -392,15 +404,21 @@ export async function cancelPayPalLink(admin: any, attempt: any, actor: "staff" 
   if (current.status === "completed" || current.capture_id || current.payment_id || ["CAPTURE_REQUESTED", "CAPTURE_PENDING", "CAPTURE_COMPLETED"].includes(current.remote_status))
     throw new PayPalError("El pago ya está cobrado o procesándose. Comprueba su estado; no se puede cancelar ni cambiar de tarifa todavía.", 409);
   if (current.status === "cancelled") return current;
-  if (!current.order_id || !["CREATED", "SAVED", "PAYER_ACTION_REQUIRED", "APPROVED", "VOIDED"].includes(current.remote_status))
+  const unissued = unissuedCrmAttempt(current);
+  if (!unissued && (!current.order_id || !["CREATED", "SAVED", "PAYER_ACTION_REQUIRED", "APPROVED", "VOIDED"].includes(current.remote_status)))
     throw new PayPalError("No se ha podido confirmar que el cobro esté sin procesar. Comprueba su estado antes de cancelar.", 409);
-  const saved = await admin.from(PAYPAL_TABLE).update({ status: "cancelled", remote_status: actor === "client" ? "CANCELLED_BY_CLIENT" : "CANCELLED_BY_STAFF",
-    last_error: rateLimited
+  let cancellation = admin.from(PAYPAL_TABLE).update({ status: "cancelled", remote_status: actor === "client" ? "CANCELLED_BY_CLIENT" : "CANCELLED_BY_STAFF",
+    last_error: unissued
+      ? "Intento incompleto cancelado. No tenía referencia ni enlace emitido. Ya puedes generar un nuevo enlace. Esta acción no es un reembolso."
+      : rateLimited
       ? "Enlace desactivado en el panel. PayPal ha limitado temporalmente las consultas; no se ha solicitado ningún cobro ni reembolso."
       : missingOrder
       ? "Enlace desactivado en el panel. PayPal no encuentra la referencia; esto no confirma que no haya habido un cobro. Revisa la cuenta de PayPal antes de solicitar otro pago. Esta acción no es un reembolso."
       : actor === "client" ? "Has cancelado esta compra antes de solicitar el cobro." : "Enlace cancelado por la central. Esta acción no es un reembolso." })
-    .eq("id", current.id).eq("status", "pending").eq("remote_status", current.remote_status).select("*").maybeSingle();
+    .eq("id", current.id).eq("status", "pending").eq("remote_status", current.remote_status)
+    .is("capture_id", null).is("payment_id", null);
+  cancellation = current.order_id ? cancellation.eq("order_id", current.order_id) : cancellation.is("order_id", null).is("approval_url", null);
+  const saved = await cancellation.select("*").maybeSingle();
   if (saved.error) throw saved.error;
   if (!saved.data) throw new PayPalError("El estado cambió mientras cancelabas. Pulsa Comprobar antes de crear otro cobro.", 409);
   return saved.data;

@@ -58,7 +58,7 @@ type PaymentState = {
   whatsapp?: { status?: string; missing?: string[] };
 };
 
-type HistoryItem = { id: string; amount: number; status: string; remote_status?: string; created_at: string; pack_name: string; payment_id?: string; capture_id?: string; checkout_url?: string; currency: string; last_error?: string; };
+type HistoryItem = { id: string; amount: number; status: string; remote_status?: string; created_at: string; pack_name: string; payment_id?: string; capture_id?: string; checkout_url?: string; currency: string; last_error?: string; paypal_account?: string; cancellation_blocked?: boolean; };
 
 type Props = {
   account?: "legacy" | "leonaris";
@@ -94,6 +94,13 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
   const leonaris = account === "leonaris";
   const brand = leonaris ? "Tarot Leonaris" : "Tarot Celestial";
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [pendingLinks, setPendingLinks] = useState<HistoryItem[]>([]);
+  const [managerOpen, setManagerOpen] = useState(false);
+  const [managerBusy, setManagerBusy] = useState(false);
+  const [managerMessage, setManagerMessage] = useState("");
+  const managerBusyRef = useRef(false);
+  const managerContext = useRef("");
+  managerContext.current = open ? account + ":" + (cliente?.id || "") : "";
   const [ready, setReady] = useState(false);
   const [packs, setPacks] = useState<Pack[]>([]);
   const [mode, setMode] = useState<"pack" | "manual">("pack");
@@ -174,6 +181,9 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
     setInitializing(true);
     setReady(false);
     setHistory([]);
+    setPendingLinks([]);
+    setManagerOpen(false);
+    setManagerMessage("");
     setPacks([]);
     setMode("pack");
     setManualAmount("");
@@ -204,7 +214,10 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
         setEnvironment(json.environment || "");
         if (json.latest) {
           const a = json.latest;
-          if (a.status === "pending" && !a.checkout_url && !a.payment_id) {
+          if (a.status === "pending" && !a.checkout_url && !a.payment_id && Date.now() - Date.parse(a.created_at) >= 5 * 60 * 60 * 1000) {
+            resetPayment();
+            setMessage("Hay un intento antiguo sin enlace emitido. Puedes generar otro o cancelarlo en Gestionar enlaces anteriores.");
+          } else if (a.status === "pending" && !a.checkout_url && !a.payment_id) {
             const suffix = a.pack_id === "crm_manual_amount" ? a.amount : a.pack_id;
             operationIds.current[`${paymentStorageKey}:operation:${suffix}`] = a.id;
             try { sessionStorage.setItem(`${paymentStorageKey}:operation:${suffix}`, a.id); } catch {}
@@ -265,7 +278,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
 
   refreshRef.current = refreshStatus;
   useEffect(() => {
-    if (!open || !payment?.attempt_id) return;
+    if (!open || !payment?.attempt_id || managerOpen) return;
     const refresh = () => { if (payment.status !== "completed" && document.visibilityState === "visible") void refreshRef.current(true, true); };
     // Payment rows are server-only; check while this modal is visible.
     refresh();
@@ -279,10 +292,10 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
       window.removeEventListener("focus", refresh); window.removeEventListener("online", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [open, payment?.attempt_id, payment?.status]);
+  }, [open, payment?.attempt_id, payment?.status, managerOpen]);
 
   async function createPayment(clickedPack?: Pack) {
-    if (createBusy.current) return;
+    if (createBusy.current || managerBusyRef.current) return;
     const chosen = clickedPack || selectedPack;
     const originalClient = cliente?.id;
     if (!cliente?.id) return;
@@ -353,6 +366,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
       chatWindow?.close();
       if (contextRef.current !== originalClient) return;
       setMessage(`❌ ${error?.message || "No se pudo generar el cobro PayPal."}`);
+      await loadPendingLinks();
     } finally {
       createBusy.current = false;
       setLoading(false);
@@ -373,15 +387,66 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
     currentAttempt.current = "";
     operationIds.current = {};
     try {
-      Object.keys(sessionStorage).filter(k => k.startsWith(`${paymentStorageKey}:operation:`)).forEach(k => sessionStorage.removeItem(k));
+      const keys = Array.from({ length: sessionStorage.length }, (_, i) => sessionStorage.key(i));
+      keys.filter((k): k is string => !!k && k.startsWith(paymentStorageKey + ":operation:")).forEach(k => sessionStorage.removeItem(k));
       sessionStorage.removeItem(paymentStorageKey);
     } catch {}
     notifiedPaid.current = false;
     setPayment(null);
   }
 
+  async function loadPendingLinks() {
+    if (!cliente?.id || managerBusyRef.current) return;
+    const expected = managerContext.current;
+    managerBusyRef.current = true;
+    setManagerOpen(true);
+    setManagerBusy(true);
+    setManagerMessage("");
+    try {
+      const token = await getTokenRef.current();
+      if (!token) throw new Error("Tu sesión ha caducado.");
+      const response = await fetch(`/api/crm/pagos/paypal?cliente_id=${encodeURIComponent(cliente.id)}&account=${account}&pending_all=1`, {
+        headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || "No se pudieron cargar los enlaces anteriores.");
+      if (managerContext.current === expected) setPendingLinks(data.pending || []);
+    } catch (error: any) {
+      if (managerContext.current === expected) setManagerMessage(error.message || "No se pudieron cargar los enlaces anteriores.");
+    } finally { managerBusyRef.current = false; setManagerBusy(false); }
+  }
+
+  async function managePendingLink(a: HistoryItem, action: "inspect" | "cancel") {
+    if (managerBusyRef.current || loading) return;
+    const expected = managerContext.current;
+    managerBusyRef.current = true;
+    setManagerBusy(true);
+    setManagerMessage(action === "cancel" ? "Cancelando el enlace anterior…" : "Comprobando sin solicitar ningún cobro…");
+    try {
+      const token = await getTokenRef.current();
+      if (!token) throw new Error("Tu sesión ha caducado.");
+      const response = await fetch("/api/crm/pagos/paypal", { method: "POST", cache: "no-store",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ action, attempt_id: a.id, account: a.paypal_account === "client_business_v1" ? "leonaris" : "legacy" }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || "No se pudo gestionar el enlace.");
+      if (managerContext.current !== expected) return;
+      setPendingLinks(previous => previous.map(item => item.id === a.id ? data.attempt : item));
+      setHistory(previous => previous.map(item => item.id === a.id ? data.attempt : item));
+      if (action === "cancel" && data.attempt.status === "cancelled") {
+        paymentRevision.current++;
+        resetPayment();
+        setMessage("Enlace anterior cancelado. Elige el importe y pulsa Crear pago para generar el nuevo.");
+      }
+      setManagerMessage(data.attempt.last_error || (data.attempt.status === "completed" ? "Pago confirmado. No solicites otro cobro por esta operación." : "Estado actualizado. La comprobación no ha solicitado ningún cobro."));
+    } catch (error: any) {
+      if (managerContext.current === expected) setManagerMessage(error.message || "No se pudo gestionar el enlace.");
+    } finally { managerBusyRef.current = false; setManagerBusy(false); }
+  }
+
   async function cancelPayment(changeTariff: boolean) {
-    if (!payment || cancelBusy.current || loading) return;
+    if (!payment || cancelBusy.current || loading || managerBusyRef.current) return;
     cancelBusy.current = true;
     paymentRevision.current++;
     const expectedClient = contextRef.current, expectedId = payment.attempt_id;
@@ -493,7 +558,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
             </div>
 
             <p className={styles.help}>Al crear este enlace se desactiva automáticamente el cobro anterior pendiente de la central, también si pertenece a la otra cuenta. Un pago ya cobrado o en proceso se conserva.</p>
-            <button className={styles.generate} type="button" disabled={loading || initializing || !ready || requestedAmount <= 0} onClick={() => void createPayment()}>
+            <button className={styles.generate} type="button" disabled={loading || managerBusy || initializing || !ready || requestedAmount <= 0} onClick={() => void createPayment()}>
               {loading ? <RefreshCw className={styles.spinIcon} /> : <CreditCard />} {loading ? "Generando..." : "Crear pago con tarjeta y abrir WhatsApp"}
             </button>
           </>
@@ -570,6 +635,30 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
             <p className={styles.help}>El envío por WhatsApp abrirá la conversación con el mensaje y el enlace ya preparados. La central solo tiene que pulsar <b>Enviar</b>. El servidor verifica el cobro en PayPal. La central registra la compra después desde «Registrar llamada».</p>
           </div>
         )}
+
+        <section className={styles.pendingManager} aria-label="Enlaces anteriores de ambas cuentas">
+          <button type="button" className={styles.pendingManagerToggle} disabled={loading || managerBusy} onClick={() => void loadPendingLinks()} aria-expanded={managerOpen}>
+            <RefreshCw className={managerBusy ? styles.spinIcon : ""} /> Gestionar enlaces anteriores
+          </button>
+          {managerOpen && <>
+            <h3>Pendientes · Ambas cuentas</h3>
+            <p>Comprueba o cancela el enlace anterior desde aquí. Cancelarlo no crea otro cobro ni envía mensajes.</p>
+            {pendingLinks.map(a => <article key={a.id}>
+              <div><strong>{a.paypal_account === "client_business_v1" ? "Leonaris" : "Cuenta habitual"} · {money(a.amount)}</strong>
+                <span>{new Date(a.created_at).toLocaleString("es-ES")} · {a.status === "cancelled" ? "Cancelado" : a.status === "completed" ? "Pagado" : !a.payment_id && !a.checkout_url ? "Creación incompleta · sin enlace emitido" : "Pendiente"}</span>
+                {a.cancellation_blocked && <small>Pago recibido o en proceso. Comprueba su estado antes de continuar.</small>}
+              </div>
+              <div className={styles.pendingManagerActions}>
+                <button type="button" disabled={loading || managerBusy} onClick={() => void managePendingLink(a, "inspect")}>Comprobar estado</button>
+                {a.status === "pending" && <button type="button" disabled={loading || managerBusy || a.cancellation_blocked} onClick={() => void managePendingLink(a, "cancel")}>Cancelar y preparar otro enlace</button>}
+              </div>
+            </article>)}
+            {!managerBusy && !pendingLinks.length && !managerMessage && <p>No hay enlaces pendientes que puedas gestionar.</p>}
+            {managerMessage && <p role="status">{managerMessage}</p>}
+            <button type="button" disabled={loading || managerBusy} onClick={() => { paymentRevision.current++; resetPayment(); setManagerOpen(false); setMessage("Elige el importe del nuevo enlace. Se comprobarán los pendientes antes de crearlo."); }}>Elegir importe para nuevo enlace</button>
+            <button type="button" disabled={managerBusy} onClick={() => setManagerOpen(false)}>Cerrar gestión de enlaces</button>
+          </>}
+        </section>
 
         {history.length > 0 && <details className={styles.paymentHistory}><summary>Historial · {brand} ({history.length})</summary><p>Últimos 50 cobros de esta cuenta. Abre un cobro y pulsa Comprobar para actualizar su estado. Consulta PayPal para el importe de reembolsos.</p>{history.map(a => <article key={a.id}><div><strong>{a.pack_name} · {money(a.amount)}</strong><span>{new Date(a.created_at).toLocaleString("es-ES")} · {a.remote_status === "CAPTURE_REFUNDED" ? "Reembolsado" : a.remote_status === "CAPTURE_PARTIALLY_REFUNDED" ? "Reembolso parcial" : a.status === "completed" ? "Pagado" : a.status === "cancelled" ? "Cancelado" : "Pendiente"}</span><small>Pedido: {a.payment_id || "Pendiente de generar"}{a.capture_id ? ` · Captura: ${a.capture_id}` : ""}</small></div><button type="button" disabled={loading} onClick={() => { setPayment({ cliente_id: cliente.id, attempt_id: a.id, amount: a.amount, status: a.status, remote_status: a.remote_status, currency: a.currency, url: a.checkout_url || "", payment_id: a.payment_id, last_error: a.last_error }); notifiedPaid.current = false; }}>Ver cobro</button></article>)}</details>}
         {message ? <div className={styles.message}>{message}</div> : null}
