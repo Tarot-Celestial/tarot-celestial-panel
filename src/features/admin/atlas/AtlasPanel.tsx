@@ -156,6 +156,7 @@ export default function AtlasPanel({ watches, initialView = 'chat' }: { watches?
     </div>
     {atlas.error ? <div className={styles.error} role="alert"><CircleHelp size={18} /><span>{atlas.error}</span><button type="button" onClick={atlas.refresh} disabled={atlas.loading || !!atlas.busy}>Actualizar datos</button></div> : null}
     {overview?.unavailable?.length ? <div className={styles.partial}><CircleHelp size={15} /><span>Hay fuentes pendientes: {overview.unavailable.join(' · ')}. Los datos no disponibles se muestran con —.</span></div> : null}
+    <a className={styles.quietButton} href="/admin/atlas/voz">✦ Hablar con Atlas · Prueba con datos ficticios</a>
     <nav className={styles.tabs} aria-label="Secciones de Atlas">
       <button type="button" aria-current={view === 'chat' ? 'page' : undefined} onClick={() => setView('chat')}><MessageCircle size={16} />Conversación</button>
       <button type="button" aria-current={view === 'supervision' ? 'page' : undefined} onClick={() => setView('supervision')}><ListChecks size={16} />Supervisión y encargos{alerts.length + watchAlerts.length ? <span>{alerts.length + watchAlerts.length}</span> : null}</button>
