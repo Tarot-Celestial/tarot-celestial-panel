@@ -14,7 +14,7 @@ export function invitation(tab:string,pet:PetId,index:number,humor:boolean){
     captacion:'¿Revisamos cuántos contactos nuevos entraron en Captación hoy? Puedo consultar los datos y separar las fechas.',
   };
   const options=[contextual[tab]||`${ASSISTANT_SECTIONS[tab]?.help||'Estoy aquí para ayudarte.'} ¿Lo vemos juntos?`,'¿Necesitas ayuda con algo? Puedes pedirme una búsqueda o dejarme una tarea.','¿Hay alguna indicación que quieras que recuerde? La revisamos antes de guardarla.'];
-  if(humor)options.push(pet==='sol'?'Pausa de chispa: me estiro un poquito. ¿Seguimos con tu siguiente tarea?':pet==='ambar'?'Alas estiradas y libreta lista. Vamos con una cosa cada vez.':'Mis alas están listas; mi café sigue cargando. ¿Te ayudo a organizar los pendientes?');
+  if(humor)options.push('Alas listas, mirada despierta. A esos pendientes se les acabó el escondite. ¿Vamos con uno?');
   return options[index%options.length];
 }
 export function useCompanionInitiative({ready,open,busy,mini,tab,pet,workerId,name='',preferences,bubble,say,suggestions=[],suggest,urgent=false,urgentAnnouncement}:{ready:boolean;open:boolean;busy:boolean;mini:boolean;tab:string;pet:PetId;workerId?:string|null;name?:string;preferences:Preferences;bubble:string;say:(text:string)=>void;suggestions?:AssistantCard[];suggest?:(card:AssistantCard)=>void;urgent?:boolean;urgentAnnouncement?:{key:string;text:string}}){
@@ -64,7 +64,7 @@ export function useCompanionInitiative({ready,open,busy,mini,tab,pet,workerId,na
   useEffect(()=>{
     const text=urgent?current.current.urgentAnnouncement?.text:current.current.bubble;
     if(!preferences.sound||!voiceReady||!text||document.hidden||!('speechSynthesis'in window))return;
-    const synth=window.speechSynthesis,utterance=new SpeechSynthesisUtterance(text.slice(0,450));utterance.lang='es-ES';utterance.rate=pet==='sol'?1.03:.96;utterance.pitch=pet==='sol'?1.12:pet==='ambar'?1.04:.86;
+    const synth=window.speechSynthesis,utterance=new SpeechSynthesisUtterance(text.slice(0,450));utterance.lang='es-ES';utterance.rate=.98;utterance.pitch=.96;
     const voice=synth.getVoices().find(v=>v.lang==='es-ES')||synth.getVoices().find(v=>v.lang.startsWith('es'));if(voice)utterance.voice=voice;
     spoken.current=utterance;utterance.onstart=()=>setSpeaking(true);utterance.onend=utterance.onerror=()=>{setSpeaking(false);spoken.current=null;};synth.speak(utterance);
     const stop=()=>{synth.cancel();setSpeaking(false);};const hide=()=>{if(document.hidden)stop();};document.addEventListener('visibilitychange',hide);

@@ -105,7 +105,7 @@ export function leonarisCompanion(memory: LeonarisMemoryState, context: Leonaris
     favoriteSections: favorites,
     learning: { helpful: memory.helpful, unhelpful: memory.unhelpful, visits,
       summary: !memory.memoryEnabled ? "Memoria pausada: no uso recuerdos ni registro tus nuevas visitas o conversaciones." : favorites.length ? `Tengo en cuenta que visitas ${favorites[0].label}. Tus valoraciones me ayudan a ajustar las explicaciones.` : "Voy conociendo tus apartados habituales y las explicaciones que te resultan útiles." },
-    greeting: { id: purchase ? `purchase:${purchase.id}` : "welcome", title: purchase ? "Tu compra está confirmada" : "Soy Leonaris, tu compañero",
+    greeting: { id: purchase ? `purchase:${purchase.id}` : "welcome", title: purchase ? "Tu compra está confirmada" : "Soy Atlas, tu compañero",
       message: `${hello} ${purchase ? `La compra de ${purchase.name} figura confirmada.${purchase.coins ? ` Ha acreditado ${purchase.coins.toLocaleString("es-ES")} Coins.` : ""} ` : ""}${balance}${available}`,
       actions: spins.length ? spins.map(row => row.action).slice(0, 3) : [leoAction("welcome-minutes", "Ver mis minutos", "/cliente/dashboard", "minutes", "Aquí puedes ver el saldo actualizado de tus minutos.")],
     },

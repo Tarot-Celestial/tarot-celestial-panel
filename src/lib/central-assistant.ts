@@ -1,18 +1,19 @@
-export type PetId = 'sol' | 'draco' | 'ambar';
-export type PetState = 'idle' | 'listening' | 'thinking' | 'working' | 'pointing' | 'celebrating' | 'concerned' | 'sleeping' | 'error' | 'walking' | 'break';
-export const PETS = {
-  sol: { name: 'Sol', accent: '#ffba66', description: 'Tu chispa para un gran turno', personality: 'Cálido, enérgico y bromista. Humor amable, breve y nunca insistente.' },
-  draco: { name: 'Draco', accent: '#bca1ff', description: 'Una mirada atenta, siempre contigo', personality: 'Astuto, leal y tranquilo, con humor pícaro y respetuoso.' },
-  ambar: { name: 'Ámbar', accent: '#f2c47c', description: 'Tu compañera, paso a paso', personality: 'Dragona curiosa, paciente y luminosa. Explica con claridad, celebra los avances reales y usa humor suave. Acompaña sin juzgar ni abrumar; propone un paso cada vez.' },
+export const ATLAS_IDENTITY = {
+  id: 'atlas', name: 'Atlas', accent: '#d4ae70',
+  image: '/companions/atlas-universal-v1.png',
+  description: 'Una mirada atenta. Un toque de picardía.',
+  personality: 'Búho astral violeta y dorado, cercano, tranquilo y resolutivo. Humor pícaro, amable y breve, nunca a costa de nadie. Explica con claridad, reconoce lo que no sabe y celebra avances reales. La prioridad es ayudar sin interrumpir.',
 } as const;
-export function normalizePetId(value: unknown): PetId {
-  return value === 'sol' || value === 'ambar' ? value : 'draco';
-}
-export function companionWelcome(pet: PetId, name: string, returning: boolean) {
+// Legacy keys remain readable for old sessions; all resolve to the same identity.
+export type PetId = 'atlas' | 'sol' | 'draco' | 'ambar';
+export type PetState = 'idle' | 'listening' | 'thinking' | 'working' | 'pointing' | 'celebrating' | 'concerned' | 'sleeping' | 'error' | 'walking' | 'break';
+export const PETS = { atlas: ATLAS_IDENTITY, sol: ATLAS_IDENTITY, draco: ATLAS_IDENTITY, ambar: ATLAS_IDENTITY } as const;
+export function normalizePetId(_value: unknown): 'atlas' { return 'atlas'; }
+export function companionWelcome(_pet: PetId, name: string, returning: boolean) {
   const firstName = name.trim().split(/\s+/)[0];
   const hello = firstName ? `Hola, ${firstName}.` : 'Hola.';
-  if (returning) return `${hello} ${PETS[pet].name} por aquí. Podemos revisar tus pendientes o ir directamente a lo que necesites.`;
-  return `${hello} Soy ${PETS[pet].name}, tu ${pet === 'ambar' ? 'compañera' : 'compañero'} de central. Te ayudo a buscar fichas, revisar reservas y organizar tu turno. Vamos paso a paso.`;
+  if (returning) return `${hello} Atlas por aquí. Vamos a poner un poco de orden y una pizca de magia en el turno.`;
+  return `${hello} Soy Atlas, tu compañero de Tarot Celestial. Te ayudo a buscar fichas, revisar reservas y organizar tu turno. Vamos paso a paso.`;
 }
 export const ASSISTANT_SECTIONS: Record<string, { label: string; help: string }> = {
   central: { label: 'Inicio', help: 'Revisemos pendientes y decidamos por dónde empezar.' },

@@ -97,7 +97,7 @@ export function getLeoMessageVariants(pathname: string, promoActive: boolean, ho
   }
 
   return [
-    { title: dashboardGreeting(hour), message: "Soy Leo Celestial. Estoy aquí para orientarte en cada paso.", mood: "welcome", pose: "sentinel" },
+    { title: dashboardGreeting(hour), message: "Soy Atlas. Estoy aquí para orientarte en cada paso.", mood: "welcome", pose: "sentinel" },
     { title: "Seguimos el viaje", message: "Explora tu panel con calma. Si aparece algo importante, te avisaré.", mood: "welcome", pose: "calm" },
     { title: "Todo está preparado", message: "Puedo guiarte hacia tus consultas, premios y novedades.", mood: "welcome", pose: "guide" },
   ];
@@ -107,10 +107,10 @@ export function getLeoContextTips(pathname: string, promoActive: boolean): LeoPe
   if (pathname === "/cliente/precios-ofertas") {
     return promoActive
       ? [
-          { title: "Consejo de Leo", message: "Compara minutos y beneficios del pack destacado antes de decidir.", mood: "promo", pose: "curious", actionLabel: "Revisar el pack" },
+          { title: "Consejo de Atlas", message: "Compara minutos y beneficios del pack destacado antes de decidir.", mood: "promo", pose: "curious", actionLabel: "Revisar el pack" },
           { title: "Mira cada beneficio", message: "Coins, giros y Oráculo aparecen junto al pack cuando están incluidos.", mood: "promo", pose: "guide", actionLabel: "Ver detalles" },
         ]
-      : [{ title: "Consejo de Leo", message: "Elige por lo que necesitas hoy, no solo por el tamaño del pack.", mood: "calm", pose: "curious" }];
+      : [{ title: "Consejo de Atlas", message: "Elige por lo que necesitas hoy, no solo por el tamaño del pack.", mood: "calm", pose: "curious" }];
   }
 
   if (pathname === "/cliente/oraculo") {

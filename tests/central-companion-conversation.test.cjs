@@ -55,7 +55,7 @@ test('all companions welcome the current worker without model latency or private
 
 test('explicit navigation supplies a button without claiming that navigation or work already happened', async () => {
   const f = fixture();
-  for (const question of ['Llévame a Captación', 'Ámbar, abre la pestaña de reservas, por favor']) {
+  for (const question of ['Llévame a Captación', 'Ámbar, abre la pestaña de reservas, por favor', 'Atlas, abre la pestaña de reservas, por favor']) {
     const { result } = await f.chat.answer(f.ctx, question, 'central', 'ambar');
     assert.equal(result.cards.length, 1);
     assert.equal(result.cards[0].tab, question.includes('Captación') ? 'captacion' : 'reservas');
@@ -90,7 +90,7 @@ test('compound requests still reach the normal conversational tools and keep con
   await f.chat.answer(f.ctx, 'Hola Ámbar, recuerda que mi turno empieza a las nueve', 'central', 'ambar', false);
   assert.equal(f.requests.length, 1);
   assert.equal(f.requests[0].store, false);
-  assert.match(f.requests[0].instructions, /Ámbar/);
+  assert.match(f.requests[0].instructions, /Atlas/);
   assert.match(f.requests[0].instructions, /No hagas bromas/);
   assert.match(f.requests[0].instructions, /propuestas pendientes de confirmación/);
   assert.match(f.requests[0].instructions, /No transfieras recuerdos/);

@@ -13,21 +13,21 @@ function fixture(){
   function Harness(props){hook=api.useCompanionInitiative({ready:true,open:false,busy:false,mini:false,tab:'central',pet:'ambar',name:'Isa',workerId:'worker-one',preferences:{proactive:true,humor:true,sound:false},bubble:'',say:text=>calls.push(text),...props});return null;}
   return {calls,storage,document,Element,mount:p=>renderer.act(()=>{tree=renderer.create(React.createElement(Harness,p));}),update:p=>renderer.act(()=>tree.update(React.createElement(Harness,p))),tick:ms=>renderer.act(()=>[...timers.values()].filter(t=>t.ms===ms).forEach(t=>t.fn())),hush:()=>renderer.act(()=>hook.hush()),stop:()=>renderer.act(()=>tree.unmount())};
 }
-test('all three identities are valid; malformed profiles fall back safely',()=>{
-  for(const pet of ['sol','draco','ambar'])assert.equal(guide.normalizePetId(pet),pet);
-  for(const input of [null,{},'__proto__','admin'])assert.equal(guide.normalizePetId(input),'draco');
-  assert.match(guide.companionWelcome('ambar','Isa Saldana',false),/Hola, Isa\. Soy Ámbar/);
+test('legacy identities and malformed profiles all resolve to Atlas',()=>{
+  for(const pet of ['atlas','sol','draco','ambar'])assert.equal(guide.normalizePetId(pet),'atlas');
+  for(const input of [null,{},'__proto__','admin'])assert.equal(guide.normalizePetId(input),'atlas');
+  assert.match(guide.companionWelcome('ambar','Isa Saldana',false),/Hola, Isa\. Soy Atlas/);
   assert.doesNotMatch(guide.companionWelcome('sol','',true),/undefined|null/);
 });
 test('welcome uses worker identity and does not repeat after rerender or same-day remount',()=>{
-  const f=fixture();f.mount();f.tick(1800);assert.equal(f.calls.length,1);assert.match(f.calls[0],/Ámbar/);
+  const f=fixture();f.mount();f.tick(1800);assert.equal(f.calls.length,1);assert.match(f.calls[0],/Atlas/);
   f.update({tab:'captacion'});f.tick(10000);assert.equal(f.calls.length,1);f.stop();
   f.mount();f.tick(1800);assert.equal(f.calls.length,1);f.stop();
 });
-test('a second worker receives their own name and mascot, never the previous greeting',()=>{
+test('a second worker receives their own name and private greeting, never the previous greeting',()=>{
   const f=fixture();f.mount();f.tick(1800);
   f.update({workerId:'worker-two',pet:'sol',name:'Maria'});f.tick(1800);
-  assert.equal(f.calls.length,2);assert.match(f.calls[1],/Hola, Maria\. Soy Sol/);f.stop();
+  assert.equal(f.calls.length,2);assert.match(f.calls[1],/Hola, Maria\. Soy Atlas/);f.stop();
 });
 test('welcome waits while typing, in a hidden tab or during an urgent reservation',()=>{
   const f=fixture();f.document.activeElement=new f.Element('INPUT');f.mount();f.tick(1800);assert.equal(f.calls.length,0);

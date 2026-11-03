@@ -13,7 +13,7 @@ fs.mkdirSync(output, { recursive: true });
 const checks = [], failures = [], errors = [], transactions = [];
 const ids = { A: '00000000-0000-4000-8000-000000000001', B: '00000000-0000-4000-8000-000000000002' };
 const action = { id: 'minutes', label: 'Ver mis minutos', path: '/cliente/dashboard', anchor: 'minutes', explanation: 'Aquí están tus minutos disponibles.' };
-const guide = 'aside[aria-label="Leonaris, tu guía celestial"]', panel = 'section[aria-label="Ayuda de Leonaris"]';
+const guide = 'aside[aria-label="Atlas, tu guía celestial"]', panel = 'section[aria-label="Ayuda de Atlas"]';
 const character = `${guide} button[aria-describedby="leonaris-move-help"]`, pet = `${character} >> xpath=..`;
 function account(name) { return { name, profile: { hidden: false, muted: false }, memoryEnabled: true, style: 'warm', memories: [{ id: `${name}-note`, content: `Prefiero las explicaciones de ${name}`, createdAt: new Date().toISOString() }], visits: 0, helpful: 0, unhelpful: 0, greeting: { id: `welcome-${name}`, title: `Hola, ${name}`, message: 'Te acompaño con lo que necesitas hoy.', actions: [action] } }; }
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -43,6 +43,7 @@ async function fixture(browser, options = {}) {
       return route.abort('blockedbyclient');
     }
     if (!url.pathname.startsWith('/api/')) return route.continue();
+    if (url.pathname === '/api/auth/user') return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({id:sub,aud:'authenticated',role:'authenticated',email:owner.name+'@example.invalid',app_metadata:{},user_metadata:{},created_at:new Date().toISOString()})});
     if (url.pathname === '/api/cliente/activity/ping') return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
     if (request.method() !== 'GET' && url.pathname !== '/api/cliente/leo') {
       transactions.push(request.method() + ' ' + url.pathname);
@@ -86,7 +87,7 @@ async function fixture(browser, options = {}) {
   const page = await context.newPage();page.setDefaultTimeout(15000);page.on('pageerror', error => errors.push(error.message));
   await page.goto(baseURL + '/cliente/dashboard', { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.locator(character).waitFor({ timeout: 90000 });
-  await page.locator(`${character} [data-sheet="v2"]`).waitFor({ timeout: 15000 });
+  await page.locator(`${character} [data-atlas-state]`).waitFor({ timeout: 15000 });
   return { state, context, page,
     open: async () => { if (!await page.locator(panel).isVisible()) await page.locator(character).click(); await page.locator(panel).waitFor(); },
     close: () => context.close(),
@@ -97,38 +98,30 @@ async function fixture(browser, options = {}) {
         const token = `${encode({ alg: 'none', typ: 'JWT' })}.${encode({ sub: id, session_id: 'session-B', aud: 'authenticated', role: 'authenticated', exp: now + 86400 })}.fake-test-signature`;
         const result = await globalThis.__tcSupabaseClienteBrowserClient.auth.setSession({ access_token: token, refresh_token: 'fake-refresh-B' });
         if (result.error) throw result.error;
+        if(result.data.session?.user?.id!==id)throw Error('Fixture switched to '+JSON.stringify(result.data.session?.user));
       }, ids.B);
     },
   };
 }
-async function check(name, run) { try { await run();checks.push(name);console.log('PASS: ' + name); } catch (error) { failures.push({ name, error: error.message, stack: error.stack });console.log('FAIL: ' + name + ': ' + error.message); } }
+async function check(name, run) { if(process.env.TC_QA_FILTER && !name.includes(process.env.TC_QA_FILTER)) return; try { await run();checks.push(name);console.log('PASS: ' + name); } catch (error) { failures.push({ name, error: error.message, stack: error.stack });console.log('FAIL: ' + name + ': ' + error.message); } }
 async function shot(page, name) { const file = path.join(output, name + '.png');await page.screenshot({ path: file });return file; }
 async function memory(page) { await page.getByRole('button', { name: 'Memoria y preferencias', exact: true }).click();await page.getByRole('heading', { name: 'Lo que recuerdo de ti' }).waitFor(); }
 
 (async () => {
-  const browser = await playwright.chromium.launch({ executablePath: process.env.EDGE_EXECUTABLE || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', headless: true, args: ['--enable-unsafe-swiftshader'] });
+  const browser = await playwright.chromium.launch({ executablePath: process.env.TC_QA_CHROME || process.env.EDGE_EXECUTABLE || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true, args: ['--enable-unsafe-swiftshader'] });
   try {
-    await check('The 12-pose atlas loads, uses exact cells and animates blinking and thinking with clean pauses', async () => {
+    await check('Atlas artwork loads, responds while thinking and respects reduced motion', async () => {
       const f = await fixture(browser);try {
-        const sprite=f.page.locator(`${character} [data-sheet="v2"]`);
-        await f.page.mouse.move(20,20);await f.page.waitForTimeout(1900);
-        assert.equal(await sprite.getAttribute('data-pose'),'idle');
-        const details=await sprite.evaluate(async element=>{
-          const url=getComputedStyle(element).backgroundImage.match(/url\(["']?(.*?)["']?\)/)[1],image=new Image();image.src=url;await image.decode();
-          const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;
-          const cell=image.naturalWidth/4,edge=[];
-          for(let row=0;row<3;row++)for(let column=0;column<4;column++){let count=0;for(let p=0;p<cell;p++)for(const [x,y] of [[column*cell,row*cell+p],[(column+1)*cell-1,row*cell+p],[column*cell+p,row*cell],[column*cell+p,(row+1)*cell-1]])if(pixels[(y*canvas.width+x)*4+3]>128)count++;edge.push(count);}
-          return {width:image.naturalWidth,height:image.naturalHeight,size:getComputedStyle(element).backgroundSize,cell,edge};
-        });
-        assert.deepEqual(details,{width:1448,height:1086,size:'400% 300%',cell:362,edge:Array(12).fill(0)});
-        await shot(f.page,'desktop-leonaris-v2');
-        // Record a bounded blink cycle; reduced motion must cancel the timer-driven state.
-        await f.page.waitForFunction(selector=>document.querySelector(selector)?.dataset.pose==='blink', `${character} [data-sheet="v2"]`,{timeout:11000});
-        await f.page.emulateMedia({reducedMotion:'reduce'});await f.page.waitForTimeout(200);assert.notEqual(await sprite.getAttribute('data-pose'),'blink');
-        await f.open();f.state.holdChat=true;await f.page.getByLabel('¿En qué te ayudo?',{exact:true}).fill('Muéstrame mis minutos');await f.page.getByRole('button',{name:'Consultar a Leonaris'}).click();
-        await f.page.waitForFunction(selector=>document.querySelector(selector)?.dataset.pose==='thinking', `${character} [data-sheet="v2"]`);
-        const thinking=await sprite.evaluate(element=>({position:getComputedStyle(element).backgroundPosition,translate:getComputedStyle(element).translate}));assert.match(thinking.position,/^0(?:px|%) 100%$/);assert.equal(thinking.translate,'0px 9%');
-        await shot(f.page,'desktop-leonaris-thinking');f.state.releaseChat?.();await f.page.getByRole('heading',{name:'Respuesta para Ana'}).waitFor();
+        const portrait=f.page.locator(`${character} [data-atlas-state]`);
+        await portrait.waitFor();await f.page.mouse.move(20,20);
+        const details=await portrait.locator('img').evaluate(async image=>{await image.decode();return {width:image.naturalWidth,height:image.naturalHeight,source:image.getAttribute('src')};});
+        assert.deepEqual(details,{width:640,height:640,source:'/companions/atlas-universal-v1.png'});
+        await shot(f.page,'desktop-atlas');
+        await f.page.emulateMedia({reducedMotion:'reduce'});await f.page.waitForTimeout(200);
+        assert.equal(await portrait.evaluate(element=>element.getAnimations({subtree:true}).length),0);
+        await f.open();f.state.holdChat=true;await f.page.getByLabel('¿En qué te ayudo?',{exact:true}).fill('Muéstrame mis minutos');await f.page.getByRole('button',{name:'Consultar a Atlas'}).click();
+        await f.page.waitForFunction(selector=>document.querySelector(selector)?.dataset.atlasState==='thinking', `${character} [data-atlas-state]`);
+        await shot(f.page,'desktop-atlas-thinking');f.state.releaseChat?.();await f.page.getByRole('heading',{name:'Respuesta para Ana'}).waitFor();
       }finally{f.state.releaseChat?.();await f.close();}
     });
     await check('Server greeting is quiet, deduplicates within a session and overrides stale local preferences', async () => {
@@ -151,8 +144,8 @@ async function memory(page) { await page.getByRole('button', { name: 'Memoria y 
     });
     await check('Chat shows server errors, retries the same request id, offers guide actions and records feedback', async () => {
       const f = await fixture(browser);try {
-        await f.open();f.state.failChat = true;await f.page.getByLabel('¿En qué te ayudo?', { exact: true }).fill('¿Cuántos minutos tengo?');await f.page.getByRole('button', { name: 'Consultar a Leonaris' }).click();await f.page.getByRole('alert').filter({ hasText: 'Espera un momento' }).waitFor();
-        await f.page.getByRole('button', { name: 'Consultar a Leonaris' }).click();await f.page.getByRole('heading', { name: 'Respuesta para Ana' }).waitFor();
+        await f.open();f.state.failChat = true;await f.page.getByLabel('¿En qué te ayudo?', { exact: true }).fill('¿Cuántos minutos tengo?');await f.page.getByRole('button', { name: 'Consultar a Atlas' }).click();await f.page.getByRole('alert').filter({ hasText: 'Espera un momento' }).waitFor();
+        await f.page.getByRole('button', { name: 'Consultar a Atlas' }).click();await f.page.getByRole('heading', { name: 'Respuesta para Ana' }).waitFor();
         const requests = f.state.posts.filter(post => post.action === 'chat');assert.equal(requests.length, 2);assert.equal(requests[0].requestId, requests[1].requestId);
         await f.page.getByRole('button', { name: 'Sí', exact: true }).click();await f.page.getByText('Gracias, tendré en cuenta tu valoración.').waitFor();assert.equal(f.state.A.helpful, 1);
         await f.page.getByRole('button', { name: 'Ver mis minutos', exact: true }).click();await f.page.locator(`${guide}[data-journey="true"]`).waitFor({ state: 'attached' });await f.page.getByRole('button', { name: 'Ya lo tengo', exact: true }).click();
@@ -171,7 +164,7 @@ async function memory(page) { await page.getByRole('button', { name: 'Memoria y 
     });
     await check('Unavailable memory is distinguished from an empty profile', async () => {
       const f = await fixture(browser);try {
-        await f.open();f.state.unavailable = true;await f.page.getByRole('button', { name: 'Actualizar información de Leonaris' }).click();await f.page.waitForTimeout(350);await memory(f.page);
+        await f.open();f.state.unavailable = true;await f.page.getByRole('button', { name: 'Actualizar información de Atlas' }).click();await f.page.waitForTimeout(350);await memory(f.page);
         await f.page.getByText(/Esto no significa que tus recuerdos se hayan borrado/).waitFor();assert.equal(await f.page.getByText('Aún no has guardado ningún recuerdo.').count(), 0);
         assert.equal(await f.page.getByLabel('Activar memoria y personalización').count(), 0);
       } finally { await f.close(); }
@@ -188,7 +181,7 @@ async function memory(page) { await page.getByRole('button', { name: 'Memoria y 
     });
     await check('A delayed response from account A never appears after switching to account B', async () => {
       const f = await fixture(browser);try {
-        await f.open();f.state.holdChat = true;await f.page.getByLabel('¿En qué te ayudo?', { exact: true }).fill('Consulta privada de Ana');await f.page.getByRole('button', { name: 'Consultar a Leonaris' }).click();
+        await f.open();f.state.holdChat = true;await f.page.getByLabel('¿En qué te ayudo?', { exact: true }).fill('Consulta privada de Ana');await f.page.getByRole('button', { name: 'Consultar a Atlas' }).click();
         await f.page.waitForFunction(() => document.querySelector('#leonaris-question')?.disabled);while (!f.state.releaseChat) await f.page.waitForTimeout(20);
         await f.switchAccount();await f.page.getByText('Hola, Bea', { exact: true }).waitFor();assert.equal(await f.page.locator(panel).isVisible(), false);f.state.releaseChat();await f.page.waitForTimeout(250);
         await f.open();await memory(f.page);await f.page.getByText('Prefiero las explicaciones de Bea', { exact: true }).waitFor();assert.equal(await f.page.locator(guide).getByText(/Ana/).count(), 0);

@@ -30,18 +30,18 @@ async function recentHistory(ctx: AssistantContext) {
 // operational question must never hide the requested real-data lookup.
 function companionQuickAnswer(ctx: AssistantContext, question: string, tab: string, pet: PetId): AssistantResult | null {
   const normalized = normalizeText(question).replace(/[¿?¡!.,;:]/g, '').replace(/\s+/g, ' ').trim();
-  const q = normalized.replace(/^(?:sol|draco|ambar)\s+/, '').replace(/\s+(?:sol|draco|ambar)$/, '');
+  const q = normalized.replace(/^(?:atlas|sol|draco|ambar)\s+/, '').replace(/\s+(?:atlas|sol|draco|ambar)$/, '');
   const section = ASSISTANT_SECTIONS[safeTab(tab) ? tab : 'central'];
   const updatedAt = new Date().toISOString();
   const card = (target: string, title: string, detail: string): AssistantResult['cards'][number] => ({ id: `guide:${target}`, title, detail, tab: target, priority: 'info', source: 'Guía del panel' });
   const start = card('central', 'Empezar por el turno', 'Abre el inicio para revisar tus pendientes y elegir el siguiente paso.');
   if (/^(?:hola+|buenas|buenos dias|buenas tardes|buenas noches|ya estoy aqui|he vuelto|empezamos)(?:\s+(?:de nuevo|bro))?$/.test(q)) {
     const name = String(ctx.worker.display_name || '').trim().split(/\s+/)[0].slice(0, 40);
-    const opening = pet === 'ambar' ? 'Vamos paso a paso; te acompaño en este turno.' : pet === 'draco' ? 'Vamos a poner el turno en orden, con calma y buena mirada.' : 'Vamos con energía y sin prisas: una cosa cada vez.';
+    const opening = 'Vamos a poner orden en el turno: una cosa cada vez y los ojos bien abiertos.';
     return { text: `¡Hola${name ? `, ${name}` : ''}! Soy ${PETS[pet].name}. ${opening} ${section.help}`, cards: [start], updatedAt };
   }
   if (/^(?:muchas gracias|gracias(?: por (?:todo|la ayuda|ayudarme))?|te lo agradezco|perfecto|genial)$/.test(q)) {
-    return { text: pet === 'ambar' ? 'De nada. Cuando necesites el siguiente paso, aquí me tienes.' : '¡De nada! Seguimos a tu ritmo; dime con qué te ayudo ahora.', cards: [], updatedAt };
+    return { text: '¡De nada! Una cosa resuelta; dime con cuál seguimos.', cards: [], updatedAt };
   }
   if (/^(?:estoy|me siento) (?:muy |un poco )?(?:cansad[oa]|agobiad[oa]|nervios[oa]|frustrad[oa]|perdid[oa])$/.test(q)) {
     return { text: 'Vayamos con calma. Podemos elegir un solo pendiente y resolverlo paso a paso. Si te viene bien, haz una pausa breve; después retomamos lo importante.', cards: [start], updatedAt };
@@ -65,7 +65,7 @@ function companionQuickAnswer(ctx: AssistantContext, question: string, tab: stri
   return null;
 }
 
-export async function guidedAnswer(ctx: AssistantContext, question: string, tab: string, selectedClientId?: string, pet: PetId = 'sol'): Promise<AssistantResult> {
+export async function guidedAnswer(ctx: AssistantContext, question: string, tab: string, selectedClientId?: string, pet: PetId = 'atlas'): Promise<AssistantResult> {
   const quick = companionQuickAnswer(ctx, question, tab, pet);
   if (quick) return quick;
   const lookup = parseLookupRequest(question), updatedAt = new Date().toISOString(), normalized = normalizeText(question);

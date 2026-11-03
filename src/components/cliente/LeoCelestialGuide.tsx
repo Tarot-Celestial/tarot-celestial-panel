@@ -7,6 +7,7 @@ import { useRouletteSignal } from "@/hooks/useRouletteSignal";
 import { readRoulettePending, ROULETTE_PENDING_CHANGED } from "@/lib/roulette-pending";
 import { isLeoCelestialEventDetail, LEO_CELESTIAL_EVENT } from "@/lib/leo-celestial-events";
 import { emptyLeoSnapshot, leoAction, leoHelp, leoSection, leoSelector, leoSpins, validLeoAction, LEO_SELECT_ROULETTE, type LeoAction, type LeoSnapshot, type LeoTopic } from "@/lib/leo-guide";
+import AtlasPortrait from '@/components/atlas/AtlasPortrait';
 import { useLeonarisMotion } from "./useLeonarisMotion";
 import { clampLeonaris } from "@/lib/leonaris-motion";
 import type { LeoCompanion } from "@/lib/leonaris-companion";
@@ -39,7 +40,6 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
   const [chatBusy,setChatBusy] = useState(false), [saving,setSaving] = useState(false), [error,setError] = useState('');
   const [feedback,setFeedback] = useState<Record<string,boolean>>({}), [confirmForget,setConfirmForget] = useState(false);
   const [uid,setUid] = useState<string|null>(null), [ready,setReady] = useState(false);
-  const [spriteSheet,setSpriteSheet] = useState<'loading'|'v2'|'legacy'|'unavailable'>('loading'), [blinking,setBlinking] = useState(false);
   const [activity,setActivity] = useState(0);
   const abort = useRef<AbortController|null>(null), epoch = useRef(0), userRef = useRef<string|null>(null), readyRef = useRef(false);
   const accountEpoch = useRef(0), mutationEpoch = useRef(0), requests = useRef(new Set<AbortController>());
@@ -198,24 +198,9 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
     setTopic('context');setJourney(null);setPosition(null);setHighlight(null);setAnswer(null);setReaction(null);setError('');readyRef.current=false;
   },[pathname]);
   useEffect(()=>{
-    let disposed=false;
-    const image=new window.Image();image.decoding='async';
-    const legacy=()=>{if(disposed)return;image.onload=()=>{if(!disposed)setSpriteSheet('legacy');};image.onerror=()=>{if(!disposed)setSpriteSheet('unavailable');};image.src='/leonaris-sprites.png';};
-    image.onload=async()=>{try{await image.decode();if(!disposed)setSpriteSheet('v2');}catch{legacy();}};
-    image.onerror=legacy;image.src='/companions/leonaris-v2.png';
-    return()=>{disposed=true;image.onload=null;image.onerror=null;};
-  },[]);
-  useEffect(()=>{
     if(!visible||open||hidden)return;
     const timer=window.setTimeout(()=>setSleeping(true),60000);return()=>window.clearTimeout(timer);
   },[open,pathname,activity,visible,hidden]);
-  useEffect(()=>{
-    setBlinking(false);
-    if(spriteSheet!=='v2'||!ready||!motion||!visible||hidden||sleeping||chatBusy||waving||journey)return;
-    let timer:ReturnType<typeof setTimeout>,disposed=false;
-    const schedule=()=>{timer=setTimeout(()=>{if(disposed)return;setBlinking(true);timer=setTimeout(()=>{if(disposed)return;setBlinking(false);schedule();},160);},4600+Math.random()*3200);};
-    schedule();return()=>{disposed=true;clearTimeout(timer);};
-  },[spriteSheet,ready,motion,visible,hidden,sleeping,chatBusy,waving,journey]);
   useEffect(()=>{
     if(!open)return;
     const key=(event:KeyboardEvent)=>{if(event.key==='Escape'){setOpen(false);setJourney(null);focusReturn.current?.focus();}};
@@ -320,19 +305,19 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
     if(account===accountEpoch.current){if(result)setFeedback(current=>({...current,[id]:helpful}));setSaving(false);}
   }
   if(!ready||!uid)return null;
-  if(hidden)return <button type="button" className={styles.restore} disabled={saving} onClick={()=>void preferences({hidden:false}).then(result=>{if(result)show();})}><Compass size={17}/> Mostrar Leonaris</button>;
+  if(hidden)return <button type="button" className={styles.restore} disabled={saving} onClick={()=>void preferences({hidden:false}).then(result=>{if(result)show();})}><Compass size={17}/> Mostrar Atlas</button>;
   const walking=journey?.stage==='walking';
-  const pose=walking||pet.dragging?'walk':chatBusy&&spriteSheet==='v2'?'thinking':waving?'celebrate':journey?.stage==='arrived'?'point':sleeping&&!open&&!pet.playful?'sleep':blinking?'blink':spriteSheet==='v2'&&pet.lookDirection!=='front'?'look-'+pet.lookDirection:pet.playful?'point':'idle';
+  const pose=pet.dragging?'dragging':walking?'walking':chatBusy?'thinking':waving?'celebrating':journey?.stage==='arrived'||pet.playful?'pointing':sleeping&&!open?'sleeping':'idle';
   const currentAnswer=answer||help,restPosition=position||pet.position;
   const nearLeft=restPosition?restPosition.x<170:false,nearTop=restPosition?restPosition.y<160:false;
-  return <aside className={styles.guide} data-paused={!motion||!visible} data-journey={!!journey} aria-label="Leonaris, tu guía celestial">
+  return <aside className={styles.guide} data-paused={!motion||!visible} data-journey={!!journey} aria-label="Atlas, tu guía celestial">
     {highlight&&<div className={styles.highlight} style={highlight} aria-hidden="true"><span>✦ AQUÍ ES</span></div>}
-    {open&&<section ref={panelRef} tabIndex={-1} className={styles.panel} data-expanded={expanded} aria-label="Ayuda de Leonaris">
-      <header className={styles.header}><div className={styles.seal}><Sparkles size={19}/></div><div><strong>LEONARIS</strong><span>Tu guía celestial <i/></span></div><div className={styles.controls}>
+    {open&&<section ref={panelRef} tabIndex={-1} className={styles.panel} data-expanded={expanded} aria-label="Ayuda de Atlas">
+      <header className={styles.header}><div className={styles.seal}><Sparkles size={19}/></div><div><strong>ATLAS</strong><span>Tu guía celestial <i/></span></div><div className={styles.controls}>
         <button type="button" className={styles.resizeButton} onClick={()=>setExpanded(current=>!current)} aria-expanded={expanded} aria-label={expanded?"Reducir ayuda":"Ampliar ayuda"}>{expanded?"Reducir":"Ampliar"}</button>
         <button type="button" className={styles.memoryButton} onClick={()=>{setMemoryOpen(value=>!value);setJourney(null);setExpanded(true);setError('');}} aria-label="Memoria y preferencias" aria-pressed={memoryOpen} title="Memoria y preferencias"><Brain size={19}/></button>
-        <button type="button" disabled={saving} onClick={()=>void preferences({muted:!muted})} aria-label={muted?'Activar avisos de Leonaris':'Silenciar avisos de Leonaris'} aria-pressed={muted} title={muted?'Activar avisos':'Silenciar avisos'}>{muted?<BellOff size={18}/>:<Bell size={18}/>}</button>
-        <button type="button" disabled={saving} onClick={()=>void preferences({hidden:true})} aria-label="Ocultar Leonaris" title="Ocultar mascota"><EyeOff size={18}/></button>
+        <button type="button" disabled={saving} onClick={()=>void preferences({muted:!muted})} aria-label={muted?'Activar avisos de Atlas':'Silenciar avisos de Atlas'} aria-pressed={muted} title={muted?'Activar avisos':'Silenciar avisos'}>{muted?<BellOff size={18}/>:<Bell size={18}/>}</button>
+        <button type="button" disabled={saving} onClick={()=>void preferences({hidden:true})} aria-label="Ocultar Atlas" title="Ocultar Atlas"><EyeOff size={18}/></button>
         <button type="button" onClick={()=>{setOpen(false);setJourney(null);characterRef.current?.focus();}} aria-label="Cerrar ayuda"><X size={18}/></button>
       </div></header>
       <div className={styles.content}>
@@ -360,16 +345,16 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
         {!!companion.favoriteSections.length&&<div className={styles.favorites}><h3>Tus accesos habituales</h3>{companion.favoriteSections.map(favorite=>leoAction('favorite-'+favorite.context,favorite.label,favorite.path,'content','Vamos a esta sección.')).filter(validLeoAction).slice(0,3).map(action=><button key={action.id} type="button" onClick={()=>go(action)}>{action.label}<ArrowRight size={17}/></button>)}</div>}
         {confirmForget?<div className={styles.deleteConfirm}><p>¿Borrar los recuerdos y el aprendizaje guardado?</p><button type="button" disabled={saving} onClick={()=>void forget()}>Sí, borrar todo</button><button type="button" disabled={saving} onClick={()=>setConfirmForget(false)}>Cancelar</button></div>:<button type="button" className={styles.deleteMemory} disabled={saving} onClick={()=>setConfirmForget(true)}><Trash2 size={17}/> Borrar toda mi memoria</button>}
         </>}
-        <button type="button" className={styles.backButton} onClick={pet.resetPosition}><Compass size={17}/> Devolver a Leonaris a su esquina</button>
+        <button type="button" className={styles.backButton} onClick={pet.resetPosition}><Compass size={17}/> Devolver a Atlas a su esquina</button>
       </section>:journey?<div className={styles.journeyBody}>
-        <span className={styles.eyebrow}><Footprints size={13}/>{journey.tour?`PASO ${journey.index+1} DE ${tourSteps.length}`:'VAMOS JUNTAS'}</span>
+        <span className={styles.eyebrow}><Footprints size={13}/>{journey.tour?`PASO ${journey.index+1} DE ${tourSteps.length}`:'VAMOS JUNTOS'}</span>
         <h2>{journey.stage==='looking'?'Buscando tu recuadro…':journey.stage==='walking'?'Sígueme, es por aquí':journey.stage==='missing'?'Este recuadro no está disponible':journey.action.label}</h2>
         <p role="status">{journey.stage==='missing'?'Puede que esta sección todavía esté cargando o no tenga contenido para tu cuenta. Puedes actualizar la página o seguir explorando.':journey.action.explanation}</p>
         <div className={styles.journeyButtons}>{journey.tour&&journey.index>0&&<button onClick={()=>go(tourSteps[journey.index-1],true,journey.index-1)} aria-label="Paso anterior"><ChevronLeft size={17}/></button>}
           {journey.tour&&journey.index<tourSteps.length-1?<button className={styles.primary} onClick={()=>go(tourSteps[journey.index+1],true,journey.index+1)}>Siguiente <ArrowRight size={16}/></button>:<button className={styles.primary} onClick={()=>{setJourney(null);setOpen(false);}}>Ya lo tengo <Check size={16}/></button>}
           <button onClick={()=>setJourney(null)}>Terminar guía</button></div>
       </div>:<>
-        <div className={styles.context}><span><i/> ESTÁS EN {section.label.toUpperCase()}</span><button type="button" onClick={()=>void refresh()} disabled={loading} aria-label="Actualizar información de Leonaris"><RotateCw size={13} className={loading?styles.refreshing:''}/></button></div>
+        <div className={styles.context}><span><i/> ESTÁS EN {section.label.toUpperCase()}</span><button type="button" onClick={()=>void refresh()} disabled={loading} aria-label="Actualizar información de Atlas"><RotateCw size={13} className={loading?styles.refreshing:''}/></button></div>
         <div className={styles.topicGrid}>{TOPICS.map(([key,label])=><button key={key} type="button" data-active={!answer&&topic===key} onClick={()=>{setTopic(key);setAnswer(null);setReaction(null);if(Date.now()-data.updatedAt>15000)void refresh();}}>{label}</button>)}</div>
         <div className={styles.answer} aria-busy={loading||chatBusy} aria-live="polite">
           <span className={styles.eyebrow}><Sparkles size={14}/>{chatBusy?'PREPARANDO TU RESPUESTA':loading?'CONSULTANDO TU CUENTA':'UN PASO CADA VEZ'}</span>
@@ -380,17 +365,17 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
           {answer?.mode&&<div className={styles.feedback} aria-label="Valorar la respuesta"><span>{feedback[answer.id]!==undefined?'Gracias, tendré en cuenta tu valoración.':'¿Te ha servido?'}</span><button type="button" disabled={saving||feedback[answer.id]!==undefined} aria-pressed={feedback[answer.id]===true} onClick={()=>void rate(true)}><ThumbsUp size={16}/> Sí</button><button type="button" disabled={saving||feedback[answer.id]!==undefined} aria-pressed={feedback[answer.id]===false} onClick={()=>void rate(false)}><ThumbsDown size={16}/> Mejorable</button></div>}
         </div>
         <div className={styles.tools}><button type="button" onClick={()=>go(tourSteps[0],true,0)}><Footprints size={17}/> Guíame aquí</button><button type="button" onClick={()=>{setTopic('sections');setAnswer(null);}}><Compass size={17}/> Explorar panel</button></div>
-        <form className={styles.ask} onSubmit={ask}><label className={styles.srOnly} htmlFor="leonaris-question">¿En qué te ayudo?</label><input id="leonaris-question" value={question} onChange={e=>setQuestion(e.target.value)} maxLength={600} disabled={chatBusy} placeholder="¿En qué te ayudo?" autoComplete="off"/><button type="submit" disabled={!question.trim()||chatBusy} aria-label="Consultar a Leonaris"><Send size={18}/></button></form>
+        <form className={styles.ask} onSubmit={ask}><label className={styles.srOnly} htmlFor="leonaris-question">¿En qué te ayudo?</label><input id="leonaris-question" value={question} onChange={e=>setQuestion(e.target.value)} maxLength={600} disabled={chatBusy} placeholder="¿En qué te ayudo?" autoComplete="off"/><button type="submit" disabled={!question.trim()||chatBusy} aria-label="Consultar a Atlas"><Send size={18}/></button></form>
         <footer className={styles.footer}>Información de tu cuenta · {loading?'actualizando':data.updatedAt?'consulta '+new Date(data.updatedAt).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):'información pendiente'}{answer?.mode==='guided'&&<span>Respuesta guiada con los datos disponibles.</span>}</footer>
       </>}
       </div>
     </section>}
     <div ref={pet.companionRef} className={styles.companion} data-dragging={pet.dragging} data-playful={pet.playful} data-near-left={nearLeft} data-near-top={nearTop} style={restPosition?{left:restPosition.x,top:restPosition.y,right:'auto',bottom:'auto'}:undefined}>
       {!open&&!journey&&!muted&&!pet.dragging&&<button type="button" className={styles.teaser} style={restPosition?{position:'fixed',left:Math.max(8,Math.min(restPosition.x,window.innerWidth-288)),right:'auto',top:Math.max(8,Math.min(window.innerHeight-178,nearTop?restPosition.y+(pet.companionRef.current?.offsetHeight||170)+8:restPosition.y-160)),bottom:'auto'}:undefined} onClick={show}>{reaction?<><Gift size={18}/><span><strong>{reaction.title}</strong><small>{reaction.message}</small></span></>:<><MessageCircle size={18}/><span>{(data.pendingLevels?.length ?? (data.pending?1:0))?'Resultado por comprobar':usable?`${usable} giro${usable===1?'':'s'} · Te llevo`:'¿Te acompaño?'}</span></>}</button>}
-      <button ref={characterRef} type="button" className={styles.character} {...pet.characterHandlers} onClick={()=>{if(pet.consumeClick())return;wake();if(open){setOpen(false);setJourney(null);}else show();}} aria-label={open?'Minimizar ayuda de Leonaris':'Abrir ayuda de Leonaris'} aria-describedby="leonaris-move-help" aria-expanded={open}>
+      <button ref={characterRef} type="button" className={styles.character} {...pet.characterHandlers} onClick={()=>{if(pet.consumeClick())return;wake();if(open){setOpen(false);setJourney(null);}else show();}} aria-label={open?'Minimizar ayuda de Atlas':'Abrir ayuda de Atlas'} aria-describedby="leonaris-move-help" aria-expanded={open}>
         <span className={styles.floor} aria-hidden="true"/>
-        <span className={styles.look} aria-hidden="true">{spriteSheet==='unavailable'?<span className={styles.fallback}>🦁</span>:spriteSheet==='loading'?<span className={styles.loadingArt}/>:<span className={styles.sprite} data-sheet={spriteSheet} data-pose={pose}/>}</span>
-        <span className={styles.name}>LEONARIS <Sparkles size={9}/></span>
+        <span className={styles.look} aria-hidden="true"><AtlasPortrait state={pose} paused={!motion||!visible}/></span>
+        <span className={styles.name}>ATLAS <Sparkles size={9}/></span>
       </button>
     </div>
     <span id="leonaris-move-help" className={styles.srOnly}>Puedes arrastrarme para cambiarme de sitio. Con el teclado, usa las flechas para moverme y la tecla Inicio para volver a la esquina.</span>

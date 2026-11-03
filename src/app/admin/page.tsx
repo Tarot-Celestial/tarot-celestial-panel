@@ -277,6 +277,7 @@ function AdminPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [ok, setOk] = useState(false);
+  const [atlasWorkerId, setAtlasWorkerId] = useState<string | null>(null);
   const [accessError, setAccessError] = useState<string | null>(null);
   const [accessAttempt, setAccessAttempt] = useState(0);
   const atlasWatches = useAtlasWatches(ok);
@@ -514,6 +515,7 @@ function AdminPage() {
           window.location.replace(panelPathForRole(role));
           return;
         }
+        setAtlasWorkerId(typeof identity.id === 'string' ? identity.id : null);
         setOk(true);
       } catch (error) {
         if (!active) return;
@@ -1783,7 +1785,7 @@ function AdminPage() {
         <div className="tc-login-grid" />
       </div>
       <AppHeader />
-      {ok && <a href="/admin/companions" className="tc-btn" style={{display:'inline-block',margin:'12px 24px'}}>Sol y Draco · mascotas y conocimientos</a>}
+      {ok && <a href="/admin/companions" className="tc-btn" style={{display:'inline-block',margin:'12px 24px'}}>Atlas · identidad y conocimientos</a>}
       <ReservasGlobalWatcher advanceNotice enabled={ok} onGoToReserva={openReservaFromPopup} />
       <PaymentMotivationWatcher mode="admin" />
 
@@ -2945,7 +2947,7 @@ function AdminPage() {
       </main>
     </div>
 
-      {tab !== "atlas" && <AtlasLauncher alert={atlasWatchAlerts[0]} unreadCount={atlasWatchAlerts.length} stale={atlasWatches.stale} onOpen={() => { setAtlasOpenView(atlasWatchAlerts.length ? 'supervision' : 'chat'); setTab("atlas"); }} />}
+      {tab !== "atlas" && <AtlasLauncher workerId={atlasWorkerId} alert={atlasWatchAlerts[0]} unreadCount={atlasWatchAlerts.length} stale={atlasWatches.stale} onOpen={() => { setAtlasOpenView(atlasWatchAlerts.length ? 'supervision' : 'chat'); setTab("atlas"); }} />}
 
       {crmCloseNotif && (
         <div

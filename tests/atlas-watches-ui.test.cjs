@@ -113,11 +113,11 @@ test('watch card shows zero, keeps manual promotions separate, and acknowledgeme
 });
 
 test('the launcher makes a stale client alert accessible and opening it cannot mutate the watch', () => {
-  const { AtlasLauncher } = evaluate('src/features/admin/atlas/AtlasCharacter.tsx', { './Atlas.module.css': { default: styles }, './atlas-watch-types': shared });
+  const { AtlasLauncher } = require('./helpers/atlas-character.cjs')(evaluate, styles, shared);
   let tree, opened = 0;
   renderer.act(() => { tree = renderer.create(React.createElement(AtlasLauncher, { onOpen: () => opened++, alert: watch(), unreadCount: 1, stale: true })); });
-  const launcher = tree.root.findByType('button'); assert.match(launcher.props['aria-label'], /Clienta de prueba: 30 min · pendiente de actualizar/);
+  const launcher = tree.root.findAllByType('button').find(button=>String(button.props['aria-label']).startsWith('Abrir aviso')); assert.match(launcher.props['aria-label'], /Clienta de prueba: 30 min · pendiente de actualizar/);
   renderer.act(() => launcher.props.onClick()); assert.equal(opened, 1);
-  const image = tree.root.findByType('img'); assert.equal(image.props.alt, ''); assert.equal(image.props.src, '/companions/atlas-celestial-v2.webp');
+  const image = tree.root.findByType('img'); assert.equal(image.props.alt, ''); assert.equal(image.props.src, '/companions/atlas-universal-v1.png');
   renderer.act(() => tree.unmount());
 });
