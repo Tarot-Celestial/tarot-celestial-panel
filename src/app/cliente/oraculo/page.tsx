@@ -44,16 +44,17 @@ export default function ClienteOraculoPage() {
   const [questionState, setQuestionState] = useState<QuestionState>(EMPTY_QUESTIONS), [messages, setMessages] = useState<ChatMessage[]>([]);
   const [history, setHistory] = useState<HistoryRow[]>([]), [historyOpen, setHistoryOpen] = useState(false), [motion, setMotion] = useState(true);
   const [pendingCheckoutUrl, setPendingCheckoutUrl] = useState<string | null>(null);
-  const locked = useRef(false), alive = useRef(true), generation = useRef(0), owner = useRef<string | null>(null), currentDraw = useRef('');
+  const locked = useRef(false), alive = useRef(true), generation = useRef(0), owner = useRef<string | null>(null), currentDraw = useRef(''), loadSequence = useRef(0);
   const spread = ORACLE_SPREAD_BY_ID[mode] || ORACLE_SPREADS[0];
   const activeCard = cards[selected] || cards[0];
   const reading = activeCard?.interpretation || draw?.message || '';
   const voice = useOracleNarration(stage === 'result' ? [activeCard?.position, activeCard?.cardName, reading, activeCard?.advice].filter(Boolean).join('. ') : '');
 
   async function request(body?: Record<string, unknown>, id = '') {
-    const { data } = await sb.auth.getSession();
-    if (!data.session) { window.location.href = clientLoginHref('oraculo', window.location.search); throw new Error('Tu sesión ha caducado.'); }
     const epoch = generation.current;
+    const { data } = await sb.auth.getSession();
+    if (!alive.current || epoch !== generation.current) throw new Error('SESSION_CHANGED');
+    if (!data.session) { window.location.href = clientLoginHref('oraculo', window.location.search); throw new Error('Tu sesión ha caducado.'); }
     const response = await fetch('/api/cliente/oraculo' + (id ? `?drawId=${encodeURIComponent(id)}` : ''), { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${data.session.access_token}`, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}), cache: 'no-store', signal: AbortSignal.timeout(25000) });
     const json = await response.json();
     if (!alive.current || epoch !== generation.current) throw new Error('SESSION_CHANGED');
@@ -68,26 +69,27 @@ export default function ClienteOraculoPage() {
   }
   function showSession(s: Session) { setSession(s); setMode(s.drawType); setTopic(ORACLE_SPREAD_BY_ID[s.drawType]?.topic || 'general'); setCards(s.cards || []); setShuffleId(s.shuffleId); setInitialQuestion(s.question); setStage('select'); setSelected(0); }
   async function load(id = '') {
-    try { setLoading(true); setError(''); const j = await request(undefined, id) as Snapshot; balances(j); setMessages(j.mensajes || []); setHistory(j.history || []);
+    const sequence = ++loadSequence.current;
+    try { setLoading(true); setError(''); const j = await request(undefined, id) as Snapshot; if (sequence !== loadSequence.current) return; balances(j); setMessages(j.mensajes || []); setHistory(j.history || []);
       if (id && !j.latestDraw) throw new Error('No se ha encontrado esta lectura.');
       if (j.activeSession && !id) showSession(j.activeSession);
       else if (j.latestDraw) showDraw(j.latestDraw);
       else { currentDraw.current = ''; setDraw(null); setCards([]); setStage('ready'); setMode(j.freeAvailable ? 'free_daily' : 'clarity'); }
-    } catch(e) { report(e); } finally { if(alive.current) setLoading(false); }
+    } catch(e) { if(sequence === loadSequence.current) report(e); } finally { if(alive.current && sequence === loadSequence.current) setLoading(false); }
   }
   function report(e: unknown) { if(alive.current && (e as Error)?.message !== 'SESSION_CHANGED') setError((e as Error)?.name === 'TimeoutError' ? 'La conexión ha tardado demasiado. Recupera el estado: tu lectura puede haberse guardado.' : (e as Error)?.message || 'No se pudo completar la consulta.'); }
   async function run(label: string, action: () => Promise<void>) {
-    if(locked.current) return; locked.current = true; setBusy(label); setError('');
-    try { await action(); } catch(e) { report(e); } finally { locked.current = false; if(alive.current) setBusy(''); }
+    if(locked.current) return; const epoch = generation.current; locked.current = true; setBusy(label); setError('');
+    try { await action(); } catch(e) { report(e); } finally { if(epoch === generation.current) { locked.current = false; if(alive.current) setBusy(''); } }
   }
   useEffect(() => {
     alive.current = true; void load();
     const { data } = sb.auth.onAuthStateChange((_event, s) => {
       const id = s?.user.id || null;
-      if(owner.current !== null && owner.current !== id) { ++generation.current; currentDraw.current = ''; setDraw(null); setCards([]); setMessages([]); setHistory([]); setQuestion(''); setInitialQuestion(''); setPendingCheckoutUrl(null); setCredits(0); setQuestionState(EMPTY_QUESTIONS); window.setTimeout(() => { if(alive.current) void load(); }, 0); }
+      if(owner.current !== null && owner.current !== id) { ++generation.current; ++loadSequence.current; locked.current = false; setBusy(''); currentDraw.current = ''; setDraw(null); setCards([]); setMessages([]); setHistory([]); setQuestion(''); setInitialQuestion(''); setPendingCheckoutUrl(null); setCredits(0); setQuestionState(EMPTY_QUESTIONS); window.setTimeout(() => { if(alive.current) void load(); }, 0); }
       owner.current = id;
     });
-    const refresh = async () => { if(locked.current || document.hidden) return; try { const j = await request(undefined, currentDraw.current); balances(j); } catch { /* Keep last verified balance; a visible retry remains available. */ } };
+    const refresh = async () => { if(locked.current || document.hidden) return; try { const drawId = currentDraw.current; const j = await request(undefined, drawId); if(drawId === currentDraw.current) balances(j); } catch { /* Keep last verified balance; a visible retry remains available. */ } };
     const timer = window.setInterval(refresh, 30000); window.addEventListener('focus', refresh);
     return () => { alive.current = false; ++generation.current; data.subscription.unsubscribe(); window.clearInterval(timer); window.removeEventListener('focus', refresh); };
   }, []);
@@ -115,8 +117,8 @@ export default function ClienteOraculoPage() {
   async function complete() { if(session) await run('Completando lectura…', async () => { const j = await request({ action: 'premium_retry', drawKey: session.drawKey }); showDraw(j.draw); const saved = await request(undefined, j.draw.id); balances(saved); setMessages(saved.mensajes || []); setHistory(saved.history || []); }); }
   async function ask() { if(!draw || !question.trim()) return; await run('Consultando el Oráculo…', async () => { const j = await request({ action: 'question', drawId: draw.id, pregunta: question.trim() }); setMessages(j.mensajes || []); setQuestionState(j.questionState); setQuestion(''); }); }
   async function buyQuestions() { await run('Preparando pago…', async () => {
-    setPendingCheckoutUrl(null); const { data } = await sb.auth.getSession(); if(!data.session) throw new Error('Vuelve a iniciar sesión para comprar.');
-    const epoch = generation.current; const isCurrent = () => alive.current && epoch === generation.current;
+    const epoch = generation.current; setPendingCheckoutUrl(null); const { data } = await sb.auth.getSession(); if(epoch !== generation.current) throw new Error('SESSION_CHANGED'); if(!data.session) throw new Error('Vuelve a iniciar sesión para comprar.');
+    const isCurrent = () => alive.current && epoch === generation.current;
     try { const url = await prepareClientPurchase({ auth: sb.auth, session: data.session, packId: 'oracle_questions_3', isCurrent }); if(url && isCurrent()) window.location.href = url; }
     catch(e) { if(isCurrent() && e instanceof ClientPurchaseError) setPendingCheckoutUrl(e.pendingUrl || null); throw e; }
   }); }
