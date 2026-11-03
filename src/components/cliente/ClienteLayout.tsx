@@ -36,6 +36,7 @@ type Props = {
   subtitle?: string;
   eyebrow?: string;
   summaryItems?: SummaryItem[];
+  immersive?: boolean;
   children: ReactNode;
 };
 
@@ -124,7 +125,7 @@ function SummaryIcon({ label, tone }: { label: string; tone: NonNullable<Summary
   return <HologramIcon tone={tone}><Sparkles size={25} /></HologramIcon>;
 }
 
-export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celestial", summaryItems = [], children }: Props) {
+export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celestial", summaryItems = [], immersive = false, children }: Props) {
   const pathname = usePathname();
   const { rank: panelRank, ritualAccess } = useClientPanelState();
   const router = useRouter();
@@ -276,7 +277,7 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
         <Link href="/cliente/dashboard" className={universeStyles.brand}><Image src="/Nuevo-logo-tarot.png" alt="" width={34} height={34}/><span>TAROT CELESTIAL</span></Link>
         <ClienteNavigation pathname={pathname} promoActive={promoActive} ritualAccess={ritualAccess} unreadNotifications={unreadNotifications} onLogout={logout}/>
       </header>
-      {!isHome && <section className={universeStyles.intro}><span>{eyebrow} · {destination.name}</span><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</section>}
+      {!isHome && !immersive && <section className={universeStyles.intro}><span>{eyebrow} · {destination.name}</span><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</section>}
       {!isHome && summaryItems.length>0 && <div className={universeStyles.summary}>{summaryItems.map(item=><div key={item.label}><small>{item.label}</small><strong>{item.value}</strong>{item.meta && <p>{item.meta}</p>}</div>)}</div>}
       <main data-leo-anchor="page-content" data-leo-page={pathname}>{children}</main>
       <footer className={universeStyles.footer}>Tarot Celestial <span>✦</span> Tu espacio personal · {destination.name} <a href="/images/universe/surfaces/CREDITS.txt" target="_blank" rel="noopener noreferrer">Créditos del universo</a></footer>

@@ -1,0 +1,12 @@
+Tarot Celestial · Sala de consulta
+
+Guía virtual: personaje ficticio e imagen original generada con image_gen para este proyecto, noviembre de 2026. No representa a una persona atendiendo en directo. Animaciones de cartas y transiciones realizadas en la interfaz. La narración utiliza únicamente una voz española local del dispositivo cuando está disponible.
+
+Baraja: Rider–Waite–Smith, ilustraciones históricas de Pamela Colman Smith para Arthur Edward Waite. Imágenes servidas desde Wikimedia Commons, con enlace individual accesible en cada URL de imagen. Se mantiene la colección histórica ya utilizada por el panel y se añaden los 56 arcanos menores.
+https://commons.wikimedia.org/wiki/Category:Rider-Waite-Smith_tarot_deck
+https://commons.wikimedia.org/wiki/File:Cups01.jpg
+https://commons.wikimedia.org/wiki/Category:Coins_(Minor_Arcana)
+https://commons.wikimedia.org/wiki/Category:Swords_(Minor_Arcana)
+https://commons.wikimedia.org/wiki/Category:Wands_(Minor_Arcana)
+
+Los textos nuevos son síntesis editoriales originales sobre simbolismo tradicional. No son extractos de manuales comerciales ni lecturas proporcionadas por los complementos Astera, Daily Tarot o Steer Astro. No se mide energía ni se ofrecen certezas sobre hechos futuros.

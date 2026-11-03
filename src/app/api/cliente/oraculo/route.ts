@@ -1,8 +1,9 @@
 import { randomUUID } from "crypto";
+import { ORACLE_SPREAD_BY_ID } from "@/lib/oracle-catalog";
 import { NextResponse } from "next/server";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
 import { getOracleCreditBalance, ORACLE_PACKS } from "@/lib/server/oracle-premium";
-import { consumeOracleQuestion, getOracleQuestionBalance, ORACLE_QUESTION_PACK } from "@/lib/server/oracle-questions";
+import { getOracleQuestionBalance, ORACLE_QUESTION_PACK } from "@/lib/server/oracle-questions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { classifyBrainIncident, recordBrainIncident } from "@/lib/server/brain-observability";
 import {
@@ -18,15 +19,7 @@ import {
 export const runtime = "nodejs";
 const SECRET_PRIZE_CAMPAIGN = "secreto_celestial_2026_08_31";
 
-const SPREADS: Record<string, { label: string; topic: "general" | "amor" | "dinero" | "energia"; positions: string[] }> = {
-  daily: { label: "Carta del día", topic: "general", positions: ["Mensaje"] },
-  yes_no: { label: "Tirada Sí o No", topic: "general", positions: ["Respuesta"] },
-  choice: { label: "Tirada de Elección", topic: "general", positions: ["Camino A", "Camino B", "Consejo"] },
-  love: { label: "Tirada del Amor", topic: "amor", positions: ["Situación actual", "Energía afectiva", "Consejo"] },
-  relationships: { label: "Tirada de Relaciones", topic: "amor", positions: ["Situación actual", "Fortaleza", "Obstáculo", "Consejo", "Respuesta"] },
-  question: { label: "Tirada de Pregunta", topic: "general", positions: ["Situación actual", "Consejo", "Respuesta"] },
-  monthly: { label: "Tirada Mensual", topic: "general", positions: ["Amor", "Trabajo", "Dinero", "Bienestar"] },
-};
+const SPREADS = ORACLE_SPREAD_BY_ID;
 
 function madridDateKey(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
@@ -44,10 +37,12 @@ function serializeDraw(row: Record<string, any> | null) {
   };
 }
 
-async function getLatestDraw(admin: any, clientId: string) {
-  const { data, error } = await admin.from("cliente_oraculo_diario")
+async function getLatestDraw(admin: any, clientId: string, drawId?: string) {
+  let query = admin.from("cliente_oraculo_diario")
     .select("id,fecha,tema,titulo,prediccion,energia,cierre,created_at,card_id,card_name,card_image,keyword,advice,reading_short,is_free,revealed_at,selected_position,draw_type,question,context,cards_json,conclusion,credit_consumed,included_question_used_at")
-    .eq("cliente_id", clientId).not("card_id", "is", null).order("revealed_at", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    .eq("cliente_id", clientId).not("card_id", "is", null).order("revealed_at", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false }).limit(1);
+  if(drawId) query=query.eq("id",drawId);
+  const {data,error}=await query.maybeSingle();
   if (error) throw error;
   return data || null;
 }
@@ -79,7 +74,7 @@ async function loadMessages(admin: any, clientId: string, draw: Record<string, a
     .eq("cliente_id", clientId).eq("draw_id", String(draw.id)).order("created_at", { ascending: true }).limit(40);
   if (!byDraw.error && Array.isArray(byDraw.data) && byDraw.data.length) return byDraw.data;
   const legacy = await admin.from("cliente_oraculo_mensajes").select("id, role, contenido, created_at")
-    .eq("cliente_id", clientId).eq("fecha", String(draw.fecha || "")).eq("tema", String(draw.tema || "general")).order("created_at", { ascending: true }).limit(30);
+    .eq("cliente_id", clientId).is("draw_id",null).eq("fecha", String(draw.fecha || "")).eq("tema", String(draw.tema || "general")).order("created_at", { ascending: true }).limit(30);
   if (legacy.error) throw legacy.error;
   return legacy.data || [];
 }
@@ -128,11 +123,15 @@ export async function GET(req: Request) {
   try {
     const gate = await clientFromRequest(req);
     if (!gate.uid || !gate.cliente) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-    const [latestDraw, freeState, credits, activeSession, secretPrize] = await Promise.all([
-      getLatestDraw(gate.admin, gate.cliente.id), getFreeDrawState(gate.admin, gate.cliente.id), getOracleCreditBalance(gate.admin, gate.cliente.id), getActivePremiumSession(gate.admin, gate.cliente.id), getSecretPrizeState(gate.admin, gate.cliente.id),
+    const requestedId = new URL(req.url).searchParams.get("drawId") || "";
+    if(requestedId && !/^[0-9a-f-]{36}$/i.test(requestedId)) return NextResponse.json({ok:false,error:"INVALID_DRAW_ID"},{status:400});
+    const historyPromise = gate.admin.from("cliente_oraculo_diario").select("id,card_name,titulo,draw_type,is_free,revealed_at,created_at").eq("cliente_id",gate.cliente.id).not("card_id","is",null).order("created_at",{ascending:false}).limit(30);
+    const [historyResult, latestDraw, freeState, credits, activeSession, secretPrize] = await Promise.all([
+      historyPromise, getLatestDraw(gate.admin, gate.cliente.id, requestedId), getFreeDrawState(gate.admin, gate.cliente.id), getOracleCreditBalance(gate.admin, gate.cliente.id), getActivePremiumSession(gate.admin, gate.cliente.id), getSecretPrizeState(gate.admin, gate.cliente.id),
     ]);
+    if(historyResult.error) throw historyResult.error;
     const [messages, questionState] = await Promise.all([loadMessages(gate.admin, gate.cliente.id, latestDraw), getQuestionState(gate.admin, gate.cliente.id, latestDraw)]);
-    return NextResponse.json({ ok: true, freeAvailable: freeState.available, freeDailyAvailable: freeState.available, freeState, premiumCredits: credits, totalAvailable: credits + (freeState.available ? 1 : 0), creditsConfigured: true, credits, packs: ORACLE_PACKS, questionPack: ORACLE_QUESTION_PACK, questionState, latestDraw: serializeDraw(latestDraw), activeSession: serializeSession(activeSession), mensajes: messages, deckSize: TAROT_CARDS.length, secretPrize });
+    return NextResponse.json({ ok: true, freeAvailable: freeState.available, freeDailyAvailable: freeState.available, freeState, premiumCredits: credits, totalAvailable: credits + (freeState.available ? 1 : 0), creditsConfigured: true, credits, packs: ORACLE_PACKS, questionPack: ORACLE_QUESTION_PACK, questionState, latestDraw: serializeDraw(latestDraw), activeSession: serializeSession(activeSession), mensajes: messages, history: historyResult.data || [], deckSize: TAROT_CARDS.length, secretPrize });
   } catch (error: any) {
     console.error("[cliente/oraculo][GET]", { code: error?.code, message: error?.message, details: error?.details, hint: error?.hint });
     await recordBrainIncident(
@@ -231,7 +230,7 @@ export async function POST(req: Request) {
       if(existing) return NextResponse.json({ok:true,resumed:true,session:serializeSession(existing),credits:await getOracleCreditBalance(gate.admin,gate.cliente.id)});
       const creditsBefore=await getOracleCreditBalance(gate.admin,gate.cliente.id); if(creditsBefore<1)return NextResponse.json({ok:false,error:"NO_ORACLE_CREDITS"},{status:409});
       const drawKey=randomUUID(), shuffleId=randomUUID();
-      const reserved=await gate.admin.rpc("reserve_cliente_oracle_draw",{p_cliente_id:gate.cliente.id,p_draw_key:drawKey,p_draw_type:drawType,p_shuffle_id:shuffleId,p_question:question,p_context:context,p_required_cards:spread.positions.length,p_notes:`Reserva tirada premium · ${spread.label}`});
+      const reserved=await gate.admin.rpc("reserve_cliente_oracle_draw_v2",{p_cliente_id:gate.cliente.id,p_draw_key:drawKey,p_draw_type:drawType,p_shuffle_id:shuffleId,p_question:question,p_context:context,p_required_cards:spread.positions.length,p_notes:`Reserva tirada premium · ${spread.label}`});
       if(reserved.error) throw reserved.error; const payload=reserved.data||{};
       return NextResponse.json({ok:true,resumed:Boolean(payload.resumed),session:serializeSession(payload.session),credits:Number(payload.balance||0)});
     }
@@ -261,10 +260,10 @@ export async function POST(req: Request) {
       if(pickIndex>=spread.positions.length)return NextResponse.json({ok:false,error:"DRAW_READY_TO_COMPLETE"},{status:409});
       if(cards.some((c:any)=>Number(c.selectedPosition)===position))return NextResponse.json({ok:false,error:"CARD_ALREADY_SELECTED"},{status:409});
       const secret=process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY||"oracle";
-      const card=resolveTarotSpreadCard({clientId:gate.cliente.id,shuffleId:String(session.shuffle_id),position,pickIndex,topic:spread.topic,secret});
+      const card=resolveTarotSpreadCard({clientId:gate.cliente.id,shuffleId:String(session.shuffle_id),position,pickIndex,topic:spread.topic,secret,excludedCardIds:cards.map((c:any)=>String(c.cardId))});
       const positionLabel=spread.positions[pickIndex]; const interpretation=buildPositionReading({card,topic:spread.topic,position:positionLabel,question:String(session.question||""),context:String(session.context||"")});
       const cardResult={position:positionLabel,cardId:card.id,cardName:card.name,cardImage:card.image,keyword:card.keyword,advice:card.advice,interpretation,selectedPosition:position}; cards=[...cards,cardResult];
-      const saved=await gate.admin.from("cliente_oracle_draw_sessions").update({cards_json:cards,status:"in_progress",updated_at:new Date().toISOString()}).eq("id",session.id).eq("cliente_id",gate.cliente.id).select("id").single(); if(saved.error)throw saved.error;
+      const saved=await gate.admin.from("cliente_oracle_draw_sessions").update({cards_json:cards,status:"in_progress",updated_at:new Date().toISOString()}).eq("id",session.id).eq("cliente_id",gate.cliente.id).eq("updated_at",session.updated_at).select("id").maybeSingle(); if(saved.error)throw saved.error; if(!saved.data)return NextResponse.json({ok:false,error:"DRAW_CHANGED",message:"La tirada cambió en otra pestaña. Recarga para recuperar las cartas guardadas."},{status:409});
       const credits=await getOracleCreditBalance(gate.admin,gate.cliente.id);
       if(cards.length<spread.positions.length)return NextResponse.json({ok:true,card:cardResult,completed:false,session:{...serializeSession(session),cards},credits});
       const conclusion=`La tirada ${spread.label} reúne una energía centrada en ${cards.map((item:any)=>item.keyword||item.cardName).slice(0,3).join(", ")}. ${card.advice}`; const nowIso=new Date().toISOString();
@@ -277,29 +276,22 @@ export async function POST(req: Request) {
     const pregunta = String(body.pregunta || "").trim().slice(0, 500);
     const requestedDrawId = String(body.drawId || "").trim();
     if (!pregunta) return NextResponse.json({ ok: false, error: "PREGUNTA_REQUIRED" }, { status: 400 });
-    const latestDraw = await getLatestDraw(gate.admin, gate.cliente.id);
-    if (!latestDraw?.card_id || (requestedDrawId && requestedDrawId !== String(latestDraw.id))) return NextResponse.json({ ok: false, error: "DRAW_REQUIRED", message: "No hemos encontrado la tirada activa." }, { status: 409 });
+    const latestDraw = await getLatestDraw(gate.admin, gate.cliente.id, requestedDrawId);
+    if (!latestDraw?.card_id) return NextResponse.json({ ok: false, error: "DRAW_REQUIRED", message: "No hemos encontrado la tirada activa." }, { status: 409 });
     const card = TAROT_CARDS.find((item) => item.id === String(latestDraw.card_id));
     if (!card) return NextResponse.json({ ok: false, error: "CARD_NOT_FOUND" }, { status: 500 });
     const history = await loadMessages(gate.admin, gate.cliente.id, latestDraw);
-    let consumed;
-    try { consumed = await consumeOracleQuestion(gate.admin, { clienteId: gate.cliente.id, drawId: String(latestDraw.id) }); }
-    catch (consumeError: any) {
-      if (/NO_ORACLE_QUESTIONS/i.test(String(consumeError?.message || ""))) {
+    const tema = normalizeOracleTopic(latestDraw.tema);
+    const generatedAnswer = answerTarotFollowup({ question: pregunta, topic: tema, card, reading: String(latestDraw.reading_short || latestDraw.prediccion || ""), cards: Array.isArray(latestDraw.cards_json) ? latestDraw.cards_json : [], initialQuestion: String(latestDraw.question || ""), context: String(latestDraw.context || ""), history });
+    const savedAnswer = await gate.admin.rpc("tc_oracle_answer_question", { p_cliente_id: gate.cliente.id, p_draw_id: String(latestDraw.id), p_question: pregunta, p_answer: generatedAnswer });
+    if (savedAnswer.error) {
+      if (/NO_ORACLE_QUESTIONS/i.test(String(savedAnswer.error.message || ""))) {
         return NextResponse.json({ ok: false, error: "NO_ORACLE_QUESTIONS", message: "Has utilizado las preguntas disponibles para esta tirada.", questionState: await getQuestionState(gate.admin, gate.cliente.id, latestDraw) }, { status: 409 });
       }
-      throw consumeError;
+      throw savedAnswer.error;
     }
-    const tema = normalizeOracleTopic(latestDraw.tema);
-    const respuesta = answerTarotFollowup({ question: pregunta, topic: tema, card, reading: String(latestDraw.reading_short || latestDraw.prediccion || ""), cards: Array.isArray(latestDraw.cards_json) ? latestDraw.cards_json : [], initialQuestion: String(latestDraw.question || ""), context: String(latestDraw.context || ""), history });
-    const fecha = String(latestDraw.fecha || madridDateKey());
-    const nowIso = new Date().toISOString();
-    const orderBase = Date.now() * 10;
-    const insertUser = await gate.admin.from("cliente_oraculo_mensajes").insert({ cliente_id: gate.cliente.id, draw_id: String(latestDraw.id), fecha, tema, role: "user", contenido: pregunta, question_source: consumed.source, message_order: orderBase, created_at: nowIso });
-    if (insertUser.error) throw insertUser.error;
-    const insertAssistant = await gate.admin.from("cliente_oraculo_mensajes").insert({ cliente_id: gate.cliente.id, draw_id: String(latestDraw.id), fecha, tema, role: "assistant", contenido: respuesta, question_source: consumed.source, message_order: orderBase + 1, created_at: new Date(Date.now() + 1).toISOString() });
-    if (insertAssistant.error) throw insertAssistant.error;
-    const freshDraw = await getLatestDraw(gate.admin, gate.cliente.id);
+    const respuesta = String(savedAnswer.data?.answer || generatedAnswer);
+    const freshDraw = await getLatestDraw(gate.admin, gate.cliente.id, String(latestDraw.id));
     return NextResponse.json({ ok: true, respuesta, mensajes: await loadMessages(gate.admin, gate.cliente.id, freshDraw), questionState: await getQuestionState(gate.admin, gate.cliente.id, freshDraw) });
   } catch (error: any) {
     console.error("[cliente/oraculo][POST]", { code: error?.code, message: error?.message, details: error?.details, hint: error?.hint });
