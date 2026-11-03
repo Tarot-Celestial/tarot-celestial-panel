@@ -4,7 +4,7 @@ import { rouletteStaff } from "@/lib/server/ruleta-access";
 import { CLIENTE_MINUTE_PACKS, getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
 import { splitMinutes } from "@/lib/server/cliente-platform";
 import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
-import { PAYPAL_TABLE, PayPalError, paypalConfig, paypalConfigForAttempt, paypalRequest, approvalUrl, reconcilePayPal, testPayPalConnection, cancelPayPalLink, paypalAccountForAttempt, validateOrder } from "@/lib/server/paypal-crm";
+import { PAYPAL_TABLE, PayPalError, paypalConfig, paypalConfigForAttempt, paypalRequest, approvalUrl, reconcilePayPal, testPayPalConnection, cancelPayPalLink, paypalAccountForAttempt, validateOrder, preparePayPalCrmReplacement } from "@/lib/server/paypal-crm";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
@@ -108,13 +108,16 @@ export async function POST(req: Request) {
         shipping_preference: "NO_SHIPPING",
         return_url: `${config.origin}/pago-paypal?ref=${token}`, cancel_url: `${config.origin}/pago-paypal?ref=${token}&cancel=1`,
       } } } };
-      const inserted = await admin.rpc("tc_create_paypal_crm_attempt", { p_attempt: {
+      const previous = await preparePayPalCrmReplacement(admin, { clientId: client.id, environment: config.environment, workerId: worker.id, isAdmin: worker.role === "admin" });
+      const inserted = await admin.rpc("tc_replace_paypal_crm_attempt", { p_previous: previous, p_is_admin: worker.role === "admin", p_attempt: {
         id, cliente_id: client.id, worker_id: worker.id, environment: config.environment,
         public_token: token, amount, currency: "EUR", pack_id: body.pack_id,
         pack_name: pack?.nombre || "Importe personalizado", purchase_payload: payload, create_payload: createPayload,
       } });
       if (inserted.error) {
-        if (inserted.error.message?.includes("PAYPAL_PENDING_COLLECTION")) throw new PayPalError("Esta clienta ya tiene un cobro pendiente. Abre el historial de ambas cuentas y comprueba o cancela ese enlace antes de crear otro.", 409);
+        if (/PAYPAL_REPLACEMENT_CHANGED|PAYPAL_PENDING_COLLECTION/.test(inserted.error.message || "")) throw new PayPalError("El cobro cambió mientras se preparaba el enlace. Vuelve a pulsar Crear para comprobarlo y continuar sin duplicarlo.", 409);
+        if (/PAYPAL_REPLACEMENT_PROCESSING/.test(inserted.error.message || "")) throw new PayPalError("El pago anterior ya está cobrado o procesándose. Comprueba su estado antes de solicitar otro cobro.", 409);
+        if (/PAYPAL_REPLACEMENT_FORBIDDEN/.test(inserted.error.message || "")) throw new PayPalError("Administración debe revisar el enlace creado por otra central.", 403);
         throw inserted.error;
       }
       attempt = inserted.data;
@@ -139,6 +142,6 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ ok: true, attempt_id: attempt.id, url: attempt.approval_url, payment_id: attempt.order_id,
       amount: Number(attempt.amount), currency: attempt.currency, status: attempt.status, remote_status: attempt.remote_status,
-      pack: pack ? publicPack(pack) : null, manual: !pack, paypal_account: account }, { headers });
+      pack: pack ? publicPack(pack) : null, manual: !pack, paypal_account: account, replaced_count: Number(attempt.purchase_payload?.replaced_count || 0), replaced_attempt_ids: attempt.purchase_payload?.replaces_attempt_ids || [] }, { headers });
   } catch (error) { return fail(error); }
 }

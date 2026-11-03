@@ -1,12 +1,12 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),ts=require('typescript');
 function harness(){
- const row={id:'A',order_id:'ORDER',status:'pending',remote_status:'APPROVED',environment:'sandbox',amount:12,currency:'EUR',create_payload:{payment_source:{card:{}}},last_error:null};
+ const row={cliente_id:'C',worker_id:'W',checkout_kind:'crm_collection',id:'A',order_id:'ORDER',status:'pending',remote_status:'APPROVED',environment:'sandbox',amount:12,currency:'EUR',create_payload:{payment_source:{card:{}}},last_error:null};
  const order={id:'ORDER',status:'APPROVED',intent:'CAPTURE',payment_source:{card:{}},purchase_units:[{custom_id:'A',invoice_id:'TC-A',amount:{currency_code:'EUR',value:'12.00'}}]};
  let captures=0,credits=0,holdCapture=null,captureError=null,orderError=null,beforeCancel=null;
  const admin={rpc:async()=>{credits++;row.status='completed';row.remote_status='CAPTURE_COMPLETED';return {error:null};},from:()=>{
-  const filters=[];let patch;const q={select:()=>q,eq:(k,v)=>{filters.push(r=>r[k]===v);return q;},neq:(k,v)=>{filters.push(r=>r[k]!==v);return q;},update:p=>{patch=p;return q;},single:()=>q,maybeSingle:()=>q,
-  then:resolve=>{if(patch?.remote_status==='CANCELLED_BY_STAFF'&&beforeCancel)beforeCancel();const match=filters.every(f=>f(row));if(match&&patch)Object.assign(row,patch);return Promise.resolve({data:match?{...row}:null,error:null}).then(resolve)}};return q;}};
+  const filters=[];let patch,one=false;const q={select:()=>q,eq:(k,v)=>{filters.push(r=>r[k]===v);return q;},neq:(k,v)=>{filters.push(r=>r[k]!==v);return q;},update:p=>{patch=p;return q;},single:()=>{one=true;return q;},maybeSingle:()=>{one=true;return q;},
+  then:resolve=>{if(patch?.remote_status==='CANCELLED_BY_STAFF'&&beforeCancel)beforeCancel();const match=filters.every(f=>f(row));if(match&&patch)Object.assign(row,patch);return Promise.resolve({data:one?(match?{...row}:null):(match?[{...row}]:[]),error:null}).then(resolve)}};return q;}};
  const fetch=async(url)=>{
   if(url.endsWith('/token'))return {ok:true,json:async()=>({access_token:'token'})};
   if(url.endsWith('/capture')){captures++;if(holdCapture)await holdCapture;if(captureError)return {ok:false,status:422,json:async()=>captureError};order.status='COMPLETED';order.purchase_units[0].payments={captures:[{id:'CAP',status:'COMPLETED',amount:{currency_code:'EUR',value:'12.00'}}]};}
@@ -117,3 +117,11 @@ test('Concurrent capture wins over rate-limited cancellation',async()=>{
  await assert.rejects(h.api.cancelPayPalLink(h.admin,{...h.row}),/estado cambió/);
  assert.equal(h.row.status,'pending');assert.equal(h.row.remote_status,'CAPTURE_REQUESTED');
 });
+
+const replacement=h=>h.api.preparePayPalCrmReplacement(h.admin,{clientId:'C',environment:'sandbox',workerId:'W',isAdmin:false});
+test('Replacement preparation checks PayPal passively and leaves cancellation for the SQL transaction',async()=>{const h=harness();const plan=await replacement(h);assert.equal(plan.length,1);assert.equal(plan[0].order_id,'ORDER');assert.equal(h.row.status,'pending');assert.equal(h.captures(),0);assert.equal(h.credits(),0);});
+test('Replacement ignores self-service purchases and rejects a different central',async()=>{const h=harness();h.row.checkout_kind='client_purchase';assert.equal((await replacement(h)).length,0);h.row.checkout_kind='crm_collection';h.row.worker_id='OTHER';await assert.rejects(replacement(h),/Otra central/);assert.equal(h.captures(),0);});
+test('Replacement handles missing and rate-limited old card links without claiming they were refunded',async()=>{for(const status of [404,429]){const h=harness();h.missing({status,body:{details:[{issue:status===404?'RESOURCE_NOT_FOUND':'RATE_LIMIT_REACHED'}]}});const plan=await replacement(h);assert.equal(plan.length,1);assert.match(plan[0].note,/No es un reembolso/);assert.equal(h.row.status,'pending');assert.equal(h.captures(),0);delete h.row.create_payload.payment_source.card;await assert.rejects(replacement(h));}});
+test('Replacement never skips uncertain captures or arbitrary provider failures',async()=>{for(const remote_status of ['CAPTURE_REQUESTED','CAPTURE_PENDING','CAPTURE_COMPLETED']){const h=harness();h.row.remote_status=remote_status;await assert.rejects(replacement(h),/procesándose/);assert.equal(h.captures(),0);}for(const error of [new Error('Network timeout'),{status:503,body:{name:'SERVICE_UNAVAILABLE'}}]){const h=harness();h.missing(error);await assert.rejects(replacement(h));assert.equal(h.row.status,'pending');}});
+test('A remotely completed payment is reconciled rather than replaced',async()=>{const h=harness();h.order.status='COMPLETED';h.order.purchase_units[0].payments={captures:[{id:'CAP',status:'COMPLETED',amount:{currency_code:'EUR',value:'12.00'}}]};await assert.rejects(replacement(h),/procesándose/);assert.equal(h.row.status,'completed');assert.equal(h.captures(),0);});
+test('Interrupted card creation can be safely disabled locally; unknown creation types cannot',async()=>{const h=harness();h.row.order_id=null;h.row.remote_status='CREATING';assert.equal((await replacement(h)).length,1);assert.equal(h.captures(),0);h.row.create_payload={};await assert.rejects(replacement(h));});

@@ -301,7 +301,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
     createBusy.current = true;
     try {
       setLoading(true);
-      setMessage("Generando enlace…");
+      setMessage("Comprobando y preparando el nuevo enlace…");
       const token = await getToken();
       if (!token) throw new Error("Tu sesión ha caducado.");
       const operationKey = `${paymentStorageKey}:operation:${mode === "pack" ? chosen?.id : requestedAmount}`;
@@ -341,12 +341,13 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
         pack: json.pack || null,
         manual: Boolean(json.manual),
       });
+      if (Array.isArray(json.replaced_attempt_ids)) setHistory(previous => previous.map(a => json.replaced_attempt_ids.includes(a.id) ? { ...a, status: "cancelled", remote_status: "CANCELLED_BY_STAFF", last_error: "Enlace sustituido automáticamente por el nuevo cobro." } : a));
       if (json.status === "pending" && chatWindow && !chatWindow.closed) {
         chatWindow.location.replace(whatsappUrl(String(json.url), Number(json.amount), json.pack?.nombre));
-        setMessage("Enlace creado. WhatsApp está preparado: pulsa Enviar en la conversación.");
+        setMessage(`${json.replaced_count ? "Enlace anterior desactivado automáticamente. " : ""}Enlace creado. WhatsApp está preparado: pulsa Enviar en la conversación.`);
       } else {
         chatWindow?.close();
-        setMessage(json.status !== "pending" ? "Este cobro ya tiene un resultado. Comprueba su estado antes de continuar." : "Enlace creado. Pulsa Abrir WhatsApp para preparar el mensaje, o copia el enlace.");
+        setMessage(json.status !== "pending" ? "Este cobro ya tiene un resultado. Comprueba su estado antes de continuar." : `${json.replaced_count ? "Enlace anterior desactivado automáticamente. " : ""}Enlace creado. Pulsa Abrir WhatsApp para preparar el mensaje, o copia el enlace.`);
       }
     } catch (error: any) {
       chatWindow?.close();
@@ -491,6 +492,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
               <span>Resumen del cobro<br />{nombre}<br />{mode === "pack" ? selectedPack?.nombre : "Importe manual"}<br />{brand} · Total a cobrar</span><strong>{requestedAmount > 0 ? money(requestedAmount) : "—"}</strong>
             </div>
 
+            <p className={styles.help}>Al crear este enlace se desactiva automáticamente el cobro anterior pendiente de la central, también si pertenece a la otra cuenta. Un pago ya cobrado o en proceso se conserva.</p>
             <button className={styles.generate} type="button" disabled={loading || initializing || !ready || requestedAmount <= 0} onClick={() => void createPayment()}>
               {loading ? <RefreshCw className={styles.spinIcon} /> : <CreditCard />} {loading ? "Generando..." : "Crear pago con tarjeta y abrir WhatsApp"}
             </button>
@@ -559,7 +561,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
               <button type="button" onClick={() => void refreshStatus()} disabled={loading}><RefreshCw className={loading ? styles.spinIcon : ""} /> Comprobar</button>
               {visualPaymentState === "waiting" && <>
                 <button type="button" disabled={loading} onClick={() => void cancelPayment(false)}><X /> Cancelar enlace</button>
-                <button type="button" disabled={loading} onClick={() => void cancelPayment(true)}>Cambiar tarifa</button>
+                <button type="button" disabled={loading} onClick={() => { resetPayment(); setMessage("Elige el importe. Al generar el nuevo enlace, se desactivará el anterior."); }}>Crear otro enlace · Cambiar tarifa</button>
               </>}
             </div>
 
