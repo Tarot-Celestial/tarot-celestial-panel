@@ -18,7 +18,7 @@ export function customerBenefitLabels(policy: CustomerBenefitPolicy, rank: strin
   if (rule.regular_bonus_minutes > 0) labels.push(`+${rule.regular_bonus_minutes} minutos FREE por compra confirmada a precio regular`);
   if (rule.pass_minutes > 0) labels.push(`1 pase de ${rule.pass_minutes} minutos cada ${policy.pass_cycle_days} días, con una compra confirmada en los últimos ${policy.pass_cycle_days} días`);
   if (rank === "diamante") {
-    labels.push(`${policy.diamond_purchase_coins} Coins totales y 1 giro Diamante por compra a tarifa normal de nivel 1, 2 o 3; sustituye el giro de nivel`);
+    labels.push(`${policy.diamond_purchase_coins} Coins totales por compra a tarifa normal de nivel 1, 2 o 3, con los giros del nivel comprado; al registrar la compra en Central puedes elegir 1 giro Diamante en su lugar`);
   }
   labels.push("Las compras Promo no conceden Coins ni giros de ruleta, sea cual sea el rango");
   if (rank === "oro" || rank === "diamante") labels.push("Un número automático por cliente y sorteo activo");
