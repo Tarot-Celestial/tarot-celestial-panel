@@ -4,7 +4,7 @@ const id=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0');
 function harness(){
  const rows=new Map();let remoteCreates=0,authChecks=0,api;
  const worker={id:id(1),role:'central'},client={id:id(2)};
- const admin={rpc:async(name,{p_attempt:v})=>{if(name!=='tc_create_paypal_crm_attempt')throw Error(name);if(rows.has(v.id))return {data:rows.get(v.id)};if([...rows.values()].some(a=>a.cliente_id===v.cliente_id&&a.environment===v.environment&&a.status==='pending'))return {error:{message:'PAYPAL_PENDING_COLLECTION'}};rows.set(v.id,{checkout_kind:'crm_collection',...v,created_at:new Date().toISOString(),status:'pending',remote_status:'CREATING'});return {data:rows.get(v.id)};},from:table=>{
+ const admin={rpc:async(name,{p_attempt:v,p_previous=[]})=>{if(name!=='tc_replace_paypal_crm_attempt')throw Error(name);if(rows.has(v.id))return {data:rows.get(v.id)};for(const old of p_previous){const row=rows.get(old.id);row.status='cancelled';row.remote_status='CANCELLED_BY_STAFF';}v.purchase_payload.replaced_count=p_previous.length;if(rows.has(v.id))return {data:rows.get(v.id)};if([...rows.values()].some(a=>a.cliente_id===v.cliente_id&&a.environment===v.environment&&a.status==='pending'))return {error:{message:'PAYPAL_PENDING_COLLECTION'}};rows.set(v.id,{checkout_kind:'crm_collection',...v,created_at:new Date().toISOString(),status:'pending',remote_status:'CREATING'});return {data:rows.get(v.id)};},from:table=>{
    let filters=[],mode='read',value,one=false,lim;
    const q={or:()=>q,select:()=>q,eq:(k,v)=>{filters.push(r=>r[k]===v);return q;},is:(k,v)=>{filters.push(r=>(r[k]??null)===v);return q;},order:()=>q,limit:n=>{lim=n;return q;},
    insert:v=>{value=v;mode='insert';return q;},update:v=>{value=v;mode='update';return q;},single:()=>{one=true;return q;},maybeSingle:()=>{one=true;return q;},
@@ -20,6 +20,7 @@ function harness(){
  const paypal={paypalAccountForAttempt:a=>a.purchase_payload?.paypal_account||'legacy',PAYPAL_TABLE:'crm_paypal_orders',PayPalError,paypalConfig:()=>config,
    paypalConfigForAttempt:a=>{if(a.environment!==config.environment)throw new PayPalError('Wrong environment',409);return config;},
    testPayPalConnection:async()=>{authChecks++;return {environment:'sandbox',message:'OAuth OK'};},
+   preparePayPalCrmReplacement:async(_admin,o)=>{const pending=[...rows.values()].filter(r=>r.cliente_id===o.clientId&&r.environment===o.environment&&r.checkout_kind==='crm_collection'&&r.status==='pending');if(!o.isAdmin&&pending.some(r=>r.worker_id!==o.workerId))throw new PayPalError('Otra central',409);if(pending.some(r=>r.remote_status==='CAPTURE_REQUESTED'))throw new PayPalError('Procesándose',409);return pending.map(r=>({...r}));},
    cancelPayPalLink:async(_,a)=>{a.status='cancelled';a.remote_status='CANCELLED_BY_STAFF';return a;},
    paypalRequest:async()=>{remoteCreates++;return {id:'ORDER10',status:'CREATED'};},approvalUrl:()=> 'https://www.sandbox.paypal.com/checkoutnow?token=ORDER10',reconcilePayPal:async(_,a)=>a};
  const packs={CLIENTE_MINUTE_PACKS:[{id:'pack_20',nombre:'20 minutos',priceUsd:22,totalMinutes:20,rouletteLevel:1,rouletteSpins:1}],getConfiguredMinutePack:k=>packs.CLIENTE_MINUTE_PACKS.find(p=>p.id===k)};
@@ -82,3 +83,6 @@ test('Central collection controls never select or cancel a self-service client p
  const latest=await h.api.GET(new Request('https://panel.test/api/crm/pagos/paypal?cliente_id='+id(2),{headers:{authorization:'Bearer good'}}));
  assert.equal((await latest.json()).latest,null);
 });
+
+test('New collection replaces a pending predecessor while an idempotent retry retains the new order',async()=>{const h=harness();await h.post();const r=await h.post({request_id:id(11),pack_id:'crm_manual_amount',manual_amount:20});assert.equal(r.status,200);assert.equal((await r.json()).replaced_count,1);assert.equal(h.rows.get(id(10)).status,'cancelled');assert.equal(h.rows.get(id(11)).status,'pending');await h.post({request_id:id(11),pack_id:'crm_manual_amount',manual_amount:20});assert.equal(h.remoteCreates(),2);});
+test('A capture in progress blocks replacement before another provider order is created',async()=>{const h=harness();await h.post();h.rows.get(id(10)).remote_status='CAPTURE_REQUESTED';assert.equal((await h.post({request_id:id(11)})).status,409);assert.equal(h.remoteCreates(),1);});

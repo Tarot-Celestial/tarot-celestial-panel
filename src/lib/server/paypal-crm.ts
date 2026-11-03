@@ -321,6 +321,54 @@ export async function reconcilePayPal(admin: any, attempt: any, captureApproved 
   if (error) throw error;
   return data;
 }
+// Read-only provider checks. Cancellation and replacement are committed together
+// by tc_replace_paypal_crm_attempt, after rechecking these snapshots under lock.
+export async function preparePayPalCrmReplacement(admin: any, options: {
+  clientId: string; environment: string; workerId: string; isAdmin: boolean;
+}) {
+  const pending = await admin.from(PAYPAL_TABLE).select("*")
+    .eq("cliente_id", options.clientId).eq("environment", options.environment)
+    .eq("checkout_kind", "crm_collection").eq("status", "pending");
+  if (pending.error) throw pending.error;
+  const rows = pending.data || [];
+  // Keep the existing creator/admin permission boundary across both accounts.
+  if (!options.isAdmin && rows.some((a: any) => a.worker_id !== options.workerId))
+    throw new PayPalError("Otra central está gestionando un enlace de esta clienta. Administración puede sustituirlo.", 409);
+  const previous: Array<{ id: string; status: string; remote_status: string; order_id: string | null; note: string }> = [];
+  for (const row of rows) {
+    let current = row;
+    paypalConfigForAttempt(current);
+    const processing = (a: any) => a.status === "completed" || a.capture_id || a.payment_id ||
+      ["CAPTURE_REQUESTED", "CAPTURE_PENDING", "CAPTURE_COMPLETED"].includes(a.remote_status);
+    if (processing(current)) throw new PayPalError("El pago anterior ya está cobrado o procesándose. Comprueba su estado antes de solicitar otro cobro.", 409);
+    const cardCheckout = Boolean(current.create_payload?.payment_source?.card);
+    let note = "Enlace anterior desactivado automáticamente al crear un nuevo cobro. No es un reembolso.";
+    if (current.order_id) {
+      try { current = await reconcilePayPal(admin, current, false); }
+      catch (error) {
+        const limited = error instanceof PayPalError && (error.providerStatus === 429 || error.providerIssue === "RATE_LIMIT_REACHED");
+        // Our card checkout cannot capture without the persisted claim above.
+        // Missing/limited provider reads can disable this local link, never a
+        // captured or in-flight payment. Other provider failures stay explicit.
+        if (!cardCheckout || (!isMissingPayPalOrder(error) && !limited)) throw error;
+        current = await latestAttempt(admin, current.id);
+        note += limited ? " PayPal limitó la consulta; se desactiva el enlace del panel."
+          : " PayPal no encontró la referencia antigua; su historial se conserva para revisión.";
+      }
+    } else if (!cardCheckout || current.remote_status !== "CREATING") {
+      throw new PayPalError("No se pudo comprobar el enlace anterior. Revisa su estado antes de crear otro cobro.", 409);
+    }
+    if (processing(current)) throw new PayPalError("El pago anterior ya está cobrado o procesándose. Comprueba su estado antes de solicitar otro cobro.", 409);
+    const safeState = current.status === "cancelled" || (current.status === "pending" &&
+      (current.order_id ? ["CREATED", "SAVED", "PAYER_ACTION_REQUIRED", "APPROVED", "VOIDED"].includes(current.remote_status)
+        : cardCheckout && current.remote_status === "CREATING"));
+    if (!safeState) throw new PayPalError("PayPal aún no confirma el estado del enlace anterior. Comprueba el cobro antes de sustituirlo.", 409);
+    previous.push({ id: current.id, status: current.status, remote_status: current.remote_status,
+      order_id: current.order_id || null, note });
+  }
+  return previous;
+}
+
 export async function cancelPayPalLink(admin: any, attempt: any, actor: "staff" | "client" = "staff") {
   // No PayPal capture is requested while checking whether cancellation is safe.
   let current = await latestAttempt(admin, attempt.id);
