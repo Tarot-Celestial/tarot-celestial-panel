@@ -139,7 +139,7 @@ test('successful actions schedule a full history refresh so new memories appear'
 function panelFixture(overrides = {}, props = {}) {
   const actions = [];
   const data = { ...initial(), loading: false, busy: '', error: '', stale: false, identityEpoch: 0, refresh() {}, chat: async () => true, action: async (...args) => { actions.push(args); return true; }, ...overrides };
-  const character = evaluate('src/features/admin/atlas/AtlasCharacter.tsx', { './Atlas.module.css': { default: styles }, './atlas-watch-types': watchShared });
+  const character = require('./helpers/atlas-character.cjs')(evaluate, styles, watchShared);
   const watchPanel = evaluate('src/features/admin/atlas/AtlasWatchPanel.tsx', { './Atlas.module.css': { default: styles }, './atlas-watch-types': watchShared, './atlas-types': shared });
   const { default: Panel } = evaluate('src/features/admin/atlas/AtlasPanel.tsx', { './useAtlas': { useAtlas: () => data }, './Atlas.module.css': { default: styles }, './AtlasCharacter': character, './atlas-types': shared, './atlas-watch-types': watchShared, './AtlasWatchPanel': watchPanel, '@/lib/recovery-mission': missionShared }, { window: { setTimeout: fn => fn() } });
   let tree; renderer.act(() => { tree = renderer.create(React.createElement(Panel, props)); });

@@ -63,7 +63,7 @@ export function useCompanionMotion(enabled: boolean, busy: boolean, workerId?: s
     if (!d.moved) return;
     suppressClickUntil.current = Date.now() + 500; manualUntil.current = Date.now() + MANUAL_POSITION_PAUSE;
     if (cancel) place(d.origin.x, d.origin.y); else persist();
-    setPositionLabel(cancel ? 'Movimiento cancelado.' : 'Mascota colocada. Puedes moverla con las flechas.');
+    setPositionLabel(cancel ? 'Movimiento cancelado.' : 'Atlas colocado. Puedes moverlo con las flechas.');
   }, [place, persist]);
   const onPointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0 || !event.isPrimary || drag.current) return;
@@ -89,7 +89,7 @@ export function useCompanionMotion(enabled: boolean, busy: boolean, workerId?: s
     if (event.key === 'Home') { event.preventDefault(); dock(); return; }
     const next = keyboardPosition(event.key, position.current, event.shiftKey); if (!next) return;
     event.preventDefault(); clearHighlight(); manualUntil.current = Date.now() + MANUAL_POSITION_PAUSE;
-    place(next.x, next.y); persist(); setPositionLabel(`Posición de la mascota: ${Math.round(position.current.x)}, ${Math.round(position.current.y)}.`);
+    place(next.x, next.y); persist(); setPositionLabel(`Posición de Atlas: ${Math.round(position.current.x)}, ${Math.round(position.current.y)}.`);
   }, [clearHighlight, dock, finishDrag, persist, place]);
   useEffect(() => {
     // Profiles on a shared terminal never inherit another worker's saved position.

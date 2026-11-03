@@ -21,7 +21,7 @@ export async function GET(req: Request) {
       checked(db.from('central_assistant_task_runs').select('id,result,created_at').eq('worker_id', id).order('created_at', { ascending: false }).limit(10)),
     ]);
     const records=[...tasks,...history,...runs];const filtered=await currentResults(ctx,records.map(r=>r.result));records.forEach((r,i)=>{r.result=filtered[i];});
-    return json({ ok: true, worker: { id, name: ctx.worker.display_name }, profile, preferences: { ...DEFAULT_PREFERENCES, ...profile?.preferences }, memories, tasks, history: history.reverse(), runs, mode: process.env.OPENAI_API_KEY && (process.env.CENTRAL_ASSISTANT_MODEL || process.env.OPENAI_TEXT_MODEL) ? 'ai' : 'guided', schedulerConfigured: Boolean(process.env.CENTRAL_ASSISTANT_CRON_SECRET) });
+    return json({ ok: true, worker: { id, name: ctx.worker.display_name }, profile: { ...profile, pet: 'atlas' }, preferences: { ...DEFAULT_PREFERENCES, ...profile?.preferences }, memories, tasks, history: history.reverse(), runs, mode: process.env.OPENAI_API_KEY && (process.env.CENTRAL_ASSISTANT_MODEL || process.env.OPENAI_TEXT_MODEL) ? 'ai' : 'guided', schedulerConfigured: Boolean(process.env.CENTRAL_ASSISTANT_CRON_SECRET) });
   } catch (e) { return failure(e); }
 }
 export async function POST(req: Request) {

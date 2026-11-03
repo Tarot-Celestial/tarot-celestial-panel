@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import TarotistaBonuses from "@/components/bonuses/TarotistaBonuses";
 import AppHeader from "@/components/AppHeader";
+import AtlasTarotistaGuide from '@/components/atlas/AtlasTarotistaGuide';
 import PanelTheme from "@/components/ui/PanelTheme";
 import OperationalInbox from "@/components/central/OperationalInbox";
 import { supabaseBrowser } from "@/lib/supabase-browser";
@@ -2554,6 +2555,7 @@ export default function Tarotista() {
           </main>
         </div>
       )}
+      {ok && <AtlasTarotistaGuide workerId={myWorkerId || null} onNavigate={setTab} />}
     </PanelTheme>
   );
 }

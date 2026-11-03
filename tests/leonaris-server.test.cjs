@@ -9,7 +9,7 @@ function load(file, mocks = {}, globals = {}) {
   const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
   const exports = {};
-  vm.runInNewContext(code, { exports, require: name => name === 'server-only' ? {} : name in mocks ? mocks[name] : require(name), console, Request, Response, URL, AbortController, AbortSignal, Date, setTimeout, clearTimeout, ...globals });
+  vm.runInNewContext(code, { exports, require: name => name === 'server-only' ? {} : name in mocks ? mocks[name] : name === '@/lib/server/auth-failure' ? load('src/lib/server/auth-failure.ts') : require(name), console, Request, Response, URL, AbortController, AbortSignal, Date, setTimeout, clearTimeout, ...globals });
   return exports;
 }
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -271,6 +271,7 @@ function endpoint(options = {}) {
   const intelligence = load('src/lib/leo-celestial-intelligence.ts');
   const api = load('src/app/api/cliente/leo/route.ts', {
     'next/server': { NextResponse: { json: (body, init) => new Response(JSON.stringify(body), { ...init, headers: { ...init?.headers, 'Content-Type': 'application/json' } }) } },
+    '@/lib/server/auth-failure': load('src/lib/server/auth-failure.ts'),
     '@/lib/server/ruleta-access': access, '@/lib/leo-celestial-intelligence': intelligence, '@/lib/leo-guide': guide,
     '@/lib/leonaris-companion': companion, '@/lib/server/leonaris-context': f.api, '@/lib/server/leonaris-memory': operations,
     '@/lib/server/leonaris-chat': { answerLeonaris: async (...args) => { calls.push({ operation: 'answer', contextClient: args[0].snapshot.roulette?.cliente_id, pathname: args[4] }); return c.chat.answerLeonaris(...args); } },
