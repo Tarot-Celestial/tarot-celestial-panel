@@ -24,3 +24,9 @@ Referencia: https://developer.paypal.com/docs/api/orders/v2/
 Aplicar `20261103151228_paypal_crm_replace_pending_link.sql` antes de publicar la ruta nueva. La migración solo instala una función restringida a `service_role`: no modifica cobros históricos ni saldos al desplegar.
 
 La validación incluye SQL real en PGlite, estados concurrentes de captura, reversión de la sustitución ante error de inserción, aislamiento de compras de clientes, permisos, reintentos, cuenta receptora, callback antiguo y formulario React. Las llamadas al proveedor se simulan: no se crean cobros, no se envían mensajes ni se consumen beneficios reales.
+
+## Recuperación visible de intentos antiguos
+
+«Gestionar enlaces anteriores» muestra los pendientes autorizados de ambas cuentas sin salir del cobrador. Se abre también después de un fallo de creación y permite comprobar el estado sin capturar, cancelar el enlace concreto o volver a elegir importe. Conserva el importe manual escrito. La consulta de este gestor pausa la comprobación automática del cobro visible para que no se confunda con una solicitud de cobro.
+
+La migración `20261103153926_paypal_legacy_incomplete_link_recovery.sql` amplía la sustitución para una creación CRM antigua sin referencia, URL, captura ni pago: exige intención CAPTURE, identidad original coincidente y haber superado las cinco horas de reintento. Las creaciones recientes de cartera externa o con estado desconocido siguen protegidas. La cancelación explícita comprueba estos mismos criterios y compite por la referencia y los indicadores de captura; una respuesta tardía de creación no puede volver a publicar un enlace cancelado.

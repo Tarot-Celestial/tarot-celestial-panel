@@ -11,7 +11,7 @@ before(async()=>{
  create table crm_client_notes(cliente_id text,texto text,author_name text,event_type text,event_data jsonb,is_pinned boolean);
  create function cliente_confirmar_compra_ruleta_v3(p jsonb) returns jsonb language sql as $$select '{}'::jsonb$$;
  create function cliente_confirmar_compra_ruleta_v2(p jsonb) returns jsonb language sql as $$select '{}'::jsonb$$;`);
- for(const file of ['20261006235223_paypal_crm_checkout.sql','20261102183023_leonaris_paypal_collections.sql','20261103151228_paypal_crm_replace_pending_link.sql']) {
+ for(const file of ['20261006235223_paypal_crm_checkout.sql','20261102183023_leonaris_paypal_collections.sql','20261103151228_paypal_crm_replace_pending_link.sql','20261103153926_paypal_legacy_incomplete_link_recovery.sql']) {
   if(file.startsWith('20261102'))await db.exec("alter table crm_paypal_orders add column checkout_kind text default 'crm_collection'");
   await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations',file),'utf8'));
  }
@@ -59,4 +59,16 @@ test('unfinished card creation can be replaced; unknown states stay protected',a
  await create(payload(10));await replace(payload(11),[await snapshot(10)]);
  await db.query("update crm_paypal_orders set remote_status='UNKNOWN' where id=$1",[id(11)]);
  await assert.rejects(replace(payload(12),[await snapshot(11)]),/PAYPAL_REPLACEMENT_PROCESSING/);
+});
+
+test('Legacy abandoned creation is replaceable only after expiry and without an issued link or payment',async()=>{
+ const p=payload(10,{create_payload:{intent:'CAPTURE',purchase_units:[{custom_id:id(10),invoice_id:'TC-'+id(10)}],payment_source:{paypal:{}}}});
+ await create(p);await assert.rejects(replace(payload(11),[await snapshot(10)]),/PROCESSING/);
+ await db.query("update crm_paypal_orders set created_at=now()-interval '6 hours' where id=$1",[id(10)]);
+ await db.query("update crm_paypal_orders set approval_url='https://fixture.invalid/pay' where id=$1",[id(10)]);
+ await assert.rejects(replace(payload(11),[await snapshot(10)]),/PROCESSING/);
+ await db.query('update crm_paypal_orders set approval_url=null,capture_id=$2 where id=$1',[id(10),'CAP']);
+ await assert.rejects(replace(payload(11),[await snapshot(10)]),/PROCESSING/);
+ await db.query('update crm_paypal_orders set capture_id=null where id=$1',[id(10)]);
+ await replace(payload(11),[await snapshot(10)]);assert.equal(await scalar('select status v from crm_paypal_orders where id=$1',[id(10)]),'cancelled');
 });
