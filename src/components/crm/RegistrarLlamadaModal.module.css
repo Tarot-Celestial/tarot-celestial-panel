@@ -577,3 +577,7 @@
 .confirmedPayments small { font-size: 12px; line-height: 1.5; opacity: .85; }
 .separatePayment { display: flex; align-items: flex-start; gap: 10px; margin-top: 16px; font-size: 14px; line-height: 1.5; }
 .separatePayment input { margin-top: 4px; flex: 0 0 auto; }
+
+.classification_ruleta_diamante {border-color:rgba(116,218,255,.55)!important;background:linear-gradient(135deg,rgba(18,95,138,.35),rgba(44,24,70,.9))!important;color:#e0f7ff;}
+.classification_ruleta_diamante.choiceSelected{box-shadow:inset 3px 0 #80ddff,0 0 0 2px rgba(128,221,255,.16);}
+.classification_ruleta_diamante:disabled{opacity:.5;cursor:not-allowed;}

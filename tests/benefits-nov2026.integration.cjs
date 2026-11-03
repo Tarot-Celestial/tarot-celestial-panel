@@ -2,7 +2,7 @@ const {test,before,after}=require('node:test');
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {PGlite}=require('@electric-sql/pglite');
 const read=p=>fs.readFileSync(path.join(__dirname,p),'utf8');
-const migration=read('../supabase/migrations/20261102025228_customer_benefits_november_2026.sql')+'\n'+read('../supabase/migrations/20261102153603_customer_coins_catalog_sync.sql');
+const migration=read('../supabase/migrations/20261102025228_customer_benefits_november_2026.sql')+'\n'+read('../supabase/migrations/20261102153603_customer_coins_catalog_sync.sql')+'\n'+read('../supabase/migrations/20261103010836_customer_diamond_roulette_choice.sql');
 const id=n=>'30000000-0000-4000-8000-'+String(n).padStart(12,'0');
 let db,seq=1000;
 const scalar=async(q,p=[])=>(await db.query(q,p)).rows[0].v;
@@ -46,8 +46,8 @@ test('intro uses server amounts for all ranks and never credits on preview',asyn
 test('confirmed regular purchases grant 0/3/5/8 extra minutes and preserve other rank Coins',async()=>{
  for(const [rank,extra,coins] of [['bronce',0,50],['plata',3,50],['oro',5,50],['diamante',8,300]]){const c=await client(rank);const payment=await buy(c);assert.deepEqual(await wallet(c),{coins,free:extra,normal:20});await fn('tc_apply_purchase_benefits',payment.payment.id);assert.deepEqual(await wallet(c),{coins,free:extra,normal:20});}
 });
-test('Diamond Nada purchases at levels 1/2/3 replace native and matrix Coins/spins',async()=>{
- for(const [pack,amount] of [['pack_20',22],['pack_60',35],['pack_120',69]]){const c=await client('diamante',500);await buy(c,{pack_id:pack,amount,points:999,pricing_mode:'regular',purchase_classification:'nada'});assert.equal((await wallet(c)).coins,800);assert.equal((await wallet(c)).free,8);const spins=await scalar('select jsonb_agg(nivel) v from cliente_ruleta_giros where cliente_id=$1',[c]);assert.deepEqual(spins,[5]);}
+test('Diamond Nada purchases keep 300 total Coins and only the purchased level wheels',async()=>{
+ for(const [pack,amount,level,count] of [['pack_20',22,1,1],['pack_60',35,2,1],['pack_120',69,3,1],['pack_180',99,3,2]]){const c=await client('diamante',500);await buy(c,{pack_id:pack,amount,points:999,pricing_mode:'regular',purchase_classification:'nada'});assert.equal((await wallet(c)).coins,800);assert.equal((await wallet(c)).free,8);const spins=await scalar('select jsonb_agg(nivel) v from cliente_ruleta_giros where cliente_id=$1',[c]);assert.deepEqual(spins,Array(count).fill(level));}
 });
 test('redemptions use all four new prices and retry without another debit',async()=>{
  for(const [minutes,cost] of [[10,800],[20,1200],[30,1800],[60,3000]]){const c=await client('bronce',cost);const reward=await scalar('select id v from recompensas where minutos_otorgados=$1 limit 1',[minutes]),op=id(seq++);await fn('cliente_canjear_coins_minutos_v1',c,reward,op);await fn('cliente_canjear_coins_minutos_v1',c,reward,op);assert.deepEqual(await wallet(c),{coins:0,free:minutes,normal:0});}
@@ -77,15 +77,15 @@ test('promotion catalogue suppresses rank Coins/spins and preserves Oracle confi
 });
 
 test('Central Nada resolves levels by amount; Promo suppresses rewards and Super Promo keeps its special spin',async()=>{
- for(const [classification,amount,level] of [['nada',12,1],['nada',35,2],['nada',69,3],['promo',35,2],['super_promo_ruleta',35,2]]) {
+ for(const [classification,amount,level] of [['nada',12,1],['nada',35,2],['nada',69,3],['promo',35,2],['super_promo_ruleta',35,2],['ruleta_diamante',12,1],['ruleta_diamante',35,2],['ruleta_diamante',69,3],['ruleta_diamante',99,3]]) {
   const c=await client('diamante',1200);
   const payload={operation_id:id(seq++),cliente_id:c,telefonista_worker_id:id(1),tarotista_worker_id:id(2),cliente_compra_minutos:true,tipo_registro:'compra',codigo_1:'CLIENTE',minutos_1:5,minutos_2:0,guarda_minutos:true,minutos_guardados_free:0,minutos_guardados_normales:15,importe:amount,forma_pago:'tpv',promo:classification==='promo',captado:false,recuperado:false,super_promo_ruleta:classification==='super_promo_ruleta',pricing_mode:classification==='promo'?'promotion':classification==='super_promo_ruleta'?'super_promo':'regular',purchase_classification:classification,points_to_add:0,purchase_benefits:{oracle_credits:0,roulette_level:level,roulette_spins:1},note_text:'Local fixture'};
   await fn('tc_register_call_minutes',JSON.stringify(payload));
-  assert.equal((await wallet(c)).coins,classification==='nada'?1500:1200);
+  assert.equal((await wallet(c)).coins,['nada','ruleta_diamante'].includes(classification)?1500:1200);
   const spins=await scalar("select coalesce(jsonb_agg(nivel order by nivel),'[]') v from cliente_ruleta_giros where cliente_id=$1",[c]);
-  assert.deepEqual(spins,classification==='nada'?[5]:classification==='promo'?[]:[4]);
+  assert.deepEqual(spins,classification==='nada'?[level]:classification==='ruleta_diamante'?[5]:classification==='promo'?[]:[4]);
   await fn('tc_register_call_minutes',JSON.stringify(payload));
-  assert.equal((await wallet(c)).coins,classification==='nada'?1500:1200);
+  assert.equal((await wallet(c)).coins,['nada','ruleta_diamante'].includes(classification)?1500:1200);
  }
 });
 
@@ -144,7 +144,7 @@ test('stale cofre rank cannot register or credit a consultation',async()=>{
  const c=await client('oro');await assert.rejects(fn('tc_register_new_tarotista_gift',id(11),JSON.stringify({operation_id:id(seq++),cliente_id:c,tarotista_worker_id:id(2),rank_free_expected_rank:'plata',rank_free_expected_minutes:8,rank_free_eligibility_key:id(2)})),/RANK_CHANGED/);assert.equal((await wallet(c)).free,0);
 });
 test('Diamond spin remains Diamond after downgrade and a new purchase follows its new rank',async()=>{
- const c=await client('diamante');await buy(c);await db.query("update client_rank_overrides set assigned_rank='bronce' where client_id=$1",[c]);await buy(c);const summary=await fn('cliente_ruleta_resumen_ultra_v1',c);assert.equal(summary.level_5_spins,1);assert.equal(summary.diamond_access,true);assert.ok(summary.level_1_spins>0);
+ const c=await client('diamante');await buy(c,{purchase_classification:'ruleta_diamante'});await db.query("update client_rank_overrides set assigned_rank='bronce' where client_id=$1",[c]);await buy(c);const summary=await fn('cliente_ruleta_resumen_ultra_v1',c);assert.equal(summary.level_5_spins,1);assert.equal(summary.diamond_access,true);assert.ok(summary.level_1_spins>0);
 });
 test('unprivileged callers cannot execute new granting helpers',async()=>{await db.exec('set role anon');try{await assert.rejects(fn('tc_assign_rank_raffle',id(50)),/permission denied/);await assert.rejects(fn('tc_customer_benefits_config'),/permission denied/);}finally{await db.exec('reset role');}});
 
@@ -157,7 +157,7 @@ test('a Diamond reward is credited exactly once and replay survives expiry and r
  try {
   await db.exec("update tc_client_roulette_rewards set is_active=false where nivel=5");
   await db.exec("update tc_client_roulette_rewards set is_active=true,weight=1,reward_value=10 where id=(select id from tc_client_roulette_rewards where nivel=5 and reward_type='coins' limit 1)");
-  const c=await client('diamante');await buy(c);
+  const c=await client('diamante');await buy(c,{purchase_classification:'ruleta_diamante'});
   const spin=await scalar("select id v from cliente_ruleta_giros where cliente_id=$1 and nivel=5",[c]);
   await db.query("update cliente_ruleta_giros set required_rank='diamante' where id=$1",[spin]);
   await db.query("update client_rank_overrides set assigned_rank='bronce' where client_id=$1",[c]);
@@ -188,4 +188,53 @@ test('two staff operations cannot consume the same cofre and switching rank neve
  const before=await wallet(c);
  const results=await Promise.allSettled([fn('tc_register_new_tarotista_gift',id(11),JSON.stringify({...request,operation_id:id(seq++)})),fn('tc_register_new_tarotista_gift',id(14),JSON.stringify({...request,operation_id:id(seq++)}))]);
  assert.equal(results.filter(r=>r.status==='fulfilled').length,1);assert.deepEqual(await wallet(c),before);
+});
+
+test('Diamond choice grants one exclusive spin and 300 Coins at every level and retry is idempotent',async()=>{
+ for(const [pack,amount] of [['pack_20',22],['pack_60',35],['pack_120',69],['pack_180',99]]){
+  const c=await client('diamante',700),ref='fixture:'+id(seq++);
+  const p=await buy(c,{payment_ref:ref,pack_id:pack,amount,points:999,roulette_level:3,roulette_spins:50,purchase_classification:'ruleta_diamante'});
+  assert.equal((await wallet(c)).coins,1000);
+  assert.deepEqual(await scalar("select jsonb_agg(nivel) v from cliente_ruleta_giros where cliente_id=$1",[c]),[5]);
+  await fn('tc_apply_purchase_benefits',p.payment.id);await buy(c,{payment_ref:ref,pack_id:pack,amount,purchase_classification:'ruleta_diamante'});
+  assert.equal((await wallet(c)).coins,1000);
+  assert.equal(await scalar('select count(*)::int v from cliente_ruleta_giros where cliente_id=$1',[c]),1);
+ }
+});
+test('non-Diamond, promotional, manual and unmapped purchases cannot claim a Diamond choice',async()=>{
+ for(const [rank,extra,error] of [
+  ['bronce',{},'DIAMOND_ROULETTE_REQUIRES_DIAMOND'],['plata',{},'DIAMOND_ROULETTE_REQUIRES_DIAMOND'],['oro',{},'DIAMOND_ROULETTE_REQUIRES_DIAMOND'],
+  ['diamante',{pricing_mode:'promotion'},'DIAMOND_ROULETTE_REQUIRES_REGULAR_PURCHASE'],
+  ['diamante',{pricing_mode:'manual_amount'},'DIAMOND_ROULETTE_REQUIRES_REGULAR_PURCHASE'],
+  ['diamante',{pack_id:'unknown',amount:1},'DIAMOND_ROULETTE_REQUIRES_REGULAR_PURCHASE']
+ ]){
+  const c=await client(rank,700),before=await wallet(c);
+  await assert.rejects(buy(c,{purchase_classification:'ruleta_diamante',...extra}),new RegExp(error));
+  assert.deepEqual(await wallet(c),before);
+  assert.equal(await scalar('select count(*)::int v from crm_cliente_pagos where cliente_id=$1',[c]),0);
+  assert.equal(await scalar('select count(*)::int v from cliente_ruleta_giros where cliente_id=$1',[c]),0);
+ }
+});
+test('normal levels preserve non-Diamond Coins and the configured rank wheel grants',async()=>{
+ for(const rank of ['bronce','plata','oro'])for(const [pack,amount,level,coins]of [['pack_20',22,1,50],['pack_60',35,2,150],['pack_120',69,3,300]]){
+  const c=await client(rank,200),p=await buy(c,{pack_id:pack,amount,purchase_classification:'nada'});
+  assert.equal((await wallet(c)).coins,200+coins);
+  const spins=(await db.query('select nivel from cliente_ruleta_giros where cliente_id=$1',[c])).rows;
+  assert.ok(spins.length>0);assert.ok(spins.every(x=>x.nivel===level));
+  await fn('tc_apply_purchase_benefits',p.payment.id);assert.equal((await wallet(c)).coins,200+coins);
+ }
+});
+test('Diamond catalogue advertises 300 Coins with native level wheels and an optional Diamond choice',async()=>{
+ const c=await client('diamante');
+ for(const pack of ['pack_20','pack_60','pack_120']){
+  const q=await fn('tc_resolve_rank_package_benefit',c,null,'standard',pack,null);
+  assert.equal(q.rank_benefits.coins,300);assert.equal(q.replaces_native_coins,true);
+  assert.equal(q.replaces_level_spin,false);assert.equal(q.rank_benefits.roulette_diamond_spins,0);
+  assert.equal(q.diamond_roulette_choice_available,true);
+ }
+});
+test('reapplying the choice migration preserves wallets, purchases, events and spins',async()=>{
+ const c=await client('diamante',200);await buy(c,{purchase_classification:'ruleta_diamante'});
+ const snapshot=async()=>scalar("select jsonb_build_object('wallet',(select to_jsonb(c) from crm_clientes c where id=$1),'payments',(select jsonb_agg(to_jsonb(p) order by id) from crm_cliente_pagos p where cliente_id=$1),'spins',(select jsonb_agg(to_jsonb(g) order by id) from cliente_ruleta_giros g where cliente_id=$1),'events',(select jsonb_agg(to_jsonb(e) order by id) from tc_client_benefit_events e where cliente_id=$1)) v",[c]);
+ const before=await snapshot();await db.exec(read('../supabase/migrations/20261103010836_customer_diamond_roulette_choice.sql'));assert.deepEqual(await snapshot(),before);
 });

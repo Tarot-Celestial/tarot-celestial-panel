@@ -121,3 +121,23 @@ test('Collection candidates exclude other clients, unconfirmed, consumed and sel
  assert.equal(response.status,200);assert.match(response.headers.get('cache-control'),/no-store/);
  const collections=(await response.json()).collections;assert.equal(collections.length,1);assert.equal(collections[0].id,id(60));assert.equal(collections[0].pricing_mode,'manual_amount');assert.equal(collections[0].amount,22);
 });
+
+test('Diamond classification forwards the choice to atomic server validation for Admin and Central',async()=>{
+ for(const role of ['admin','central']){
+  const h=harness();h.role=role;
+  const result=await h.post({...h.body,existing_payment_id:null,cliente_compra_minutos:true,minute_accounting_version:3,importe:35,forma_pago:'TPV',clasificacion:'ruleta_diamante',coins:999,roulette_level:1});
+  assert.equal(result.status,200);
+  const payload=h.rpcCalls[0].payload;assert.equal(payload.purchase_classification,'ruleta_diamante');assert.equal(payload.pricing_mode,'regular');
+  assert.equal(payload.points_to_add,0);assert.equal(payload.super_promo_ruleta,false);assert.equal(payload.promo,false);
+  const capture=h.rpcCalls.find(c=>c.name==='register_client_capture_contact');if(capture)assert.equal(capture.payload,undefined);
+ }
+});
+test('Diamond eligibility conflicts are visible and no capture runs after a rejected atomic purchase',async()=>{
+ for(const message of ['DIAMOND_ROULETTE_REQUIRES_DIAMOND','DIAMOND_ROULETTE_REQUIRES_REGULAR_PURCHASE']){
+  const h=harness();h.rpcError={code:'P0001',message};
+  const response=await h.post({...h.body,existing_payment_id:null,cliente_compra_minutos:true,minute_accounting_version:3,importe:35,forma_pago:'TPV',clasificacion:'ruleta_diamante'});
+  assert.equal(response.status,409);assert.equal((await response.json()).error,message);assert.equal(h.rpcCalls.length,1);
+ }
+ const h=harness();const response=await h.post({...h.body,existing_payment_id:null,clasificacion:'ruleta_diamante'});
+ assert.equal(response.status,400);assert.equal(h.rpcCalls.length,0);
+});

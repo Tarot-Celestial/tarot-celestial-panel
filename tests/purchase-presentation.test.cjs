@@ -88,7 +88,7 @@ async function callFixture(options = {}) {
     requests.push(url);
     if (init?.method === 'POST') { posts.push(JSON.parse(init.body)); return options.postError ? { ...reply({ ok: false, error: options.postError }), ok: false, status: 409 } : reply({ ok: true }); }
     if (url.includes('mode=collections')) return options.collectionsError ? { ok: false, json: async () => ({ ok: false }) } : reply({ ok: true, collections: [collection] });
-    return reply({ ok: true, balance: { minutos_free_pendientes: 0, minutos_normales_pendientes: 0 }, capture_xp: null });
+    return reply({ ok: true, balance: { minutos_free_pendientes: 0, minutos_normales_pendientes: 0 }, capture_xp: null, rank_free: options.rank ? {effective_rank: options.rank,policy_key:'new_tarotista_once_v1',minutes:12,offers:[]} : null });
   });
   let tree;
   await act(async () => { tree = renderer.create(React.createElement(Component, { open: true, cliente: client, tarotistas: [{ id: '00000000-0000-4000-8000-000000000003', display_name: 'Luna' }], getToken: async () => 'fixture', onClose() {} })); });
@@ -153,4 +153,37 @@ test('already registered collection explains that the operator must use the exis
   await f.click('Siguiente'); await f.click('Siguiente'); await f.click('Registrar llamada');
   assert.match(text(f.tree.toJSON()), /Este cobro PayPal ya está registrado.*usa su saldo pendiente/);
   await act(async () => f.tree.unmount());
+});
+
+test('verified Diamond sees the alternative below Special and submits only the selected classification',async()=>{
+ for(const classification of ['nada','ruleta_diamante','promo']){
+  const f=await callFixture({rank:'diamante'});
+  await f.change(f.tree.root.findByProps({id:'registered-paypal-collection'}),'external');
+  await f.change(f.tree.root.findByProps({id:'registered-call-amount'}),'35');await f.click('Siguiente');
+  const choices=f.tree.root.findAllByType('button').filter(b=>b.props['aria-pressed']!==undefined);
+  const labels=choices.map(b=>text(b.findByType('b')));
+  assert.equal(labels.indexOf('Ruleta Diamante'),labels.indexOf('Super Promo Ruleta')+1);
+  assert.match(text(f.tree.toJSON()),/300 Coins.*nivel comprado/);
+  const chosen=choices.find(b=>b.props.className.includes('classification_'+classification));
+  assert.notEqual(chosen.props.disabled,true);await act(async()=>chosen.props.onClick());await f.click('Siguiente');
+  if(classification==='ruleta_diamante')assert.match(text(f.tree.toJSON()),/No se conceden giros de nivel 1, 2 o 3/);
+  await f.click('Registrar llamada');assert.equal(f.posts[0].clasificacion,classification);await act(async()=>f.tree.unmount());
+ }
+});
+test('Diamond option requires a confirmed rank and cannot bypass a manual PayPal collection',async()=>{
+ for(const rank of [undefined,'bronce','plata','oro','diamante']){
+  const f=await callFixture({rank});await f.change(f.tree.root.findByProps({id:'registered-paypal-collection'}),f.collection.id);await f.click('Siguiente');
+  const button=f.tree.root.findAllByType('button').find(b=>b.props.className?.includes('classification_ruleta_diamante'));
+  if(rank==='diamante'){assert.ok(button);assert.equal(button.props.disabled,true);}else assert.equal(button,undefined);
+  assert.equal(f.posts.length,0);await act(async()=>f.tree.unmount());
+ }
+});
+
+test('Diamond pack presentation removes native Coins independently of retaining level roulette',async()=>{
+ const exports={};vm.runInNewContext(compile('src/lib/server/rank-benefits.ts'),{exports});
+ const packs=[{id:'pack_20',rewardCoins:100,coins:100,rouletteLevel:1,rouletteSpins:1}];
+ const decorated=await exports.rankPackageBenefitsForPacks({rpc:async()=>({error:null,data:[{package_source:'standard',package_key:'pack_20',package_level:1,status:'ready',replaces_native_coins:true,replaces_level_spin:false,rank_benefits:{enabled:true,coins:300}}]})},'fixture',packs);
+ assert.equal(decorated[0].rewardCoins,0);assert.equal(decorated[0].coins,0);
+ assert.equal(decorated[0].rankBenefits.coins,300);assert.equal(decorated[0].rouletteLevel,1);assert.equal(decorated[0].rouletteSpins,1);
+ assert.equal(packs[0].rewardCoins,100);
 });

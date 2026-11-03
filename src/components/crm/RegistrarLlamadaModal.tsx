@@ -348,6 +348,8 @@ function friendlySubmitError(error: unknown) {
   if (message === "CAPTURE_REQUIRES_COMPLETED_PURCHASE") {
     return "No se puede confirmar la captación sin una primera compra real completada.";
   }
+  if (message.includes("DIAMOND_ROULETTE_REQUIRES_DIAMOND")) return "La Ruleta Diamante requiere que la clienta tenga rango Diamante al confirmar la compra.";
+  if (message.includes("DIAMOND_ROULETTE_REQUIRES_REGULAR_PURCHASE")) return "La Ruleta Diamante requiere una compra de nivel 1, 2 o 3 a tarifa normal. Promo e importe manual no conceden este beneficio.";
   return message || "Error registrando llamada";
 }
 
@@ -367,6 +369,7 @@ const CLASIF_OPTIONS = [
   { value: "captado", label: "Captado" },
   { value: "recuperado", label: "Recuperado" },
   { value: "super_promo_ruleta", label: "Super Promo Ruleta" },
+  { value: "ruleta_diamante", label: "Ruleta Diamante" },
 ] as const;
 
 function GiftChest() {
@@ -428,6 +431,7 @@ export default function RegistrarLlamadaModal({
   const paypalSourceValid = !needsPayPalSource || (collectionsStatus === "ready" && (collectionChoice === "external" || Boolean(selectedCollection)));
   const rankFree = useMemo(() => rankFreeUsage(rankFreeSnapshot && rankFreeSnapshot.clienteId === cliente?.id ? rankFreeSnapshot.preview : null), [rankFreeSnapshot, cliente?.id]);
   const selectedRankFree = rankFree.offers.find(offer => offer.workerId === rankFreeWorkerId) || null;
+  const diamondChoiceAllowed = rankFree.rank === "diamante" && !isManualCollection && !balanceError && !benefitsRefreshing;
   const isRankFree = clienteCompra === "no" && usoSinCompra === "rank_free";
   const initialFree = useMemo(() => initialFreeUsage(initialFreeSnapshot && initialFreeSnapshot.clienteId === cliente?.id ? initialFreeSnapshot.preview : null), [initialFreeSnapshot, cliente?.id]);
   const isInitialFree = clienteCompra === "no" && usoSinCompra === "initial_free";
@@ -702,7 +706,7 @@ export default function RegistrarLlamadaModal({
       case "importe":
         return toNum(importe) > 0 && paypalSourceValid;
       case "clasificacion":
-        return Boolean(clasificacion);
+        return Boolean(clasificacion) && (clasificacion !== "ruleta_diamante" || diamondChoiceAllowed);
       default:
         return true;
     }
@@ -728,6 +732,10 @@ export default function RegistrarLlamadaModal({
 
   async function submit() {
     if (benefitsRefreshing) return;
+    if (clienteCompra === "si" && clasificacion === "ruleta_diamante" && !diamondChoiceAllowed) {
+      setMsg("No se pudo confirmar una compra válida de rango Diamante. Actualiza el beneficio o elige otra clasificación.");
+      return;
+    }
     if (submitInFlightRef.current) return;
     const modalGeneration = modalGenerationRef.current;
 
@@ -1127,10 +1135,10 @@ export default function RegistrarLlamadaModal({
             {current?.key === "clasificacion" && (
               <div className={styles.classificationGrid}>
                 {isManualCollection ? <p className={styles.message}>Este cobro se creó con importe manual: no entrega Coins ni giros de ruleta con ninguna clasificación.</p> : null}
-                {CLASIF_OPTIONS.map((opt) => (
-                  <button key={opt.value} type="button" aria-pressed={clasificacion === opt.value} className={`${styles.choiceButton} ${styles[`classification_${opt.value}`]} ${clasificacion === opt.value ? styles.choiceSelected : ""}`} onClick={() => setClasificacion(opt.value)}>
-                    <span className={styles.classificationIcon} aria-hidden="true">{opt.value === "captado" ? "★" : opt.value === "promo" ? "✦" : opt.value === "recuperado" ? "↗" : opt.value === "super_promo_ruleta" ? "🎡" : "•"}</span>
-                    <span><b>{opt.label}</b>{opt.value === "nada" ? <small>{isManualCollection ? "Cobro manual · Sin Coins ni giros" : "Tarifa normal · Coins y ruleta según el importe y el rango"}</small> : opt.value === "promo" ? <small>Precio promocional · Sin Coins ni giros para ningún rango</small> : opt.value === "captado" ? <small>{captureXp?.eligible ? `${captureXp.owner_name || "La captadora histórica"} recibirá +${captureXp.xp.toLocaleString("es-ES")} XP` : captureXp?.already_awarded ? "XP de captación ya concedido" : "Se validará la primera gestora"} · {isManualCollection ? "Sin Coins ni giros" : "Beneficios de tarifa normal"}</small> : opt.value === "recuperado" ? <small>Compra confirmada tras el contacto · +75 XP una sola vez · Cuenta para las 5 recuperaciones de tu turno · {isManualCollection ? "Sin Coins ni giros" : "Beneficios de tarifa normal"}</small> : opt.value === "super_promo_ruleta" ? <small>{isManualCollection ? "Este cobro manual no permite conceder giros" : "+1 giro exclusivo · Super Ruleta Nivel Especial"}</small> : null}</span>
+                {CLASIF_OPTIONS.filter(opt => opt.value !== "ruleta_diamante" || rankFree.rank === "diamante" || clasificacion === "ruleta_diamante").map((opt) => (
+                  <button key={opt.value} type="button" disabled={opt.value === "ruleta_diamante" && !diamondChoiceAllowed} aria-pressed={clasificacion === opt.value} className={`${styles.choiceButton} ${styles[`classification_${opt.value}`]} ${clasificacion === opt.value ? styles.choiceSelected : ""}`} onClick={() => setClasificacion(opt.value)}>
+                    <span className={styles.classificationIcon} aria-hidden="true">{opt.value === "captado" ? "★" : opt.value === "promo" ? "✦" : opt.value === "recuperado" ? "↗" : opt.value === "super_promo_ruleta" ? "🎡" : opt.value === "ruleta_diamante" ? "💎" : "•"}</span>
+                    <span><b>{opt.label}</b>{opt.value === "nada" ? <small>{isManualCollection ? "Cobro manual · Sin Coins ni giros" : rankFree.rank === "diamante" ? "Tarifa normal · 300 Coins + ruleta del nivel comprado (1, 2 o 3)" : "Tarifa normal · Coins y ruleta según el importe y el rango"}</small> : opt.value === "promo" ? <small>Precio promocional · Sin Coins ni giros para ningún rango</small> : opt.value === "captado" ? <small>{captureXp?.eligible ? `${captureXp.owner_name || "La captadora histórica"} recibirá +${captureXp.xp.toLocaleString("es-ES")} XP` : captureXp?.already_awarded ? "XP de captación ya concedido" : "Se validará la primera gestora"} · {isManualCollection ? "Sin Coins ni giros" : "Beneficios de tarifa normal"}</small> : opt.value === "recuperado" ? <small>Compra confirmada tras el contacto · +75 XP una sola vez · Cuenta para las 5 recuperaciones de tu turno · {isManualCollection ? "Sin Coins ni giros" : "Beneficios de tarifa normal"}</small> : opt.value === "super_promo_ruleta" ? <small>{isManualCollection ? "Este cobro manual no permite conceder giros" : "+1 giro exclusivo · Super Ruleta Nivel Especial"}</small> : opt.value === "ruleta_diamante" ? <small>{isManualCollection ? "Este cobro manual no permite conceder Coins ni giros" : rankFree.rank !== "diamante" ? "El rango Diamante ya no está confirmado. Elige otra clasificación." : "300 Coins + 1 giro Diamante · Sustituye los giros de nivel 1, 2 o 3"}</small> : null}</span>
                     {opt.value === "captado" && captureXp?.eligible ? <strong>+{captureXp.xp.toLocaleString("es-ES")} XP</strong> : null}
                   </button>
                 ))}
@@ -1206,6 +1214,7 @@ export default function RegistrarLlamadaModal({
                   </div>
                   {selectedCollection ? <div className="tc-sub" style={{ marginTop: 8 }}>Cobro PayPal: {collectionLabel(selectedCollection)}</div> : needsPayPalSource && collectionChoice === "external" ? <div className="tc-sub" style={{ marginTop: 8 }}>Origen: pago PayPal externo</div> : null}
                 </div>
+                {clasificacion === "ruleta_diamante" && !isManualCollection ? <p className={styles.message}>Elección de la clienta: 300 Coins y 1 giro Diamante. No se conceden giros de nivel 1, 2 o 3.</p> : null}
                 {clasificacion === "super_promo_ruleta" && !isManualCollection ? (
                   <div className={styles.superPromoAchievement}>
                     <span className={styles.superPromoAchievementIcon} aria-hidden="true">🎡</span>
@@ -1245,7 +1254,7 @@ export default function RegistrarLlamadaModal({
             {current?.key !== "resumen" ? (
               <button type="button" className={`${styles.gameButton} ${styles.primaryButton}`} onClick={next}>Siguiente</button>
             ) : (
-              <button type="button" className={`${styles.gameButton} ${styles.primaryButton}`} onClick={submit} disabled={loading || benefitsRefreshing || (isFreeGift && Boolean(balanceValidationError))}>{loading ? "Guardando..." : "Registrar llamada"}</button>
+              <button type="button" className={`${styles.gameButton} ${styles.primaryButton}`} onClick={submit} disabled={loading || benefitsRefreshing || (clienteCompra === "si" && clasificacion === "ruleta_diamante" && !diamondChoiceAllowed) || (isFreeGift && Boolean(balanceValidationError))}>{loading ? "Guardando..." : "Registrar llamada"}</button>
             )}
           </div>
         </div>

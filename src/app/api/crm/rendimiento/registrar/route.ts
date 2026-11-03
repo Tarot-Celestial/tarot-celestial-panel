@@ -231,6 +231,7 @@ function buildNota({
   if (resumenCodigo) partes.push(`Uso actual: ${resumenCodigo}.`);
   partes.push(`Tarotista: ${tarotistaNombre || "sin indicar"}.`);
   if (origenColaborador) partes.push(`Origen: ${origenColaborador}.`);
+  if (clasificacion === "ruleta_diamante") partes.push("Clasificación: Ruleta Diamante elegida en lugar de la ruleta del nivel de compra; 300 Coins, sujeto a validación de rango y tarifa.");
   if (clasificacion === "super_promo_ruleta") partes.push("Clasificación: Super Promo Ruleta (+1 giro exclusivo Nivel Especial).");
   return partes.join(" ").replace(/\s+/g, " ").trim();
 }
@@ -381,9 +382,12 @@ export async function POST(req: Request) {
     }
     const importe = toNum(body?.importe);
     const clasificacion = String(body?.clasificacion || "nada").trim();
-    const clasificacionesValidas = new Set(["nada", "promo", "captado", "recuperado", "super_promo_ruleta"]);
+    const clasificacionesValidas = new Set(["nada", "promo", "captado", "recuperado", "super_promo_ruleta", "ruleta_diamante"]);
     if (!clasificacionesValidas.has(clasificacion)) {
       return NextResponse.json({ ok: false, error: "CLASIFICACION_INVALIDA" }, { status: 400 });
+    }
+    if (clasificacion === "ruleta_diamante" && !clienteCompra) {
+      return NextResponse.json({ ok: false, error: "DIAMOND_ROULETTE_REQUIRES_REGULAR_PURCHASE" }, { status: 400 });
     }
     if (clasificacion === "super_promo_ruleta" && !clienteCompra) {
       return NextResponse.json({ ok: false, error: "SUPER_PROMO_REQUIERE_COMPRA" }, { status: 400 });
@@ -645,6 +649,8 @@ export async function POST(req: Request) {
 
       const technicalMessage = `${atomicError.message || ""} ${atomicError.details || ""}`.toUpperCase();
       const knownBalanceError = [
+        "DIAMOND_ROULETTE_REQUIRES_DIAMOND",
+        "DIAMOND_ROULETTE_REQUIRES_REGULAR_PURCHASE",
         "RECOVERY_REQUIRES_PURCHASE",
         "OPERATION_CONFLICT",
         "RECOVERY_NOT_ELIGIBLE",
@@ -706,7 +712,7 @@ export async function POST(req: Request) {
         p_worker_id: me.id,
         p_call_id: registeredCallId,
         p_used_initial_free: !clienteCompra && usoTipo === "7free",
-        p_classification: superPromoRuleta ? "nada" : clasificacion,
+        p_classification: superPromoRuleta || clasificacion === "ruleta_diamante" ? "nada" : clasificacion,
         p_business: String(cliente?.origen || "celestial"),
       });
       if (captureError) {

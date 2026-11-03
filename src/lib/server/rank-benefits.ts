@@ -134,6 +134,7 @@ export async function rankPackageBenefitsForPacks(
       rankBenefitsStatus: resolution?.status ?? "unavailable",
       rankBenefitsResolution: resolution,
       regularBonusMinutes: resolution?.regular_bonus_minutes ?? null,
+      ...(resolution?.replaces_native_coins ? { rewardCoins: 0, coins: 0 } : {}),
       ...(resolution?.replaces_level_spin ? { rouletteLevel: 5, rouletteSpins: 1, roulette_level: 5, roulette_spins: 1, rewardCoins: 0, coins: 0 } : {}),
     };
   });
