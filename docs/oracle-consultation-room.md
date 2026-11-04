@@ -11,7 +11,7 @@ La página `/cliente/oraculo` reúne selección de tema, tirada, interpretación
 
 ## Límites explícitos
 
-La guía es una ilustración original estática, identificada como «Guía virtual», acompañada de transiciones de interfaz. No es una videollamada ni un avatar con labios o manos animados. La narración requiere una voz española local instalada en el dispositivo; no llama a una API de voz. Las respuestas del Oráculo son interpretaciones editoriales basadas en la tirada, no un modelo conversacional entrenado ni una medición de vibraciones. Los complementos de tarot no se incorporan como servicios embebidos.
+La guía es ahora un personaje digital 3D original y estilizado, identificado como «Guía virtual». Brazos, manos, rostro, baraja y esfera se animan en el navegador; no es una persona en videollamada ni vídeo fotorealista. No hay sincronización labial. La ilustración anterior permanece como respaldo si WebGL no está disponible. La narración requiere una voz española local instalada en el dispositivo; no llama a una API de voz. Las respuestas del Oráculo son interpretaciones editoriales basadas en la tirada, no un modelo conversacional entrenado ni una medición de vibraciones. Los complementos de tarot no se incorporan como servicios embebidos.
 
 No se modifican precios, cobros, historiales ni saldos por esta migración. No se realizan compras, tiradas o preguntas de prueba con clientes reales. Para volver a la interfaz anterior basta revertir los archivos de aplicación; las dos funciones nuevas pueden permanecer sin uso.
 
@@ -31,3 +31,14 @@ Pruebas de catálogo, posiciones sin cartas repetidas, reanudación antigua, ais
 `node tests/oracle-room-browser.cjs` requiere el servidor local en el puerto 3020. Utiliza cuentas y transacciones ficticias interceptadas: escritorio, móvil de 390 y 320 píxeles, reanudación tras recarga, selección, historial, pregunta incluida y errores recuperables. La voz se prueba como control de interfaz con una voz simulada; no acredita el audio de cada dispositivo.
 
 La comprobación TypeScript abarca `src` sin los archivos locales archivados bajo `outputs`. La compilación de Vercel comprueba el árbol publicado. Un despliegue listo no sustituye la comprobación autenticada en producción.
+
+
+## Personaje digital y Oráculo en línea
+
+El botón verde abre la conversación al lado de la escena. Abrir, cerrar, escribir, elegir una interpretación o pausar el personaje no llama al POST ni consume preguntas. Las acciones welcome, idle, shuffle, offer, reveal, reading, oracle-open, listening, channeling, answer, rest y recover proceden del estado real de la interfaz. La pose channeling dura lo que tarda la petición de pregunta, sin simular una respuesta; answer sólo aparece tras éxito. La esfera es una ambientación visual. Las respuestas siguen usando el motor editorial existente: esta entrega no añade un modelo conversacional.
+
+El dibujo 3D se construye con geometría propia usando Three.js ya instalado. No descarga modelos de terceros ni utiliza servicios de generación. Se limita a 30 fps y DPR 1.5, se detiene fuera de la vista o en una pestaña oculta, respeta movimiento reducido y permite pausa. Un fallo WebGL muestra el respaldo estático y mantiene operativa la consulta. El código libera texturas, geometrías, materiales, renderer, observadores y temporizadores al salir.
+
+Ante un timeout se recupera la lectura exacta y se conserva el borrador; si la respuesta ya quedó guardada se muestra sin reenviar. Cambiar de cliente descarta respuestas tardías y limpia el estado visual. No se cambian tablas, RPC, packs, precios ni permisos.
+
+Validación adicional: node --test --test-isolation=none tests/oracle-guide-state.test.cjs tests/oracle-guide-ui.test.cjs. El entorno outputs/oracle-avatar/preview usa exclusivamente sesiones, cartas, respuestas y saldos ficticios y no se incluye en el despliegue.
