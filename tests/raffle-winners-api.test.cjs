@@ -33,7 +33,8 @@ function fixture(options = {}) {
   };
   const exports = {};
   vm.runInNewContext(source, { exports, console, require: name => {
-    if (name === '@/lib/server/auth-worker') return { getAdminClient: () => admin };
+    if (name === '@/lib/server/auth-worker') return { getEnv: () => 'fixture-value' };
+    if (name === '@supabase/supabase-js') return { createClient: () => admin };
     if (name === 'next/server') return { NextResponse: { json: (body, init = {}) => new Response(JSON.stringify(body), init) } };
     throw new Error(name);
   } });
@@ -47,6 +48,7 @@ test('every authenticated customer gets all 31 public winners without participat
     const f = fixture(), response = await f.get(customer), body = await response.json();
     assert.equal(response.status, 200); noCache(response);
     assert.equal(body.winners.length, 31);
+    assert.equal(body.raffle_id, 'active');
     assert.deepEqual(body.winners.map(w => w.position), Array.from({ length: 31 }, (_, i) => i + 1));
     assert.deepEqual(Object.keys(body.winners[0]), publicFields.split(','));
     assert.doesNotMatch(JSON.stringify(body), /private-id|private-phone|Archived/);
@@ -71,6 +73,6 @@ test('data errors are retryable errors rather than a false empty list', async ()
 
 test('no active raffle returns a noncached empty list, without exposing archived winners', async () => {
   const f = fixture({ tables: { raffles: [] } }), response = await f.get('customer');
-  assert.equal(response.status, 200); noCache(response); assert.deepEqual(await response.json(), { ok: true, winners: [] });
+  assert.equal(response.status, 200); noCache(response); assert.deepEqual(await response.json(), { ok: true, raffle_id: null, winners: [] });
   assert.equal(f.calls.some(c => c.table === 'raffle_public_winners'), false);
 });
