@@ -31,7 +31,7 @@
 .guide{width:100%;height:auto;display:block;position:absolute;inset:0 0 auto;z-index:0;pointer-events:none}
 .guideBadge{position:absolute;left:18px;top:18px;display:flex;align-items:center;gap:8px;background:#160d20cf;backdrop-filter:blur(8px);border:1px solid #d4b478ad;color:#fae2b8;padding:8px 12px;border-radius:28px;font-size:12px;z-index:2}
 .motion{position:absolute;right:16px;top:16px;z-index:2;background:#180f20bd;border:1px solid #d4b47877;border-radius:50%;width:34px;height:34px;display:grid;place-items:center}
-.table{position:relative;z-index:1;padding:clamp(230px,27vw,370px) 24px 20px;background:linear-gradient(transparent 36%,#170d180a 45%,#170d18c9 66%,#100b15 100%)}
+.table{position:relative;z-index:1;padding:22px 24px;background:radial-gradient(ellipse at 50% 0,#43263d66,transparent 70%),#100b15;border-top:1px solid #d5b5793b}
 .welcome{text-align:center;text-shadow:0 2px 15px #08040d}
 .welcome h2{font-size:28px;color:#ffe5b8}
 .welcome p{font-size:13px;color:#ece1ee}
@@ -141,3 +141,51 @@
 @media(max-width:800px){.room{padding:18px;border-radius:20px}.header{align-items:flex-start;gap:12px}.header h1{font-size:33px}.headerActions{flex-direction:row}.creditPill{font-size:10px;padding:9px}.headerActions button{width:34px;height:34px}.topics{justify-content:flex-start;overflow-x:auto;scrollbar-width:thin}.topics button{font-size:16px}.toolbar{gap:14px}.toolbar label{width:100%;justify-content:space-between}.toolbar select{flex:1;min-width:0;max-width:75%}.deckLabel{border:0;padding:0}.daily{margin-left:auto}.consultation{grid-template-columns:1fr}.table{padding-top:clamp(230px,43vw,350px)}.side{grid-template-columns:1fr 1fr;align-items:start}.historyList{grid-template-columns:repeat(2,minmax(0,1fr))}.cards{max-width:540px;margin:auto}.voiceBar{padding:11px}.room h2{font-size:26px}}
 @media(max-width:560px){.room{padding:12px;border-radius:17px}.header{display:block;padding:8px 5px;margin-bottom:15px}.header h1{font-size:32px}.header p{font-size:12px}.headerActions{margin-top:15px;justify-content:space-between}.eyebrow{font-size:9px}.topics button{padding:12px;font-size:16px}.toolbar{padding:15px 2px;gap:12px}.daily{width:100%;margin:0}.side{grid-template-columns:1fr}.stage{border-radius:14px}.table{padding:clamp(175px,51vw,280px) 14px 20px}.welcome h2{font-size:24px}.welcome p{font-size:12px}.guideBadge{left:12px;top:12px;font-size:10px;padding:7px 10px}.motion{right:10px;top:10px}.cards{gap:10px}.tarotCard>strong{font-size:14px}.tarotCard>small{font-size:10px}.cards[data-count='5'],.cards[data-count='10']{grid-template-columns:repeat(3,minmax(0,1fr));gap:15px 10px}.cards[data-count='4']{grid-template-columns:repeat(2,minmax(0,1fr));max-width:300px}.cards[data-count='1']{grid-template-columns:minmax(0,145px)}.fan{gap:5px}.cardBack span{font-size:22px}.selection>p{font-size:18px}.reading,.oracle{padding:20px 18px}.historyList{grid-template-columns:1fr}.history{padding:15px}.history h2{font-size:22px}.footer{gap:12px;padding:17px 8px}.cost{gap:8px;font-size:11px}.cost strong{white-space:normal}.voiceBar small{font-size:9px}}
 @media(prefers-reduced-motion:reduce){.room *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* The character has its own stage; interactive cards never cover her face or hands. */
+.avatar{position:relative;width:100%;aspect-ratio:4/3;display:block}
+.avatarLoading{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;aspect-ratio:4/3;background:radial-gradient(ellipse at 50% 30%,#432a59,#120c1e 70%);color:var(--gold);font-size:12px}
+.avatarLoading svg{width:36px;height:36px}
+.table{padding:22px 24px}
+.room [hidden]{display:none!important}
+.experienceBar{display:flex;justify-content:space-between;align-items:center;gap:18px;padding:0 0 20px}
+.experienceBar>div{display:flex;align-items:center;gap:9px;font-size:11px;color:#c1b2ce;min-width:0;line-height:1.5}
+.experienceBar strong{font-weight:500;color:#ecd8b4}
+.liveDot,.onlineDot{display:inline-block;flex-shrink:0;width:7px;height:7px;border-radius:50%;background:#69e3b5;box-shadow:0 0 12px #62d8a65c}
+.liveDot{background:#d2b5ef;box-shadow:0 0 12px #d2b5ef5c}
+.oracleOnline{display:flex;align-items:center;justify-content:center;gap:9px;padding:12px 19px;border:1px solid #61d6a9a6;border-radius:30px;background:linear-gradient(120deg,#164f40,#143329);color:#d9ffec!important;font-size:13px;font-weight:700;box-shadow:0 5px 24px #21b98312;white-space:nowrap;min-height:46px;transition:background .2s,box-shadow .2s}
+.oracleOnline:hover,.oracleOnline[aria-expanded=true]{background:linear-gradient(120deg,#1e7258,#1b483a);box-shadow:0 0 22px #44b98c22}
+.oracleHeading{justify-content:space-between;align-items:flex-start}
+.oracleHeading>div{min-width:0}
+.oracleHeading .eyebrow{margin:0 0 11px;padding:0;border:0;background:none;color:#9ee8c6;letter-spacing:.12em;font-size:10px}
+.oracleHeading .onlineDot{padding:0;border:0;min-width:7px;background:#69e3b5}
+.oracleHeading h2{font-size:27px}
+.closeOracle{display:grid;place-items:center;flex-shrink:0;border:1px solid #a284a14d;border-radius:50%;width:34px;height:34px;background:#201529;color:#e0d4e7}
+.oracleContext{display:flex;align-items:center;gap:10px;padding:13px;border-radius:12px;border:1px solid #d0af753d;background:#c79c4e0a;margin:18px 0}
+.oracleContext>svg{color:var(--gold);flex-shrink:0}
+.oracleContext>div{display:grid;gap:4px;min-width:0;flex:1}
+.oracleContext strong{font-family:Georgia,serif;font-weight:400;font-size:16px;color:#f4ddb0}
+.oracleContext span{font-size:10px;color:#bfaec7}
+.oracleContext .questionBalance{color:#aee7c5;background:#153628;border:1px solid #5cbd933d;padding:6px 8px;border-radius:20px;white-space:nowrap}
+.conversation{min-height:160px;max-height:330px;scrollbar-gutter:stable;padding-right:4px}
+.conversationWelcome{padding:26px 8px;text-align:center;color:#d3bbdd}
+.conversationWelcome>svg{color:#dfc18a;stroke-width:1;margin-bottom:14px}
+.conversationWelcome h3{font-size:22px;color:#f1e0c9}
+.conversationWelcome p{font-size:12px;color:#bfaec8}
+.oracleWorking{display:flex;align-items:center;gap:5px;color:#b5efd1;margin:10px 0;padding:10px 12px;border:1px solid #64c99b33;border-radius:10px;background:#16403030}
+.oracleWorking>span{width:4px;height:4px;flex-shrink:0;border-radius:50%;background:#91dfba}
+.room[data-motion=true] .oracleWorking>span{animation:oracleThinking 1.5s ease-in-out infinite}
+.room[data-motion=true] .oracleWorking>span:nth-child(2){animation-delay:.15s}
+.room[data-motion=true] .oracleWorking>span:nth-child(3){animation-delay:.3s}
+.oracleWorking p{margin:0 0 0 7px;font-size:11px}
+.oracleRetry{font-size:12px!important;color:#f0bdc4;background:#47233355;border-radius:9px;padding:12px}
+.questionMeta{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-4px 0 14px;color:#c6b6cd;font-size:10px}
+.questionMeta>span:last-child{font-variant-numeric:tabular-nums}
+.greenButton{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:48px;padding:13px 16px;border:1px solid #72d5aa8c;border-radius:10px;background:linear-gradient(115deg,#216e53,#164d3d);color:#edfff4!important;font-weight:700;font-size:13px;box-shadow:0 5px 20px #3eae7d16}
+.greenButton:hover:not(:disabled){background:linear-gradient(115deg,#298360,#1c614b)}
+.consultation[data-oracle-open=true] .stage{border-color:#82c9b46b}
+.consultation[data-oracle-open=true] .oracle{border-color:#80bca265;background:radial-gradient(ellipse at 10% 0,#16443840,transparent 50%),linear-gradient(145deg,#251a2aa8,#100c15ee)}
+@keyframes oracleThinking{50%{opacity:.4;transform:translateY(-3px)}}
+@media(max-width:800px){.experienceBar{align-items:flex-start}.experienceBar>div{max-width:45%}.side{grid-template-columns:1fr}.table{padding:20px}.oracleHeading h2{font-size:26px}}
+@media(max-width:560px){.experienceBar{flex-direction:column;gap:13px;padding-bottom:16px}.experienceBar>div{max-width:none;font-size:10px}.oracleOnline{width:100%;min-height:46px}.table{padding:18px 13px}.conversation{max-height:300px}.oracleHeading h2{font-size:25px}.questionMeta{font-size:9px}.consultation[data-oracle-open=true]{gap:12px}.consultation[data-oracle-open=true] .voiceBar{display:none}}
+@media(max-width:800px) and (min-height:650px){.consultation[data-oracle-open=true] .stage{position:sticky;top:8px;z-index:3;box-shadow:0 8px 22px #08040de0}.consultation[data-oracle-open=true] .voiceBar{display:none}}
