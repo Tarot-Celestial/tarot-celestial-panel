@@ -300,7 +300,12 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
     if(account!==accountEpoch.current||version!==chatEpoch.current)return;
     const reply=safeAnswer(result?.answer);
     const answeredAt=Date.parse(String(result?.answer_refreshed_at||''))||0;
-    const outdated=result?.answer_historical===true||(walletFactsAtRef.current>0&&answeredAt<walletFactsAtRef.current);
+    const currentFacts=walletFactsRef.current, answerFacts=result?.facts;
+    const sameBalances=Boolean(currentFacts&&answerFacts&&currentFacts.coins===answerFacts.coins&&
+      currentFacts.minutes===answerFacts.minutes&&currentFacts.oracleCredits===answerFacts.oracleCredits);
+    // Polling advances the observation time even when no balance changed. A
+    // slow answer remains valid if its canonical balances still match.
+    const outdated=result?.answer_historical===true||(walletFactsAtRef.current>0&&answeredAt<walletFactsAtRef.current&&!sameBalances);
     if(reply){
       chatRequest.current=null;
       if(currentPath.current===pathname){
