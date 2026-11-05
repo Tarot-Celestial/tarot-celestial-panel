@@ -102,6 +102,21 @@ function fixture({ reducedMotion = false } = {}) {
 
 const answer = () => ({ ok: true, mensajes: [{ id: 'fixture-question', role: 'user', contenido: 'Pregunta ficticia' }, { id: 'fixture-answer', role: 'assistant', contenido: 'Respuesta ficticia confirmada.' }], questionState: { includedAvailable: false, extra: 0, total: 0 } });
 
+test('a server-confirmed expiry restores the daily option without purchasing or starting a reading', async t => {
+  const f = fixture();
+  const freeState = { nextFreeAt: '1999-01-01T00:00:00Z', remainingSeconds: 2 };
+  f.snapshot = { ...snapshot(), freeState, credits: 0 };
+  await f.mount();
+  t.after(() => f.close());
+  await f.run(() => f.button('Amor').props.onClick());
+  const expiry = [...f.timers.values()].find(timer => !timer.repeat && timer.delay > 1000 && timer.delay <= 2000);
+  assert.ok(expiry, 'the countdown uses the server duration even when the local clock differs');
+  f.snapshot = { ...snapshot(), freeAvailable: true, credits: 0 };
+  await f.run(() => { void expiry.fn(); });
+  assert.ok(f.button('Usar mi carta gratis'));
+  assert.equal(f.calls.filter(call => call.body).length, 0);
+});
+
 test('opening, drafting and closing the oracle never submit a question or start checkout', async t => {
   const f = fixture(); await f.mount(); t.after(() => f.close());
   await f.run(() => f.button('Oráculo en línea').props.onClick());
@@ -114,6 +129,35 @@ test('opening, drafting and closing the oracle never submit a question or start 
   assert.equal(f.question().props.value, 'Pregunta todavía sin enviar');
   assert.equal(f.calls.filter(call => call.body).length, 0);
   assert.equal(f.checkoutCalls.length, 0);
+});
+
+test('switching spreads during the shared cooldown needs a paid credit and never reuses the previous included question', async t => {
+  const f = fixture();
+  const freeState = { nextFreeAt: new Date(Date.now() + 3600000).toISOString(), remainingSeconds: 3600 };
+  f.snapshot = { ...snapshot(), freeState, credits: 0 };
+  await f.mount();
+  t.after(() => f.close());
+  const select = () => f.tree.root.findByProps({ 'aria-label': 'Tipo de tirada' });
+  await f.run(() => select().props.onChange({ target: { value: 'yes_no' } }));
+  const startLabels = () => f.tree.root.findAllByType('button').map(textOf);
+  assert.ok(!startLabels().includes('Usar mi carta gratis'));
+  assert.ok(!startLabels().includes('Usar 1 tirada de mi saldo'));
+  assert.match(textOf(f.tree.root), /Ver packs de tiradas/);
+  await f.run(() => f.button('Oráculo en línea').props.onClick());
+  assert.equal(f.tree.root.findAllByProps({ placeholder: '¿Qué te gustaría aclarar?' }).length, 0);
+  await f.run(() => f.button('Volver a mi lectura').props.onClick());
+  await f.run(() => select().props.onChange({ target: { value: 'free_daily' } }));
+  await f.run(() => f.button('Amor').props.onClick());
+  assert.ok(!startLabels().includes('Usar mi carta gratis'));
+  assert.equal(f.calls.filter(call => call.body).length, 0);
+});
+test('a purchased credit is labelled explicitly after the free draw and selecting a paid spread never spends it', async t => {
+  const f = fixture();
+  await f.mount();
+  t.after(() => f.close());
+  await f.run(() => f.tree.root.findByProps({ 'aria-label': 'Tipo de tirada' }).props.onChange({ target: { value: 'yes_no' } }));
+  assert.ok(f.button('Usar 1 tirada de mi saldo'));
+  assert.equal(f.calls.filter(call => call.body).length, 0);
 });
 
 test('a submitted question drives the sphere while pending, duplicate clicks cannot consume twice', async t => {
