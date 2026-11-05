@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
+import { BENEFIT_PAYMENT_COLUMNS, loadPurchaseBenefitSummaries } from "@/lib/server/purchase-benefit-summary";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
@@ -76,6 +77,26 @@ async function addCoins(gate: Extract<Awaited<ReturnType<typeof requireAdmin>>, 
  } catch {return coinsUnconfirmed();}
 }
 
+async function purchaseCoinsHistory(admin: any, clientId: string) {
+ try {
+  const limit = 30;
+  const {data, error} = await admin.from("crm_cliente_pagos")
+   .select(`${BENEFIT_PAYMENT_COLUMNS},created_at,importe,moneda,metodo`)
+   .eq("cliente_id",clientId)
+   .or("source_rendimiento_id.not.is.null,benefits_processed_at.not.is.null")
+   .order("created_at",{ascending:false}).order("id",{ascending:false}).limit(limit);
+  if(error || !Array.isArray(data)) return null;
+  const summaries = await loadPurchaseBenefitSummaries(admin,clientId,data);
+  return {limit,items:data.flatMap((payment:any)=>{
+   const benefits = summaries.get(payment.id);
+   // A completed collection alone is not a registered purchase.
+   if(!benefits?.is_purchase) return [];
+   return [{payment_id:payment.id,created_at:payment.created_at,amount:Number(payment.importe),
+    currency:payment.moneda,method:payment.metodo,benefits}];
+  })};
+ } catch { return null; }
+}
+
 export async function GET(req: Request) {
  try {
   const gate = await requireAdmin(req);
@@ -91,7 +112,7 @@ export async function GET(req: Request) {
    return reply({ok:true,clients:result.data});
   }
   if(!uuid.test(id)) return reply({ok:false,error:"Cliente no válido."},400);
-  const results=await Promise.all([
+  const [results,purchaseHistory]=await Promise.all([Promise.all([
    gate.admin.from("crm_clientes").select("id,nombre,apellido,telefono,email").eq("id",id).maybeSingle(),
    gate.admin.rpc("tc_client_state_snapshot",{p_cliente_id:id}),
    gate.admin.from("tc_admin_spin_adjustments").select("operation_id,nivel,delta,reason,before_count,after_count,created_at").eq("cliente_id",id).order("created_at",{ascending:false}).limit(20),
@@ -100,7 +121,7 @@ export async function GET(req: Request) {
    gate.admin.from("tc_admin_coin_adjustments").select("operation_id,amount,reason,before_balance,after_balance,movement_id,created_at").eq("cliente_id",id).order("created_at",{ascending:false}).limit(20),
    gate.admin.rpc("get_cliente_oracle_balance",{p_cliente_id:id}),
    gate.admin.from("cliente_oracle_credit_movements").select("id,meta,created_at").eq("cliente_id",id).eq("movement_type","adjustment").contains("meta",{source:"admin_client_balances"}).like("reference","admin:oracle:tiradas:%").order("created_at",{ascending:false}).limit(20),
-  ]);
+  ]),purchaseCoinsHistory(gate.admin,id)]);
   for(const result of results.slice(0,10)) if(result.error) throw result.error;
   if(!results[0].data) return reply({ok:false,error:"Cliente no encontrado."},404);
   const wallet=results[1].data;
@@ -112,7 +133,7 @@ export async function GET(req: Request) {
      before_balance:row.meta.before_balance, after_balance:row.meta.after_balance,
      movement_id:row.id, created_at:row.created_at,
    }))};
-  return reply({ok:true,cliente:results[0].data,wallet:{coins:wallet.coins,minutes_free:wallet.minutes_free,minutes_normal:wallet.minutes_normal,minutes_total:wallet.minutes_total,effective_rank:wallet.effective_rank},spins:results.slice(3,8).map((r,i)=>({level:i+1,count:r.count||0,available:results[8].data[`level_${i+1}_spins`]})),history:results[2].data,coins_history:results[9].data,oracle});
+  return reply({ok:true,cliente:results[0].data,wallet:{coins:wallet.coins,minutes_free:wallet.minutes_free,minutes_normal:wallet.minutes_normal,minutes_total:wallet.minutes_total,effective_rank:wallet.effective_rank},spins:results.slice(3,8).map((r,i)=>({level:i+1,count:r.count||0,available:results[8].data[`level_${i+1}_spins`]})),history:results[2].data,coins_history:results[9].data,purchase_coins_history:purchaseHistory,oracle});
  }catch{ return reply({ok:false,error:"No se pudieron consultar los saldos. Reintenta."},503); }
 }
 export async function POST(req: Request) {

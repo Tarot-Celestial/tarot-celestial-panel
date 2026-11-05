@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { rouletteStaff, RouletteAccessError } from "@/lib/server/ruleta-access";
+import { enrichPurchaseNotes } from "@/lib/server/purchase-benefit-summary";
 
 function getSupabase() {
   return createClient(
@@ -36,7 +37,8 @@ export async function GET(req: Request) {
 
     if (error) throw error;
 
-    return NextResponse.json({ ok: true, notas: data || [] });
+    const notas = await enrichPurchaseNotes(sb, cliente_id, data || []);
+    return NextResponse.json({ ok: true, notas }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e instanceof RouletteAccessError ? e.message : "No se pudo cargar el historial." }, { status: e instanceof RouletteAccessError ? e.status : 500 });
   }

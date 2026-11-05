@@ -1,5 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
+import PurchaseBenefitReceipt from "@/components/crm/PurchaseBenefitReceipt";
+import type { PurchaseBenefitSummary } from "@/lib/purchase-benefit-summary";
 
 type TimelineItem = {
   id: string;
@@ -10,6 +12,7 @@ type TimelineItem = {
   body?: string;
   date?: string | null;
   tone?: "gold" | "green" | "blue" | "purple" | "red" | "muted";
+  benefits?: PurchaseBenefitSummary;
 };
 
 type ClienteTimelineProps = {
@@ -130,6 +133,7 @@ export default function ClienteTimeline({ cliente, pagos = [], notas = [], loadi
       title: nota?.event_type === "paypal_collection_confirmed" ? "Pago PayPal confirmado · cobro" : nota?.event_type === "system_free_pass" ? "Pase FREE utilizado" : nota?.event_type === "ruleta_reward" ? "Premio Ruleta Celestial · Solo lectura" : nota?.is_pinned ? "Nota anclada" : isWebPurchaseNote ? "Compra web" : "Nota CRM",
       subtitle: nota?.author_name || nota?.author_email || "Usuario",
       body,
+      benefits: nota?.purchase_benefits_summary,
       date: getNoteDate(nota),
       tone: nota?.event_type === "system_free_pass" ? "gold" : nota?.event_type === "ruleta_reward" ? "purple" : nota?.is_pinned ? "gold" : isWebPurchaseNote ? "blue" : "purple",
     });
@@ -203,6 +207,7 @@ export default function ClienteTimeline({ cliente, pagos = [], notas = [], loadi
                     {String(item.body).slice(0, 480)}{String(item.body).length > 480 ? "…" : ""}
                   </div>
                 ) : null}
+                <PurchaseBenefitReceipt summary={item.benefits} />
               </div>
             </div>
           );

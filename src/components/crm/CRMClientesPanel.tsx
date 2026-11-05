@@ -8,6 +8,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import RegistrarLlamadaModal from "@/components/crm/RegistrarLlamadaModal";
 import ClienteSidebar from "@/components/crm/ClienteSidebar";
 import ClienteTimeline from "@/components/crm/ClienteTimeline";
+import PurchaseBenefitReceipt from "@/components/crm/PurchaseBenefitReceipt";
 import PayPalCrmPaymentModal from "@/components/crm/PayPalCrmPaymentModal";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import { BellRing, CalendarClock, Clock3, ShieldCheck, Sparkles } from "lucide-react";
@@ -2460,6 +2461,7 @@ export default function CRMClientesPanel({
                           </div>
                         )}
 
+                        <PurchaseBenefitReceipt summary={n.purchase_benefits_summary} />
                         <div className="tc-row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 10, flexWrap: "wrap", minWidth: 0 }}>
                           <button
                             className="tc-btn"

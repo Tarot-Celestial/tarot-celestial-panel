@@ -1,6 +1,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),ts=require('typescript');
 const id=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0');
+const benefitSummary={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src/lib/purchase-benefit-summary.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:benefitSummary});
 function harness(){
  const h={rpcCalls:[],role:'central',active:true,rpcError:null,promotionReads:0};
  const tables={crm_clientes:[{id:id(2),nombre:'Prueba',minutos_free_pendientes:0,minutos_normales_pendientes:0}],
@@ -10,21 +11,22 @@ function harness(){
    {id:id(5),cliente_id:id(4),estado:'completed',source_rendimiento_id:null,importe:22}]};
  const admin={auth:{getUser:async token=>({data:{user:token==='good'?{id:id(1)}:null}})},from:table=>{
   let filters=[],one=false,value,mode='read';const q={select:()=>q,order:()=>q,limit:()=>q,gte:()=>q,gt:()=>q,
-   eq:(k,v)=>{filters.push(r=>r[k]===v);return q;},is:(k,v)=>{filters.push(r=>(r[k]??null)===v);return q;},
+   eq:(k,v)=>{filters.push(r=>(k==='meta->>payment_id'?r.meta?.payment_id:r[k])===v);return q;},is:(k,v)=>{filters.push(r=>(r[k]??null)===v);return q;},
    not:(k,op,v)=>{filters.push(r=>(r[k]??null)!==v);return q;},in:(k,v)=>{filters.push(r=>v.includes(r[k]));return q;},
    insert:v=>{mode='insert';value=v;return q;},upsert:v=>{mode='insert';value=v;return q;},delete:()=>q,
    maybeSingle:()=>{one=true;return q;},single:()=>{one=true;return q;},
    then:resolve=>{const rows=table==='workers'?[{id:id(1),user_id:id(1),role:h.role,is_active:h.active}]:tables[table]||[];
     const selected=mode==='insert'?[{...value,id:id(9)}]:rows.filter(r=>filters.every(f=>f(r)));
-    return Promise.resolve({data:one?selected[0]||null:selected,error:null}).then(resolve);}};return q;
+    return Promise.resolve({data:one?selected[0]||null:selected,error:h.failedTable===table?{message:'Temporary read failure'}:null}).then(resolve);}};return q;
  },rpc:async(name,{p_payload,p_user})=>{h.rpcCalls.push({name,payload:p_payload,user:p_user});
   if(name==='tc_register_call_recovery')return {data:h.rpcError?null:{rendimiento:{id:id(6)},payment:{id:id(3)},recovery:{xp_event:{id:id(10),worker_id:id(1),xp_amount:75},mission:{recovered:1}},duplicate_prevented:true},error:h.rpcError};
-  if(name==='tc_register_call_minutes')return {data:h.rpcError?null:{rendimiento:{id:id(6)},payment:null,existing_payment_id:id(3),payment_linked:true,duplicate_prevented:true},error:h.rpcError};
+  if(name==='tc_register_call_minutes')return {data:h.rpcError?null:h.rpcResult||{rendimiento:{id:id(6)},payment:null,existing_payment_id:id(3),payment_linked:true,duplicate_prevented:true},error:h.rpcError};
   return {data:{status:'pending'},error:null};
  }};
  const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src/app/api/crm/rendimiento/registrar/route.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,URL,Date,console:{error:()=>{}},process:{env:{NEXT_PUBLIC_SUPABASE_URL:'https://example.test',SUPABASE_SERVICE_ROLE_KEY:'test',NEXT_PUBLIC_SUPABASE_ANON_KEY:'test'}},require:n=>({
   'next/server':{NextResponse:{json:(x,o)=>new Response(JSON.stringify(x),o)}},
   '@supabase/supabase-js':{createClient:()=>admin},
+  '@/lib/purchase-benefit-summary':benefitSummary,
   '@/lib/server/auth-fast':{},'@/lib/server/client-promotions':{loadActivePromotion:async()=>{h.promotionReads++;return h.promotion||null;},promotionPackageSnapshot:(promotion,pack)=>({...pack,promotion_id:promotion.id,promotion_name:promotion.name,package_id:pack.id,package_name:pack.name})},
   '@/lib/server/paypal-crm':{paypalConfig:()=>({environment:'sandbox'})},
   '@/lib/server/new-tarotista-gift':{newTarotistaGiftPreview:async()=>({offers:[]}),handleNewTarotistaGiftCall:()=>{throw Error('Unexpected introduction gift');}},
@@ -72,6 +74,19 @@ test('Recovery validation failure is visible as conflict; no capture side effect
  const h=harness();h.rpcError={code:'P0001',message:'CONTACT_FIRST'};
  const r=await h.post({...h.body,existing_payment_id:null,clasificacion:'recuperado',cliente_compra_minutos:true,minute_accounting_version:3,importe:22,forma_pago:'TPV'});
  assert.equal(r.status,409);assert.equal((await r.json()).error,'CONTACT_FIRST');assert.equal(h.rpcCalls.length,1);
+});
+
+test('committed purchase response reports earned Coins and wheel from persisted evidence, retaining success on receipt-read failure',async()=>{
+ const h=harness();
+ h.rpcResult={rendimiento:{id:id(6)},payment:{id:id(3),cliente_id:id(2),source_rendimiento_id:id(6),benefits_processed_at:'2026-11-05T12:00:00Z',benefits_context:{purchase_classification:'nada',coins:999}}};
+ h.tables.cliente_puntos_historial=[{cliente_id:id(2),tipo:'ganado',puntos:300,meta:{payment_id:id(3)},saldo_despues:930}];
+ h.tables.tc_client_benefit_events=[{cliente_id:id(2),payment_id:id(3),benefit_key:'purchase_processed',coins:0},{cliente_id:id(2),payment_id:id(3),benefit_key:'rank_package:2',coins:300}];
+ h.tables.cliente_ruleta_giros=[{id:id(20),cliente_id:id(2),purchase_id:id(3),nivel:2,estado:'used'}];
+ const body={...h.body,existing_payment_id:null,cliente_compra_minutos:true,minute_accounting_version:3,importe:35,forma_pago:'TPV',clasificacion:'nada'};
+ let response=await h.post(body),j=await response.json();assert.equal(response.status,200);assert.equal(j.rewards.coins,300);assert.equal(j.purchase_benefits_summary.coins,300);
+ assert.match(j.message,/\+300 Coins.*Ruleta nivel 2/);assert.doesNotMatch(j.message,/999/);
+ h.failedTable='cliente_puntos_historial';response=await h.post(body);j=await response.json();assert.equal(response.status,200);assert.equal(j.ok,true);
+ assert.equal(j.rewards,null);assert.equal(j.purchase_benefits_summary.coins,null);assert.match(j.message,/Coins pendientes de comprobar.*Ruleta nivel 2/);
 });
 
 test('Regular, captured and recovered purchases do not inherit an unrelated active promo by amount',async()=>{

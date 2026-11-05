@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { purchaseClassificationLabel, type PurchaseBenefitSummary } from "@/lib/purchase-benefit-summary";
 import styles from "./ClientBalancesPanel.module.css";
 
 type Client = { id: string; nombre: string; apellido: string; telefono: string; email: string };
@@ -9,11 +10,17 @@ type CoinsAdjustment = { operation_id: string; amount: number; reason: string; b
 type OracleGrant = CoinsAdjustment & { cliente_id: string; actor_name: string | null; actor_user_id: string; replayed?: boolean };
 type OracleReview = { clientId: string; amount: number; reason: string };
 type OracleBalance = { credits: number; history: OracleGrant[] };
-type Detail = { cliente: Client; wallet: { coins: number; minutes_free: number; minutes_normal: number; minutes_total: number; effective_rank: string }; spins: { level: number; count: number; available: number }[]; history: { operation_id: string; nivel: number; delta: number; reason: string; before_count: number; after_count: number; created_at: string }[]; coins_history?: CoinsAdjustment[]; oracle?: OracleBalance | null };
+type PurchaseCoinsHistory = { limit: number; items: { payment_id: string; created_at: string; amount: number; currency: string; method: string; benefits: PurchaseBenefitSummary }[] };
+type Detail = { cliente: Client; wallet: { coins: number; minutes_free: number; minutes_normal: number; minutes_total: number; effective_rank: string }; spins: { level: number; count: number; available: number }[]; history: { operation_id: string; nivel: number; delta: number; reason: string; before_count: number; after_count: number; created_at: string }[]; coins_history?: CoinsAdjustment[]; purchase_coins_history?: PurchaseCoinsHistory | null; oracle?: OracleBalance | null };
 type AdjustmentKind = "coins" | "spins" | "oracle";
 type PendingAdjustment = { kind: AdjustmentKind; clientId: string; clientName: string; body: string; uncertain: boolean };
 const name = (c: Client) => [c.nombre, c.apellido].filter(Boolean).join(" ") || "Cliente sin nombre";
 const formatCoins = (value: number) => value.toLocaleString("es-ES");
+const formatPurchaseAmount = (amount: number, currency: string) => {
+  if (!Number.isFinite(amount)) return "Importe no disponible";
+  try { return amount.toLocaleString("es-ES", { style: "currency", currency }); }
+  catch { return `${amount.toLocaleString("es-ES", { minimumFractionDigits: 2 })} ${currency || ""}`.trim(); }
+};
 const drawLabel = (value: number) => `${value.toLocaleString("es-ES")} ${value === 1 ? "tirada" : "tiradas"}`;
 class RequestError extends Error { constructor(message: string, readonly definitive: boolean) { super(message); } }
 async function request(url: string, init: RequestInit = {}) {
@@ -242,7 +249,38 @@ export default function ClientBalancesPanel() {
             {coinsUncertain && <p role="status" className={styles.pending}>No se ha podido confirmar el resultado. Mantén esta cuenta abierta y reintenta la misma operación para comprobarla sin duplicar los Coins.</p>}
             <button disabled={busy || (uncertain && !coinsUncertain) || (!coinsUncertain && !coinsValid)}>{busy && operationKind === "coins" ? "Añadiendo Coins…" : coinsUncertain ? "Comprobar y reintentar los mismos Coins" : "Añadir Coins"}</button>
           </form>
-          <div className={styles.coinsHistory}><h3>Historial de Coins añadidos</h3><p className={styles.muted}>Últimos Coins añadidos desde este apartado.</p>{!detail.coins_history?.length ? <p className={styles.muted}>Aún no hay adiciones desde este apartado.</p> : <div className={styles.history}>{detail.coins_history.map(h => <article key={h.operation_id}><strong>+{formatCoins(h.amount)} Coins · {formatCoins(h.before_balance)} → {formatCoins(h.after_balance)}</strong><p>{h.reason}</p><time dateTime={h.created_at}>{new Date(h.created_at).toLocaleString("es-ES")}</time></article>)}</div>}</div>
+          <div className={styles.coinsHistoryColumn}>
+            <section className={styles.coinsHistory} aria-labelledby="admin-purchase-coins-title">
+              <span className={styles.eyebrow}>COINS · COMPRAS</span><h3 id="admin-purchase-coins-title">Coins ganados por compra</h3>
+              <p className={styles.muted}>Abonos y ruletas registrados en cada compra. Los canjes posteriores reducen el saldo disponible.</p>
+              {!detail.purchase_coins_history ? <p role="status" className={styles.pending}>No se pudo consultar este historial. Pulsa «Actualizar saldos» para volver a comprobarlo.</p> : <>
+                <p className={styles.muted}>Hasta {detail.purchase_coins_history.limit} compras recientes.</p>
+                {detail.purchase_coins_history.items.length === 0 ? <p className={styles.muted}>No hay compras registradas en este historial.</p> :
+                  <div className={`${styles.history} ${styles.purchaseHistory}`} tabIndex={0} role="region" aria-label="Historial de beneficios por compra">
+                    {detail.purchase_coins_history.items.map(purchase => {
+                      const benefit = purchase.benefits;
+                      const confirmed = benefit.coins_status === "confirmed" && benefit.coins !== null;
+                      const promo = benefit.classification === "promo";
+                      return <article key={purchase.payment_id}>
+                        <div className={styles.purchaseHeading}>
+                          <strong>{confirmed ? `${benefit.coins! > 0 ? "+" : ""}${formatCoins(benefit.coins!)} Coins` : benefit.coins_status === "unavailable" ? "Coins sin comprobar" : "Abono no confirmado"}</strong>
+                          <span className={styles.purchaseClassification}>{purchaseClassificationLabel(benefit.classification)}</span>
+                        </div>
+                        <p>{formatPurchaseAmount(purchase.amount, purchase.currency)} · {purchase.method === "paypal_manual" ? "PayPal · registro manual" : purchase.method || "Método no indicado"}</p>
+                        <p className={styles.purchaseSpins}>{benefit.spins === null ? "Ruleta pendiente de comprobar" : benefit.spins.length === 0 ? "Sin giros registrados" : benefit.spins.map(spin => `${spin.count} ${spin.count === 1 ? "giro" : "giros"} · ${spin.level === 4 ? "Ruleta Especial" : spin.level === 5 ? "Ruleta Diamante" : `Ruleta nivel ${spin.level}`}`).join(" · ")}</p>
+                        {benefit.revoked_spins > 0 && <p className={styles.muted}>{benefit.revoked_spins} giro(s) retirado(s).</p>}
+                        {promo && confirmed && benefit.coins === 0 && benefit.spins?.length === 0 && <p className={styles.muted}>Promo: no concede Coins ni ruleta.</p>}
+                        {promo && ((benefit.coins ?? 0) > 0 || (benefit.spins?.length ?? 0) > 0) && <p className={styles.pending}>Revisar: esta Promo tiene beneficios registrados.</p>}
+                        {!confirmed && <p className={styles.muted}>No hay un abono confirmado para mostrar. Esto no confirma que la compra deba recibir 0 Coins.</p>}
+                        {confirmed && benefit.coins! > 0 && benefit.coins_balance_after !== null && <p className={styles.muted}>Saldo tras el abono: {formatCoins(benefit.coins_balance_after)} Coins.</p>}
+                        <div className={styles.purchaseReference}><time dateTime={purchase.created_at}>{new Date(purchase.created_at).toLocaleString("es-ES")}</time><span title={purchase.payment_id}>Compra #{purchase.payment_id.slice(0, 8)}</span></div>
+                      </article>;
+                    })}
+                  </div>}
+              </>}
+            </section>
+            <section className={styles.coinsHistory} aria-labelledby="admin-manual-coins-title"><h3 id="admin-manual-coins-title">Historial de Coins añadidos</h3><p className={styles.muted}>Ajustes manuales desde administración. Las compras aparecen en el historial superior.</p>{!detail.coins_history?.length ? <p className={styles.muted}>Aún no hay adiciones desde este apartado.</p> : <div className={styles.history}>{detail.coins_history.map(h => <article key={h.operation_id}><strong>+{formatCoins(h.amount)} Coins · {formatCoins(h.before_balance)} → {formatCoins(h.after_balance)}</strong><p>{h.reason}</p><time dateTime={h.created_at}>{new Date(h.created_at).toLocaleString("es-ES")}</time></article>)}</div>}</section>
+          </div>
         </section>
         <h3>Giros por nivel</h3><div className={styles.cards}>{detail.spins.map(s => <article key={s.level}><span>Nivel {s.level}{s.level === 4 ? " · Especial" : s.level === 5 ? " · Diamante" : ""}</span><strong>{s.available}</strong><span>Disponibles ahora · {s.count} pendientes en total</span></article>)}</div>
         <p className={styles.muted}>Los disponibles coinciden con la ruleta del cliente. Los pendientes incluyen giros sujetos a requisitos de rango, como Diamante. Solo se pueden retirar giros pendientes.</p>

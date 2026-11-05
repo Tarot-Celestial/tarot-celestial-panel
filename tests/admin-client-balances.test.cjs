@@ -1,7 +1,7 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),ts=require('typescript'),React=require('react');
 const {act,create}=require('react-test-renderer');
-function load(file,mocks,globals={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../',file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,{exports,require:n=>n in mocks?mocks[n]:n.endsWith('.module.css')?{default:{}}:require(n),...globals});return exports;}
+function load(file,mocks,globals={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../',file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,{exports,require:n=>n in mocks?mocks[n]:n.startsWith('@/lib/')?load('src/'+n.slice(2)+'.ts',mocks,globals):n.endsWith('.module.css')?{default:{}}:require(n),...globals});return exports;}
 test('API rejects unauthorized reads/writes and derives actor from the admin session',async()=>{
  let allowed=false,captured;
  const route=load('src/app/api/admin/client-balances/route.ts',{'next/server':{NextResponse:{json:(body,options)=>({body,...options})}},'@/lib/admin/require-admin':{requireAdmin:async()=>allowed?{ok:true,me:{user_id:'trusted-admin'},admin:{rpc:async(n,p)=>{captured=p;return {data:{},error:null}}}}:{ok:false}}},{URL});

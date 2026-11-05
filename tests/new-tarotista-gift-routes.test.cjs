@@ -42,6 +42,7 @@ function setup(options={}){
   '@/lib/server/client-promotions':{},'@/lib/ruleta':{},'@/lib/server/paypal-crm':{},
   '@/lib/server/cliente-minute-packs':{CLIENTE_MINUTE_PACKS:[]},'@/lib/server/new-tarotista-gift':gift,
   '@/lib/server/initial-consultation-gift':initialGift,
+  '@/lib/purchase-benefit-summary':load('src/lib/purchase-benefit-summary.ts',{}),
  });
  const post=(body=good,token='verified-token')=>route.POST(new Request('https://example.invalid/api/crm/rendimiento/registrar',{method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify(body)}));
  return {route,post,calls,authCalls};
