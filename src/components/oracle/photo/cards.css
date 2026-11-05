@@ -1,0 +1,23 @@
+.oracle-photo-cards {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 320ms ease;
+}
+.oracle-photo-cards[data-active="true"] { opacity: 1; }
+.oracle-photo-cards__poster, .oracle-photo-cards__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.oracle-photo-cards__poster {
+  background-repeat: no-repeat;
+  background-size: 300% 200%;
+}
+.oracle-photo-cards__canvas { display: block; }
+@media (prefers-reduced-motion: reduce) {
+  .oracle-photo-cards { transition: none; }
+}

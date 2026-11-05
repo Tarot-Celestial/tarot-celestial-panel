@@ -13,9 +13,9 @@ import { useOracleNarration } from './useOracleNarration';
 import { ORACLE_GUIDE_LABELS, resolveOracleGuideAction, type OracleGuideMoment } from '@/lib/oracle-guide-state';
 import styles from './Room.module.css';
 
-const OracleCharacter3D = dynamic(() => import('@/components/oracle/OracleCharacter3D'), {
+const OraclePhotographicGuide = dynamic(() => import('@/components/oracle/OraclePhotographicGuide'), {
   ssr: false,
-  loading: () => <div className={styles.avatarLoading} aria-hidden="true"><MoonStar/><span>Preparando tu espacio…</span></div>,
+  loading: () => <img className={styles.avatar} style={{ objectFit: 'cover' }} src="/oraculo/guardiana/guardiana.webp" alt="La Guardiana junto a su esfera"/>,
 });
 
 const sb = supabaseClienteBrowser();
@@ -216,7 +216,7 @@ export default function ClienteOraculoPage() {
     setPointedCard(position);
     await run('Revelando tu carta…', async () => {
       const j = await request(session ? { action: 'premium_pick', drawKey: session.drawKey, position } : { action: 'reveal', tema: topic, shuffleId, position });
-      if(session && !j.completed) { showSession(j.session); setCredits(j.credits); return; }
+      if(session && !j.completed) { showSession(j.session); setPointedCard(position); guidePulse('reveal'); setCredits(j.credits); return; }
       showDraw(j.draw); setPointedCard(position); guidePulse('reveal'); setMessages([]); setCredits(j.credits); setQuestionState(s => ({ ...s, includedAvailable: true, total: s.extra + 1 })); if(!session) setFreeAvailable(false);
       const saved = await request(undefined, j.draw.id); balances(saved); setHistory(saved.history || []);
     });
@@ -244,7 +244,7 @@ export default function ClienteOraculoPage() {
       <div className={styles.experienceBar}><div><span className={styles.liveDot}/><span>Tu guía virtual · <strong>{ORACLE_GUIDE_LABELS[guideAction]}</strong></span></div><button type="button" className={styles.oracleOnline} aria-expanded={oracleOpen} aria-controls="oracle-conversation-panel" onClick={oracleOpen ? closeOracle : openOracle} disabled={loading}><span className={styles.onlineDot}/><MoonStar size={18}/> Oráculo en línea <ArrowRight size={16}/></button></div>
       <div className={styles.consultation} data-oracle-open={oracleOpen}>
         <section className={styles.stage} aria-label="Mesa de tu consulta" data-stage={stage} aria-busy={!!busy || loading}>
-          <OracleCharacter3D action={guideAction} motion={motion} selectedIndex={pointedCard} className={styles.avatar}/>
+          <OraclePhotographicGuide action={guideAction} motion={motion} selectedIndex={pointedCard} className={styles.avatar}/>
           <span className={styles.guideBadge}><Sparkles size={14}/> Guía virtual</span>
           <button className={styles.motion} onClick={() => setMotion(!motion)} aria-label={motion ? 'Pausar animaciones' : 'Activar animaciones'} aria-pressed={motion}>{motion ? <Pause size={16}/> : <Play size={16}/>}</button>
           <div className={styles.table} hidden={oracleOpen}>
