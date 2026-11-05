@@ -6,16 +6,25 @@ import styles from "./ClientBalancesPanel.module.css";
 
 type Client = { id: string; nombre: string; apellido: string; telefono: string; email: string };
 type CoinsAdjustment = { operation_id: string; amount: number; reason: string; before_balance: number; after_balance: number; created_at: string; movement_id: string | null };
-type Detail = { cliente: Client; wallet: { coins: number; minutes_free: number; minutes_normal: number; minutes_total: number; effective_rank: string }; spins: { level: number; count: number; available: number }[]; history: { operation_id: string; nivel: number; delta: number; reason: string; before_count: number; after_count: number; created_at: string }[]; coins_history?: CoinsAdjustment[] };
-type PendingAdjustment = { kind: "coins" | "spins"; clientId: string; clientName: string; body: string; uncertain: boolean };
+type OracleGrant = CoinsAdjustment & { cliente_id: string; actor_name: string | null; actor_user_id: string; replayed?: boolean };
+type OracleReview = { clientId: string; amount: number; reason: string };
+type OracleBalance = { credits: number; history: OracleGrant[] };
+type Detail = { cliente: Client; wallet: { coins: number; minutes_free: number; minutes_normal: number; minutes_total: number; effective_rank: string }; spins: { level: number; count: number; available: number }[]; history: { operation_id: string; nivel: number; delta: number; reason: string; before_count: number; after_count: number; created_at: string }[]; coins_history?: CoinsAdjustment[]; oracle?: OracleBalance | null };
+type AdjustmentKind = "coins" | "spins" | "oracle";
+type PendingAdjustment = { kind: AdjustmentKind; clientId: string; clientName: string; body: string; uncertain: boolean };
 const name = (c: Client) => [c.nombre, c.apellido].filter(Boolean).join(" ") || "Cliente sin nombre";
 const formatCoins = (value: number) => value.toLocaleString("es-ES");
+const drawLabel = (value: number) => `${value.toLocaleString("es-ES")} ${value === 1 ? "tirada" : "tiradas"}`;
 class RequestError extends Error { constructor(message: string, readonly definitive: boolean) { super(message); } }
 async function request(url: string, init: RequestInit = {}) {
   const token = (await supabaseBrowser().auth.getSession()).data.session?.access_token;
   const response = await fetch(url, { ...init, cache: "no-store", headers: { Authorization: `Bearer ${token || ""}`, "Content-Type": "application/json" } });
   const data = await response.json();
-  if (!response.ok || !data.ok) throw new RequestError(data.error || "No se pudo completar la operación.", response.status >= 400 && response.status < 500 && data.code !== "OPERATION_CONFLICT" && data.error !== "OPERATION_CONFLICT");
+  if (!response.ok || !data.ok) {
+    const unavailable = data.code === "ORACLE_ADJUSTMENT_UNAVAILABLE" && data.uncertain !== true;
+    const rejected = response.status >= 400 && response.status < 500 && data.code !== "OPERATION_CONFLICT" && data.error !== "OPERATION_CONFLICT";
+    throw new RequestError(data.error || "No se pudo completar la operación.", unavailable || rejected);
+  }
   return data;
 }
 
@@ -34,7 +43,10 @@ export default function ClientBalancesPanel() {
   const [reason, setReason] = useState("");
   const [coinsAmount, setCoinsAmount] = useState("");
   const [coinsReason, setCoinsReason] = useState("");
-  const [operationKind, setOperationKind] = useState<"coins" | "spins" | null>(null);
+  const [oracleAmount, setOracleAmount] = useState("");
+  const [oracleReason, setOracleReason] = useState("");
+  const [oracleReview, setOracleReview] = useState<OracleReview | null>(null);
+  const [operationKind, setOperationKind] = useState<AdjustmentKind | null>(null);
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false);
   const [updated, setUpdated] = useState("");
@@ -49,6 +61,7 @@ export default function ClientBalancesPanel() {
     try {
       const data = await request(`/api/admin/client-balances?id=${encodeURIComponent(id)}`);
       if (active.current !== id || version.current !== current) return;
+      if (data?.cliente?.id !== id) throw new Error("La respuesta no corresponde a la cuenta seleccionada. Actualiza sus saldos.");
       setDetail(data); setUpdated(new Date().toLocaleTimeString("es-ES")); setError("");
     } catch (e) {
       if (active.current === id && version.current === current) setError(e instanceof Error ? e.message : "Error al consultar los saldos.");
@@ -77,19 +90,35 @@ export default function ClientBalancesPanel() {
   }
   function choose(client: Client) {
     if (saving.current || operation.current) return;
+    if (active.current === client.id) { void refresh(client.id); return; }
     active.current = client.id; ++version.current;
     setSelected(client); setDetail(null); setError(""); setMessage(""); setReason(""); setCoinsAmount(""); setCoinsReason(""); setUpdated("");
+    setOracleAmount(""); setOracleReason(""); setOracleReview(null);
   }
-  async function adjust(event: React.FormEvent, kind: "coins" | "spins") {
+  function reviewOracle(event: React.FormEvent) {
     event.preventDefault();
-    if (!selected || !detail || saving.current || (operation.current && operation.current.kind !== kind)) return;
+    if (saving.current || operation.current || !selected || active.current !== selected.id || !oracleValid || oracleReview) return;
+    setOracleReview({ clientId: selected.id, amount: Number(oracleAmount), reason: oracleReason.trim() });
+    setMessage("");
+  }
+  async function adjust(event: React.SyntheticEvent, kind: AdjustmentKind) {
+    event.preventDefault();
+    if (!selected || active.current !== selected.id || detail?.cliente.id !== selected.id || saving.current || (operation.current && operation.current.kind !== kind)) return;
     if (!operation.current) {
-      if (kind === "coins" ? !coinsValid : !valid || (direction < 0 && Number(quantity) > count)) return;
+      let payload;
+      if (kind === "oracle") {
+        if (!oracleValid || oracleReview?.clientId !== selected.id) return;
+        payload = { action: "oracle", amount: oracleReview.amount, reason: oracleReview.reason };
+      } else if (kind === "coins") {
+        if (!coinsValid) return;
+        payload = { action: "coins", amount: Number(coinsAmount), reason: coinsReason.trim() };
+      } else {
+        if (!valid || (direction < 0 && Number(quantity) > count)) return;
+        payload = { level, delta: direction * Number(quantity), reason: reason.trim() };
+      }
       operation.current = {
         kind, clientId: selected.id, clientName: name(selected), uncertain: false,
-        body: JSON.stringify(kind === "coins"
-          ? { action: "coins", operation_id: crypto.randomUUID(), cliente_id: selected.id, amount: Number(coinsAmount), reason: coinsReason.trim() }
-          : { operation_id: crypto.randomUUID(), cliente_id: selected.id, level, delta: direction * Number(quantity), reason: reason.trim() }),
+        body: JSON.stringify({ ...payload, operation_id: crypto.randomUUID(), cliente_id: selected.id }),
       };
     }
     const pending = operation.current;
@@ -103,6 +132,23 @@ export default function ClientBalancesPanel() {
         setCoinsAmount(""); setCoinsReason("");
         setMessage(`Coins añadidos a ${pending.clientName}. Saldo: ${formatCoins(adjustment.before_balance)} → ${formatCoins(adjustment.after_balance)} Coins. Guardado en su historial y ficha.`);
         setDetail(current => current?.cliente.id === pending.clientId ? { ...current, wallet: { ...current.wallet, coins: adjustment.after_balance } } : current);
+      } else if (kind === "oracle") {
+        const granted = data.adjustment as OracleGrant | undefined;
+        const expected = JSON.parse(pending.body);
+        if (!granted || granted.operation_id !== expected.operation_id || granted.cliente_id !== pending.clientId
+          || granted.amount !== expected.amount || granted.reason !== expected.reason
+          || !Number.isSafeInteger(granted.before_balance) || granted.before_balance < 0
+          || !Number.isSafeInteger(granted.after_balance) || granted.after_balance !== granted.before_balance + granted.amount) {
+          throw new Error("No se pudo confirmar la concesión. Comprueba la misma operación para conocer su resultado.");
+        }
+        setOracleAmount(""); setOracleReason(""); setOracleReview(null);
+        setMessage(`Concesión confirmada para ${pending.clientName}: +${drawLabel(granted.amount)}. Saldo al concederlas: ${granted.before_balance} → ${granted.after_balance}.`);
+        setDetail(current => {
+          if (!current?.oracle || current.cliente.id !== pending.clientId) return current;
+          const history = [granted, ...current.oracle.history.filter(item => item.operation_id !== granted.operation_id)];
+          const credits = !granted.replayed && current.oracle.credits === granted.before_balance ? granted.after_balance : current.oracle.credits;
+          return { ...current, oracle: { credits, history } };
+        });
       } else {
         setReason(""); setMessage("Ajuste guardado en la cuenta y en la ficha del cliente.");
       }
@@ -127,8 +173,14 @@ export default function ClientBalancesPanel() {
   const coinsValid = coinsAmountValid && coinsReason.trim().length >= 3 && coinsReason.trim().length <= 500;
   const coinsUncertain = uncertain && operationKind === "coins";
   const spinsUncertain = uncertain && operationKind === "spins";
+  const oracleUncertain = uncertain && operationKind === "oracle";
+  const oracle = detail?.oracle;
+  const oracleCredits = oracle && Number.isSafeInteger(oracle.credits) && oracle.credits >= 0 ? oracle.credits : null;
+  const oracleNumber = Number(oracleAmount);
+  const oracleValid = oracleCredits !== null && Number.isSafeInteger(oracleNumber) && oracleNumber >= 1
+    && oracleNumber <= 100 && oracleReason.trim().length >= 3 && oracleReason.trim().length <= 500;
   return <section className={styles.panel} aria-label="Giros y saldos de clientes">
-    <header><span className={styles.eyebrow}>CONTROL DE CLIENTES</span><h2>Giros y saldos</h2><p>Consulta los saldos, añade Coins o ajusta los giros de cada nivel.</p></header>
+    <header><span className={styles.eyebrow}>CONTROL DE CLIENTES</span><h2>Giros y saldos</h2><p>Consulta los saldos, añade Coins, concede tiradas del Oráculo o ajusta los giros de la ruleta.</p></header>
     <form onSubmit={search} className={styles.search}><label>Buscar cliente<input value={query} onChange={e => setQuery(e.target.value)} placeholder="Nombre, teléfono o correo" minLength={2} required disabled={locked} /></label><button disabled={searching || locked || query.trim().length < 2}>{searching ? "Buscando…" : "Buscar"}</button></form>
     {searched && <div className={styles.results}>{clients.length ? clients.map(c => <button key={c.id} type="button" disabled={locked} aria-pressed={selected?.id === c.id} onClick={() => choose(c)}><strong>{name(c)}</strong><span>{c.telefono || c.email || c.id}</span></button>) : <p>No se encontraron clientes.</p>}</div>}
     {error && <p role="alert" className={styles.error}>{error}</p>}
@@ -137,6 +189,45 @@ export default function ClientBalancesPanel() {
       {!detail ? <p>{error ? "Pulsa Actualizar saldos para reintentar." : "Cargando saldos…"}</p> : <>
         <p className={styles.muted}>Última consulta: {updated} · Actualización automática cada 15 segundos · Rango: {detail.wallet.effective_rank || "Sin rango"}</p>
         <div className={styles.cards}><article><span>Coins disponibles</span><strong>{detail.wallet.coins}</strong></article><article><span>Minutos disponibles</span><strong>{detail.wallet.minutes_total}</strong></article><article><span>Minutos normales</span><strong>{detail.wallet.minutes_normal}</strong></article><article><span>Minutos FREE</span><strong>{detail.wallet.minutes_free}</strong></article></div>
+        <section className={styles.coinsSection} aria-labelledby="admin-oracle-title">
+          <div className={`${styles.adjust} ${styles.oracleAdjust}`}>
+            <h3 id="admin-oracle-title">Tiradas del Oráculo</h3>
+            <p>Saldo disponible de <strong>{name(selected)}</strong>: <strong>{oracleCredits === null ? "No disponible" : drawLabel(oracleCredits)}</strong>.</p>
+            {oracleCredits === null ? <p className={styles.muted}>No se pudo cargar el saldo de tiradas. Pulsa «Actualizar saldos» para volver a consultarlo.</p> : <>
+              <form onSubmit={reviewOracle} className={styles.oracleForm} aria-label="Conceder tiradas del Oráculo">
+                <fieldset disabled={locked || !!oracleReview}>
+                  <label>Tiradas que quieres añadir<input type="number" inputMode="numeric" min={1} max={100} step={1} required value={oracleAmount}
+                    onChange={e => { if (!operation.current && !oracleReview) setOracleAmount(e.target.value); }} placeholder="De 1 a 100" /></label>
+                  <label>Motivo de la concesión<textarea value={oracleReason} required minLength={3} maxLength={500}
+                    onChange={e => { if (!operation.current && !oracleReview) setOracleReason(e.target.value); }} placeholder="Ej. Premio del sorteo" /></label>
+                </fieldset>
+                {!oracleReview && <button disabled={locked || !oracleValid}>Revisar concesión</button>}
+              </form>
+              {oracleReview && <div className={styles.oracleConfirmation} aria-label="Confirmación de tiradas del Oráculo">
+                <strong>Conceder {drawLabel(oracleReview.amount)} a {name(selected)}</strong>
+                <p>{oracleReview.reason}</p>
+                <p className={styles.muted}>Según el último saldo consultado: {oracleCredits} → {drawLabel(oracleCredits + oracleReview.amount)}.</p>
+                {oracleUncertain && <p role="status" className={styles.pending}>El resultado está pendiente de confirmación. Conserva esta cuenta abierta y comprueba la misma concesión para evitar duplicarla.</p>}
+                <div className={styles.oracleActions}>
+                  {!oracleUncertain && <button type="button" className={styles.editOracle} disabled={locked} onClick={() => { if (!operation.current) setOracleReview(null); }}>Volver a editar</button>}
+                  <button type="button" disabled={busy || (uncertain && !oracleUncertain)} onClick={e => void adjust(e, "oracle")}>
+                    {busy && operationKind === "oracle" ? "Guardando concesión…" : oracleUncertain ? "Comprobar la misma concesión" : "Confirmar y añadir tiradas"}
+                  </button>
+                </div>
+              </div>}
+            </>}
+          </div>
+          <div className={styles.coinsHistory}>
+            <h3>Historial de tiradas concedidas</h3>
+            {!oracle || !Array.isArray(oracle.history) ? <p className={styles.muted}>Historial no disponible.</p> : oracle.history.length === 0 ? <p className={styles.muted}>Aún no se han concedido tiradas a esta cuenta desde administración.</p> :
+              <div className={styles.history}>{oracle.history.map(grant => <article key={grant.operation_id}>
+                <strong>+{drawLabel(grant.amount)} · {grant.before_balance} → {grant.after_balance}</strong>
+                <p>{grant.reason}</p>
+                {grant.actor_name && <p className={styles.muted}>Concedido por {grant.actor_name}</p>}
+                <time dateTime={grant.created_at}>{new Date(grant.created_at).toLocaleString("es-ES")}</time>
+              </article>)}</div>}
+          </div>
+        </section>
         <section className={styles.coinsSection} aria-labelledby="admin-add-coins-title">
           <form onSubmit={event => void adjust(event, "coins")} className={`${styles.adjust} ${styles.coinsAdjust}`} aria-labelledby="admin-add-coins-title">
             <div><span className={styles.eyebrow}>COINS · AÑADIR SALDO</span><h3 id="admin-add-coins-title">Añadir Coins</h3><p>Se suman al saldo de <strong>{name(selected)}</strong>. No cambia sus giros ni sus minutos.</p></div>

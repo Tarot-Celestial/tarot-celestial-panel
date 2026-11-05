@@ -13,7 +13,7 @@ function harness() {
  const worker=()=>({id:id(2),user_id:h.workerUserId,email:'admin@example.test',role:h.role,is_active:h.active});
  const admin={from(table){
   const filters=[];let columns,options,limit,order;
-  const q={select(c,o){columns=c;options=o;return q;},eq(k,v){filters.push([k,v]);return q;},order(k,o){order={key:k,...o};return q;},limit(n){limit=n;return q;},maybeSingle(){return q;},or(){return q;},
+  const q={select(c,o){columns=c;options=o;return q;},eq(k,v){filters.push([k,v]);return q;},contains(k,v){filters.push([k,v]);return q;},like(k,v){filters.push([k,v]);return q;},order(k,o){order={key:k,...o};return q;},limit(n){limit=n;return q;},maybeSingle(){return q;},or(){return q;},
    then(resolve,reject){
     h.reads.push({table,filters,columns,options,limit,order});
     let data=null,error=null,count;
@@ -22,6 +22,7 @@ function harness() {
     if(table==='tc_admin_spin_adjustments') data=[{operation_id:id(20),nivel:1,delta:1,reason:'Prueba giros',before_count:0,after_count:1,created_at:'2026-10-26T00:00:00Z'}];
     if(table==='tc_admin_coin_adjustments') {data=[{operation_id:id(21),amount:5,reason:'Prueba Coins',before_balance:12,after_balance:17,movement_id:id(30),created_at:'2026-10-26T00:00:00Z'}];if(h.historyError){data=null;error={message:'temporary unavailable'};}}
     if(table==='cliente_ruleta_giros') {data=null;count=filters.find(([k])=>k==='nivel')[1];}
+    if(table==='cliente_oracle_credit_movements') {data=[];if(h.oracleHistoryError) error={message:'unavailable'};}
     return Promise.resolve({data,error,count}).then(resolve,reject);
    }};return q;
   },
@@ -29,6 +30,7 @@ function harness() {
    h.rpcCalls.push({name,payload});
    if(name==='tc_client_state_snapshot') return {data:{coins:h.balance,minutes_free:7,minutes_normal:12,minutes_total:19,effective_rank:'oro'},error:null};
    if(name==='cliente_ruleta_resumen_ultra_v1') return {data:{level_1_spins:1,level_2_spins:2,level_3_spins:3,level_4_spins:4,level_5_spins:0},error:null};
+   if(name==='get_cliente_oracle_balance') return h.oracleBalanceError?{data:null,error:{message:'unavailable'}}:{data:2,error:null};
    if(name==='tc_admin_adjust_spins') return {data:{operation_id:payload.p_operation_id,delta:payload.p_delta},error:h.rpcError};
    if(name!=='tc_admin_adjust_coins') throw Error('Unexpected RPC: '+name);
    if(h.rpcError)return {data:null,error:h.rpcError};
@@ -98,6 +100,19 @@ test('GET adds ordered Coins audit without changing existing wallet, available s
  const audit=h.reads.find(row=>row.table==='tc_admin_coin_adjustments');assert.equal(audit.limit,20);assert.equal(audit.order.key,'created_at');assert.equal(audit.order.ascending,false);assert.deepEqual(audit.filters,[['cliente_id',id(3)]]);
  assert.doesNotMatch(audit.columns,/actor|private|email/);assert.match(r.headers['Cache-Control'],/no-store/);
  h.historyError=true;assert.equal((await h.get()).status,503);
+});
+test('GET keeps Coins and roulette available when only the Oracle balance or its history is unavailable',async()=>{
+ for(const failure of ['oracleBalanceError','oracleHistoryError']) {
+  const h=harness();h[failure]=true;
+  const r=await h.get();
+  assert.equal(r.status,200);
+  assert.equal(r.body.oracle,null);
+  assert.equal(r.body.wallet.coins,17);
+  assert.equal(r.body.coins_history[0].after_balance,17);
+  assert.equal(r.body.history[0].delta,1);
+  assert.equal(r.body.spins[4].count,5);
+  assert.equal(r.body.spins[4].available,0);
+ }
 });
 test('Existing spin request contract remains available and calls only its original RPC',async()=>{
  const h=harness();const r=await h.post({action:undefined,level:3,delta:-1});assert.equal(r.status,200);
