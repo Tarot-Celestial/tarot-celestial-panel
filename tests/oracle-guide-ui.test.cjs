@@ -141,6 +141,61 @@ test('the photographic guide follows the actual shuffle, chosen position, reveal
   assert.equal(f.checkoutCalls.length, 0);
 });
 
+test('the photographic guide directs both renderers, respects pause and releases them when leaving the room', async () => {
+  const logs = { portrait: [], cards: [] }, scene = { dataset: {} };
+  const clock = { now: 50, nextId: 0, timers: new Map() };
+  const listeners = new Map();
+  const reduced = { matches: false, addEventListener(name, fn) { listeners.set(name, fn); }, removeEventListener(name) { listeners.delete(name); } };
+  const window = {
+    matchMedia: () => reduced,
+    setTimeout(fn, ms) { const key = ++clock.nextId; clock.timers.set(key, { fn, ms }); return key; },
+    clearTimeout(key) { clock.timers.delete(key); },
+  };
+  const document = { hidden: false, createElement: () => ({ remove() {} }), addEventListener(name, fn) { listeners.set(name, fn); }, removeEventListener(name) { listeners.delete(name); } };
+  const engine = events => ({
+    setState(...args) { events.push(['state', ...args]); },
+    setPaused(value) { events.push(['pause', value]); },
+    destroy() { events.push(['destroy']); },
+  });
+  const sources = {
+    './photo/portrait': { createPortrait: () => engine(logs.portrait) },
+    './photo/cards': { createCardPerformance: () => engine(logs.cards) },
+  };
+  const js = ts.transpileModule(fs.readFileSync(path.join(root, 'src/components/oracle/OraclePhotographicGuide.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+  const exported = {};
+  vm.runInNewContext(js, { exports: exported, document, window, performance: { now: () => clock.now }, require: name => {
+    if (Object.hasOwn(sources, name)) return sources[name];
+    if (name.endsWith('.css')) return { default: styleNames };
+    return require(name);
+  } });
+  const render = (action, selectedIndex = 10, motion = true) => React.createElement(exported.default, { action, motion, selectedIndex });
+  let view;
+  try {
+    await renderer.act(() => { view = renderer.create(render('shuffle'), { createNodeMock: element => element.props['data-guide'] ? scene : { append() {}, replaceChildren() {} } }); });
+    assert.equal(scene.dataset.presenting, 'shuffle');
+    await renderer.act(() => view.update(render('offer', 18)));
+    assert.equal(scene.dataset.presenting, 'shuffle', 'a fast reply leaves time for the shuffle');
+    assert.equal(clock.timers.size, 1);
+    const timer = [...clock.timers.values()][0]; clock.now += timer.ms;
+    await renderer.act(() => timer.fn());
+    assert.deepEqual(logs.cards.at(-1), ['state', 'offer', 2]);
+    await renderer.act(() => view.update(render('reveal', 0)));
+    assert.deepEqual(logs.cards.at(-1), ['state', 'reveal', 0]);
+    await renderer.act(() => view.update(render('channeling')));
+    assert.deepEqual(logs.portrait.at(-1), ['state', 'channeling']);
+    await renderer.act(() => view.update(render('answer', 10, false)));
+    assert.equal(scene.dataset.presenting, 'answer', 'pausing applies the latest state without waiting for an animation');
+    assert.ok(logs.portrait.some(([event, value]) => event === 'pause' && value));
+    assert.ok(logs.cards.some(([event, value]) => event === 'pause' && value));
+  } finally {
+    if (view) await renderer.act(() => view.unmount());
+  }
+  assert.deepEqual(logs.portrait.at(-1), ['destroy']);
+  assert.deepEqual(logs.cards.at(-1), ['destroy']);
+  assert.equal(clock.timers.size, 0);
+  assert.equal(listeners.size, 0);
+});
+
 test('a server-confirmed expiry restores the daily option without purchasing or starting a reading', async t => {
   const f = fixture();
   const freeState = { nextFreeAt: '1999-01-01T00:00:00Z', remainingSeconds: 2 };
