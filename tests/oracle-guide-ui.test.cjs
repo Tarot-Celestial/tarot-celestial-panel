@@ -15,7 +15,7 @@ const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const draw = (n = 1) => ({ id: id(n), tema: 'general', cardId: 'star', cardName: `Estrella ${n}`, cardImage: '', keyword: 'Confianza', advice: 'Considera un paso concreto.', message: `Lectura ficticia ${n}.`, isFree: true, drawType: 'free_daily', question: '', cards: [], conclusion: '', revealedAt: '2026-11-04T10:00:00Z' });
 const snapshot = (n = 1) => ({ ok: true, freeAvailable: false, freeState: { remainingSeconds: 0, nextFreeAt: null }, credits: 2, latestDraw: draw(n), activeSession: null, questionState: { includedAvailable: true, extra: 0, total: 1 }, mensajes: [], history: [] });
 
-function fixture({ reducedMotion = false } = {}) {
+function fixture({ reducedMotion = false, drawRequests = false } = {}) {
   let tree, authCallback, sequence = 0;
   let session = { access_token: 'fictional-token-a', user: { id: 'fictional-customer-a' } };
   let current = snapshot(), holdQuestion = true;
@@ -37,7 +37,7 @@ function fixture({ reducedMotion = false } = {}) {
     const body = options.body ? JSON.parse(options.body) : null;
     calls.push({ url, body, method: options.method });
     if (!body) return response(current);
-    assert.equal(body.action, 'question', 'avatar gestures must not create a draw or purchase');
+    if (!drawRequests) assert.equal(body.action, 'question', 'avatar gestures must not create a draw or purchase');
     if (holdQuestion) return new Promise((resolve, reject) => {
       const finish = (payload, ok = true) => resolve(response(payload, ok));
       finish.reject = reject; held.push(finish);
@@ -52,11 +52,14 @@ function fixture({ reducedMotion = false } = {}) {
   const moduleCache = new Map();
   const imports = {
     'next/link': { default: props => React.createElement('a', props, props.children) },
-    'next/dynamic': { default: () => character },
+    'next/dynamic': { default: loader => {
+      const Lazy = React.lazy(loader);
+      return props => React.createElement(React.Suspense, { fallback: null }, React.createElement(Lazy, props));
+    } },
     'lucide-react': new Proxy({}, { get: () => icon }),
     '@/components/cliente/ClienteLayout': { default: wrap },
     '@/components/cliente/ClientPurchaseAction': { default: wrap },
-    '@/components/oracle/OracleCharacter3D': { default: character },
+    '@/components/oracle/OraclePhotographicGuide': { default: character },
     '@/lib/supabase-browser': { supabaseClienteBrowser: () => ({ auth }) },
     '@/lib/client-entry': { clientLoginHref: () => '/cliente/login' },
     '@/lib/client-purchase-checkout': { ClientPurchaseError, prepareClientPurchase: async (...args) => { checkoutCalls.push(args); throw new Error('Unexpected checkout'); } },
@@ -83,6 +86,7 @@ function fixture({ reducedMotion = false } = {}) {
     get tree() { return tree; },
     get action() { return tree.root.findByType('oracle-character').props.action; },
     get motion() { return tree.root.findByType('oracle-character').props.motion; },
+    get selectedIndex() { return tree.root.findByType('oracle-character').props.selectedIndex; },
     button(name) { const button = findButton(name); assert.ok(button, `Missing button: ${name}`); return button; },
     question() { return tree.root.findByProps({ placeholder: '¿Qué te gustaría aclarar?' }); },
     run,
@@ -101,6 +105,96 @@ function fixture({ reducedMotion = false } = {}) {
 }
 
 const answer = () => ({ ok: true, mensajes: [{ id: 'fixture-question', role: 'user', contenido: 'Pregunta ficticia' }, { id: 'fixture-answer', role: 'assistant', contenido: 'Respuesta ficticia confirmada.' }], questionState: { includedAvailable: false, extra: 0, total: 0 } });
+
+test('the photographic guide follows the actual shuffle, chosen position, revealed card and reading-specific question', async t => {
+  const f = fixture({ drawRequests: true });
+  f.snapshot = { ...snapshot(), latestDraw: null, freeAvailable: true };
+  await f.mount();
+  t.after(() => f.close());
+  await f.run(() => f.button('Familia').props.onClick());
+  await f.run(() => { void f.button('Usar mi carta gratis').props.onClick(); });
+  assert.equal(f.action, 'shuffle');
+  assert.equal(f.calls.at(-1).body.tema, 'familia');
+  await f.run(() => f.held.shift()({ ok: true, freeAvailable: true, credits: 2, shuffleId: 'fixture-family' }));
+  assert.equal(f.action, 'offer');
+  const choice = f.button('Elegir carta 19');
+  await f.run(() => choice.props.onFocus());
+  assert.equal(f.selectedIndex, 18);
+  await f.run(() => { void choice.props.onClick(); });
+  assert.equal(f.action, 'reveal');
+  assert.deepEqual(f.calls.at(-1).body, { action: 'reveal', tema: 'familia', shuffleId: 'fixture-family', position: 18 });
+  const saved = { ...draw(15), tema: 'familia', cardId: 'moon', cardName: 'La Luna', message: 'Lectura de familia para esta carta.' };
+  f.snapshot = { ...snapshot(), latestDraw: saved };
+  await f.run(() => f.held.shift()({ ok: true, draw: saved, credits: 2 }));
+  await f.expireMoments();
+  assert.equal(f.action, 'reading');
+  assert.match(textOf(f.tree.root), /La Luna/);
+  assert.match(textOf(f.tree.root), /Lectura de familia para esta carta/);
+  await f.run(() => f.button('Oráculo en línea').props.onClick());
+  await f.run(() => f.question().props.onChange({ target: { value: '¿Cómo encaja esta carta en mi pregunta sobre mi familia?' } }));
+  await f.run(() => { void f.button('Preguntar al Oráculo').props.onClick(); });
+  assert.equal(f.action, 'channeling');
+  assert.equal(f.calls.at(-1).body.drawId, saved.id);
+  await f.run(() => f.held.shift()(answer()));
+  assert.equal(f.action, 'answer');
+  assert.deepEqual(f.calls.filter(call => call.body).map(call => call.body.action), ['shuffle', 'reveal', 'question']);
+  assert.equal(f.checkoutCalls.length, 0);
+});
+
+test('the photographic guide directs both renderers, respects pause and releases them when leaving the room', async () => {
+  const logs = { portrait: [], cards: [] }, scene = { dataset: {} };
+  const clock = { now: 50, nextId: 0, timers: new Map() };
+  const listeners = new Map();
+  const reduced = { matches: false, addEventListener(name, fn) { listeners.set(name, fn); }, removeEventListener(name) { listeners.delete(name); } };
+  const window = {
+    matchMedia: () => reduced,
+    setTimeout(fn, ms) { const key = ++clock.nextId; clock.timers.set(key, { fn, ms }); return key; },
+    clearTimeout(key) { clock.timers.delete(key); },
+  };
+  const document = { hidden: false, createElement: () => ({ remove() {} }), addEventListener(name, fn) { listeners.set(name, fn); }, removeEventListener(name) { listeners.delete(name); } };
+  const engine = events => ({
+    setState(...args) { events.push(['state', ...args]); },
+    setPaused(value) { events.push(['pause', value]); },
+    destroy() { events.push(['destroy']); },
+  });
+  const sources = {
+    './photo/portrait': { createPortrait: () => engine(logs.portrait) },
+    './photo/cards': { createCardPerformance: () => engine(logs.cards) },
+  };
+  const js = ts.transpileModule(fs.readFileSync(path.join(root, 'src/components/oracle/OraclePhotographicGuide.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+  const exported = {};
+  vm.runInNewContext(js, { exports: exported, document, window, performance: { now: () => clock.now }, require: name => {
+    if (Object.hasOwn(sources, name)) return sources[name];
+    if (name.endsWith('.css')) return { default: styleNames };
+    return require(name);
+  } });
+  const render = (action, selectedIndex = 10, motion = true) => React.createElement(exported.default, { action, motion, selectedIndex });
+  let view;
+  try {
+    await renderer.act(() => { view = renderer.create(render('shuffle'), { createNodeMock: element => element.props['data-guide'] ? scene : { append() {}, replaceChildren() {} } }); });
+    assert.equal(scene.dataset.presenting, 'shuffle');
+    await renderer.act(() => view.update(render('offer', 18)));
+    assert.equal(scene.dataset.presenting, 'shuffle', 'a fast reply leaves time for the shuffle');
+    assert.equal(clock.timers.size, 1);
+    const timer = [...clock.timers.values()][0]; clock.now += timer.ms;
+    await renderer.act(() => timer.fn());
+    assert.deepEqual(logs.cards.at(-1), ['state', 'offer', 2]);
+    await renderer.act(() => view.update(render('reveal', 0)));
+    assert.deepEqual(logs.cards.at(-1), ['state', 'reveal', 0]);
+    await renderer.act(() => view.update(render('channeling')));
+    assert.deepEqual(logs.portrait.at(-1), ['state', 'channeling']);
+    await renderer.act(() => view.update(render('answer', 10, false)));
+    assert.equal(scene.dataset.presenting, 'answer', 'pausing applies the latest state without waiting for an animation');
+    assert.ok(logs.portrait.some(([event, value]) => event === 'pause' && value));
+    assert.ok(logs.cards.some(([event, value]) => event === 'pause' && value));
+  } finally {
+    if (view) await renderer.act(() => view.unmount());
+  }
+  assert.deepEqual(logs.portrait.at(-1), ['destroy']);
+  assert.deepEqual(logs.cards.at(-1), ['destroy']);
+  assert.equal(clock.timers.size, 0);
+  assert.equal(listeners.size, 0);
+});
 
 test('a server-confirmed expiry restores the daily option without purchasing or starting a reading', async t => {
   const f = fixture();
