@@ -93,10 +93,36 @@ export default function ClienteOraculoPage() {
     const response = await fetch('/api/cliente/oraculo' + (id ? `?drawId=${encodeURIComponent(id)}` : ''), { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${data.session.access_token}`, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}), cache: 'no-store', signal: AbortSignal.timeout(25000) });
     const json = await response.json();
     if (!alive.current || epoch !== generation.current) throw new Error('SESSION_CHANGED');
+    if (json.error === 'FREE_DRAW_RECHARGING') {
+      setFreeAvailable(false);
+      syncFreeDeadline(json.freeState);
+      setShuffleId('');
+      setStage('ready');
+    }
+    if (json.error === 'NO_ORACLE_CREDITS') setCredits(0);
     if (!response.ok || !json.ok) throw new Error(json.message || ({ NO_ORACLE_CREDITS: 'No tienes tiradas compradas disponibles.', DRAW_CHANGED: 'La tirada cambió en otra pestaña. Recupera el estado para continuar.', DRAW_READY_TO_COMPLETE: 'Las cartas ya están elegidas. Pulsa completar lectura.', FREE_DRAW_RECHARGING: 'Tu carta gratuita todavía se está recargando.' } as Record<string, string>)[json.error] || 'No se pudo completar la consulta. Recupera el estado antes de volver a intentarlo.');
     return json;
   }
-  function balances(j: Snapshot) { setCredits(Number(j.credits || 0)); setFreeAvailable(Boolean(j.freeAvailable)); setNextFree(j.freeState?.nextFreeAt || null); if(j.questionState) setQuestionState(j.questionState); }
+  function syncFreeDeadline(state: Snapshot['freeState']) {
+    const remaining = state?.remainingSeconds;
+    setNextFree(state?.nextFreeAt && typeof remaining === 'number'
+      ? new Date(Date.now() + Math.max(0, remaining) * 1000).toISOString()
+      : null);
+  }
+  function balances(j: Snapshot) {
+    setCredits(Number(j.credits || 0));
+    setFreeAvailable(Boolean(j.freeAvailable));
+    syncFreeDeadline(j.freeState);
+    if (j.questionState) setQuestionState(j.questionState);
+  }
+  async function refreshBalances() {
+    if (locked.current || document.hidden) return;
+    const drawId = currentDraw.current;
+    try {
+      const result = await request(undefined, drawId);
+      if (drawId === currentDraw.current && !locked.current) balances(result);
+    } catch { /* The next periodic refresh retries with the current account. */ }
+  }
   function showDraw(d: Draw) {
     resetGuide();
     currentDraw.current = d.id; setDraw(d); setTopic(d.tema || 'general'); setMode(d.isFree ? 'free_daily' : d.drawType); setSession(null); setSelected(0);
@@ -133,18 +159,53 @@ export default function ClienteOraculoPage() {
       if(owner.current !== null && owner.current !== id) { ++generation.current; ++loadSequence.current; resetGuide(); locked.current = false; setBusy(''); currentDraw.current = ''; setDraw(null); setCards([]); setMessages([]); setHistory([]); setQuestion(''); setInitialQuestion(''); setPendingCheckoutUrl(null); setCredits(0); setQuestionState(EMPTY_QUESTIONS); window.setTimeout(() => { if(alive.current) void load(); }, 0); }
       owner.current = id;
     });
-    const refresh = async () => { if(locked.current || document.hidden) return; try { const drawId = currentDraw.current; const j = await request(undefined, drawId); if(drawId === currentDraw.current) balances(j); } catch { /* Keep last verified balance; a visible retry remains available. */ } };
-    const timer = window.setInterval(refresh, 30000); window.addEventListener('focus', refresh);
-    return () => { alive.current = false; ++generation.current; if(momentTimer.current) clearTimeout(momentTimer.current); if(typingTimer.current) clearTimeout(typingTimer.current); data.subscription.unsubscribe(); window.clearInterval(timer); window.removeEventListener('focus', refresh); };
+    const timer = window.setInterval(refreshBalances, 30000); window.addEventListener('focus', refreshBalances);
+    return () => { alive.current = false; ++generation.current; if(momentTimer.current) clearTimeout(momentTimer.current); if(typingTimer.current) clearTimeout(typingTimer.current); data.subscription.unsubscribe(); window.clearInterval(timer); window.removeEventListener('focus', refreshBalances); };
   }, []);
   useEffect(() => { if (oracleOpen && conversationRef.current) conversationRef.current.scrollTop = conversationRef.current.scrollHeight; }, [messages, oracleOpen]);
-  useEffect(() => { const tick = () => setCountdown(nextFree ? Math.max(0, Math.ceil((Date.parse(nextFree) - Date.now()) / 1000)) : 0); tick(); const t = window.setInterval(tick, 1000); return () => window.clearInterval(t); }, [nextFree]);
+  useEffect(() => {
+    if (!nextFree) { setCountdown(0); return; }
+    const deadline = Date.parse(nextFree);
+    const tick = () => setCountdown(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
+    tick();
+    const ticker = window.setInterval(tick, 1000);
+    const expiry = window.setTimeout(refreshBalances, Math.max(0, deadline - Date.now()));
+    return () => { window.clearInterval(ticker); window.clearTimeout(expiry); };
+  }, [nextFree]);
   useEffect(() => { const m = window.matchMedia('(prefers-reduced-motion: reduce)'); const update = () => setMotion(!m.matches); update(); m.addEventListener('change', update); return () => m.removeEventListener('change', update); }, []);
   const countdownLabel = `${String(Math.floor(countdown / 3600)).padStart(2, '0')}:${String(Math.floor(countdown / 60) % 60).padStart(2, '0')}:${String(countdown % 60).padStart(2, '0')}`;
   const frozen = loading || !!busy || stage === 'select';
-  function chooseTopic(next: OracleTopic) { resetGuide(); setTopic(next); if(mode !== 'free_daily') { const preferred: Record<OracleTopic, string> = { general: 'clarity', amor: 'love', dinero: 'work', familia: 'family', energia: 'energy', decisiones: 'decision' }; setMode(preferred[next]); } setStage('ready'); setCards([]); setInitialQuestion(''); setQuestion(''); }
-  function newReading() { resetGuide(); guidePulse('welcome'); setStage('ready'); setCards([]); setMode(freeAvailable ? 'free_daily' : 'clarity'); if (!freeAvailable) setTopic('general'); setQuestion(''); setInitialQuestion(''); setError(''); }
+  function prepareReading(nextMode: string, nextTopic: OracleTopic) {
+    resetGuide();
+    currentDraw.current = '';
+    setDraw(null);
+    setSession(null);
+    setShuffleId('');
+    setMessages([]);
+    setQuestionState(EMPTY_QUESTIONS);
+    setQuestion('');
+    setInitialQuestion('');
+    setCards([]);
+    setSelected(0);
+    setError('');
+    setMode(nextMode);
+    setTopic(nextTopic);
+    setStage('ready');
+  }
+  function chooseTopic(next: OracleTopic) {
+    const preferred: Record<OracleTopic, string> = { general: 'clarity', amor: 'love', dinero: 'work', familia: 'family', energia: 'energy', decisiones: 'decision' };
+    prepareReading(mode === 'free_daily' ? mode : preferred[next], next);
+  }
+  function chooseMode(nextMode: string) {
+    prepareReading(nextMode, nextMode === 'free_daily' ? topic : ORACLE_SPREAD_BY_ID[nextMode]?.topic || 'general');
+  }
+  function newReading() {
+    chooseMode('free_daily');
+    guidePulse('welcome');
+  }
   async function start() {
+    if (loading || stage !== 'ready') return;
+    if (mode === 'free_daily' ? !freeAvailable : credits < 1) return;
     await run('Barajando las cartas…', async () => {
       resetGuide(); setCards([]); setSelected(0);
       if(mode === 'free_daily') { const j = await request({ action: 'shuffle', tema: topic }); balances(j); if(!j.freeAvailable) throw new Error('Tu carta gratuita todavía se está recargando.'); setShuffleId(j.shuffleId); setSession(null); setStage('select'); }
@@ -161,7 +222,7 @@ export default function ClienteOraculoPage() {
     });
   }
   async function complete() { if(session) await run('Completando lectura…', async () => { const j = await request({ action: 'premium_retry', drawKey: session.drawKey }); showDraw(j.draw); const saved = await request(undefined, j.draw.id); balances(saved); setMessages(saved.mensajes || []); setHistory(saved.history || []); }); }
-  async function ask() { if(!draw || !question.trim() || locked.current) return; voice.stop(); if(typingTimer.current) clearTimeout(typingTimer.current); setTyping(false); guidePulse(null); await run('Consultando el Oráculo…', async () => { const j = await request({ action: 'question', drawId: draw.id, pregunta: question.trim() }); setMessages(j.mensajes || []); setQuestionState(j.questionState); setQuestion(''); guidePulse('answer'); }); }
+  async function ask() { if(stage !== 'result' || !draw || currentDraw.current !== draw.id || !question.trim() || locked.current) return; voice.stop(); if(typingTimer.current) clearTimeout(typingTimer.current); setTyping(false); guidePulse(null); await run('Consultando el Oráculo…', async () => { const j = await request({ action: 'question', drawId: draw.id, pregunta: question.trim() }); setMessages(j.mensajes || []); setQuestionState(j.questionState); setQuestion(''); guidePulse('answer'); }); }
   async function buyQuestions() { await run('Preparando pago…', async () => {
     const epoch = generation.current; setPendingCheckoutUrl(null); const { data } = await sb.auth.getSession(); if(epoch !== generation.current) throw new Error('SESSION_CHANGED'); if(!data.session) throw new Error('Vuelve a iniciar sesión para comprar.');
     const isCurrent = () => alive.current && epoch === generation.current;
@@ -177,7 +238,7 @@ export default function ClienteOraculoPage() {
     <div className={styles.room} data-motion={motion}>
       <header className={styles.header}><div><span className={styles.eyebrow}><MoonStar size={15}/> TAROT CELESTIAL</span><h1>Tu sala de consulta</h1><p>Un momento para escuchar, interpretar y reflexionar.</p></div><div className={styles.headerActions}><span className={styles.creditPill}><Sparkles size={16}/>{credits} {credits === 1 ? 'tirada comprada' : 'tiradas compradas'}</span><button onClick={() => setHistoryOpen(!historyOpen)} aria-expanded={historyOpen} aria-label="Historial de lecturas"><History size={20}/></button></div></header>
       <nav className={styles.topics} aria-label="Enfoque de la lectura">{ORACLE_TOPICS.map(t => <button key={t.id} onClick={() => chooseTopic(t.id)} aria-pressed={topic === t.id} disabled={frozen}>{t.label}</button>)}</nav>
-      <div className={styles.toolbar}><label>Tu tirada<select aria-label="Tipo de tirada" value={mode} disabled={frozen} onChange={e => { resetGuide(); setQuestion(''); setMode(e.target.value); setStage('ready'); setCards([]); setInitialQuestion(''); if(e.target.value !== 'free_daily') setTopic(ORACLE_SPREAD_BY_ID[e.target.value]?.topic || 'general'); }}><option value="free_daily">Carta del día · 1 carta gratis</option>{ORACLE_SPREADS.map(s => <option key={s.id} value={s.id}>{s.label} · {s.positions.length} {s.positions.length === 1 ? 'carta' : 'cartas'}</option>)}</select></label><span className={styles.deckLabel}><BookOpen size={17}/> Tarot clásico · 78 cartas</span><span className={styles.daily}>{freeAvailable ? <><i/> Tu carta diaria está disponible</> : countdown > 0 ? `Próxima carta gratis en ${countdownLabel}` : 'Carta diaria · cada 24 horas'}</span></div>
+      <div className={styles.toolbar}><label>Tu tirada<select aria-label="Tipo de tirada" value={mode} disabled={frozen} onChange={e => chooseMode(e.target.value)}><option value="free_daily">Carta del día · 1 carta gratis</option>{ORACLE_SPREADS.map(s => <option key={s.id} value={s.id}>{s.label} · {s.positions.length} {s.positions.length === 1 ? 'carta' : 'cartas'} · De pago</option>)}</select></label><span className={styles.deckLabel}><BookOpen size={17}/> Tarot clásico · 78 cartas</span><span className={styles.daily}>{freeAvailable ? <><i/> Tu carta diaria está disponible</> : countdown > 0 ? `Próxima carta gratis en ${countdownLabel}` : 'Carta diaria · cada 24 horas'}</span></div>
       {error && <div className={styles.error} role="alert">{error}<button disabled={!!busy} onClick={() => load(currentDraw.current, true)}><RefreshCw size={15}/> Recuperar estado</button>{pendingCheckoutUrl && <Link href={pendingCheckoutUrl}>Revisar pago pendiente</Link>}</div>}
       {historyOpen && <section className={styles.history} aria-label="Historial de lecturas"><div><h2>Tus lecturas guardadas</h2><button aria-label="Cerrar historial" onClick={() => setHistoryOpen(false)}><X size={20}/></button></div><p>Se guardan automáticamente. Volver a leerlas no consume tiradas.</p>{history.length ? <div className={styles.historyList}>{history.map(h => <button key={h.id} disabled={!!busy || loading} onClick={() => { setHistoryOpen(false); void load(h.id); }}><span>{h.is_free ? h.card_name : ORACLE_SPREAD_BY_ID[h.draw_type]?.label || h.titulo}</span><small>{dateLabel(h.revealed_at || h.created_at)}</small><ArrowRight size={15}/></button>)}</div> : <p>Todavía no tienes lecturas guardadas.</p>}<small>Se muestran tus 30 lecturas más recientes.</small></section>}
       <div className={styles.experienceBar}><div><span className={styles.liveDot}/><span>Tu guía virtual · <strong>{ORACLE_GUIDE_LABELS[guideAction]}</strong></span></div><button type="button" className={styles.oracleOnline} aria-expanded={oracleOpen} aria-controls="oracle-conversation-panel" onClick={oracleOpen ? closeOracle : openOracle} disabled={loading}><span className={styles.onlineDot}/><MoonStar size={18}/> Oráculo en línea <ArrowRight size={16}/></button></div>
@@ -196,7 +257,19 @@ export default function ClienteOraculoPage() {
         <aside className={styles.side}>
           <section className={styles.reading} aria-label="Interpretación de tu lectura" hidden={oracleOpen}>
             <span className={styles.eyebrow}>{stage === 'result' ? activeCard?.position : 'TU INTENCIÓN'}</span><h2>{stage === 'result' ? 'Tu lectura' : stage === 'select' ? 'Escoge con calma' : 'Prepara tu consulta'}</h2><div className={styles.divider}>✦</div>
-            {stage === 'result' && draw ? <><h3>{activeCard?.cardName}</h3><p className={styles.prose}>{reading}</p><div className={styles.insight}><Sparkles size={21}/><div><h3>Tu siguiente paso</h3><p>{activeCard?.advice || draw.advice}</p></div></div>{cards.length > 1 && <details><summary>Ver la lectura completa</summary>{cards.map(c => <article key={c.position}><h3>{c.position} · {c.cardName}</h3><p>{c.interpretation}</p></article>)}<p>{draw.conclusion}</p></details>}<div className={styles.readingActions}><button onClick={saveCopy}><Download size={16}/> Guardar copia</button><button onClick={newReading} disabled={!!busy}><Shuffle size={16}/> Nueva tirada</button></div><small className={styles.saved}><Check size={13}/> Guardada en tu historial</small></> : stage === 'select' ? <><p>Las cartas se van revelando al elegirlas. Cada posición aporta una perspectiva distinta.</p><p className={styles.subtle}>{session ? 'Tu tirada comprada está reservada y se recuperará al volver al panel.' : 'Esta carta utiliza tu tirada gratuita de hoy.'}</p>{session && <ol className={styles.positions}>{spread.positions.map((p, i) => <li key={p} data-complete={i < cards.length}>{p}{i < cards.length && <Check size={14}/>}</li>)}</ol>}<button className={styles.textButton} onClick={() => load()} disabled={!!busy}><RefreshCw size={15}/> Recuperar tirada guardada</button></> : <><p>{mode === 'free_daily' ? 'Una carta gratuita cada 24 horas para hacer una pausa y mirar tu día desde otra perspectiva.' : spread.description}</p>{mode !== 'free_daily' && <label className={styles.questionLabel}>¿Qué te gustaría explorar?<textarea value={initialQuestion} onChange={e => setInitialQuestion(e.target.value)} placeholder={spread.question} maxLength={400} disabled={loading || !!busy}/></label>}<div className={styles.cost}><span>{mode === 'free_daily' ? 'Carta del día' : `${spread.positions.length} cartas · 1 pregunta incluida`}</span><strong>{mode === 'free_daily' ? 'Gratis' : '1 tirada de tu saldo'}</strong></div>{mode === 'free_daily' && !freeAvailable ? <><p className={styles.subtle}>{countdown ? `Tu próxima carta gratis estará lista en ${countdownLabel}.` : 'La carta gratuita se está recargando.'}</p><button className={styles.goldButton} onClick={() => setMode('clarity')} disabled={loading}>Explorar tiradas</button></> : mode !== 'free_daily' && credits < 1 ? <Link className={styles.goldButton} href="/cliente/precios-ofertas">Ver packs de tiradas <ArrowRight size={16}/></Link> : <button className={styles.goldButton} onClick={start} disabled={loading || !!busy}><Shuffle size={17}/>{busy || (mode === 'free_daily' ? 'Usar mi carta gratis' : 'Empezar mi tirada')}</button>}<small className={styles.subtle}>{mode !== 'free_daily' ? 'La tirada se reserva al empezar. Podrás continuarla si cierras el panel.' : 'No se descuenta ninguna tirada comprada.'}</small><Link className={styles.textButton} href="/cliente/precios-ofertas">Consultar packs y precios <ArrowRight size={14}/></Link></>}
+            {stage === 'result' && draw ? <><h3>{activeCard?.cardName}</h3><p className={styles.prose}>{reading}</p><div className={styles.insight}><Sparkles size={21}/><div><h3>Tu siguiente paso</h3><p>{activeCard?.advice || draw.advice}</p></div></div>{cards.length > 1 && <details><summary>Ver la lectura completa</summary>{cards.map(c => <article key={c.position}><h3>{c.position} · {c.cardName}</h3><p>{c.interpretation}</p></article>)}<p>{draw.conclusion}</p></details>}<div className={styles.readingActions}><button onClick={saveCopy}><Download size={16}/> Guardar copia</button><button onClick={newReading} disabled={!!busy}><Shuffle size={16}/> {freeAvailable ? 'Nueva tirada' : 'Ver opciones de tirada'}</button></div><small className={styles.saved}><Check size={13}/> Guardada en tu historial</small></> : stage === 'select' ? <><p>Las cartas se van revelando al elegirlas. Cada posición aporta una perspectiva distinta.</p><p className={styles.subtle}>{session ? 'Tu tirada comprada está reservada y se recuperará al volver al panel.' : 'Esta carta utiliza tu tirada gratuita de hoy.'}</p>{session && <ol className={styles.positions}>{spread.positions.map((p, i) => <li key={p} data-complete={i < cards.length}>{p}{i < cards.length && <Check size={14}/>}</li>)}</ol>}<button className={styles.textButton} onClick={() => load()} disabled={!!busy}><RefreshCw size={15}/> Recuperar tirada guardada</button></> : <><p>{mode === 'free_daily' ? 'Una tirada gratuita por cuenta cada 24 horas, entre todos los temas.' : spread.description}</p>
+              {!freeAvailable && !loading && <p className={styles.subtle}>{countdown > 0 ? `Tu próxima tirada gratuita estará disponible en ${countdownLabel}.` : 'Tu tirada gratuita está en recarga.'}</p>}
+              {mode !== 'free_daily' && credits > 0 && <label className={styles.questionLabel}>¿Qué te gustaría explorar?<textarea value={initialQuestion} onChange={e => setInitialQuestion(e.target.value)} placeholder={spread.question} maxLength={400} disabled={loading || !!busy}/></label>}
+              <div className={styles.cost}><span>{mode === 'free_daily' ? 'Carta del día' : spread.label}</span><strong>{mode === 'free_daily' ? 'Gratuita' : '1 tirada de pago'}</strong></div>
+              {mode === 'free_daily' && !freeAvailable ? (
+                credits > 0 ? <button className={styles.goldButton} onClick={() => chooseMode('clarity')} disabled={loading}>Ver tiradas para mi saldo</button> : <Link className={styles.goldButton} href="/cliente/precios-ofertas">Ver packs de tiradas <ArrowRight size={16}/></Link>
+              ) : mode !== 'free_daily' && credits < 1 ? (
+                <Link className={styles.goldButton} href="/cliente/precios-ofertas">Ver packs de tiradas <ArrowRight size={16}/></Link>
+              ) : (
+                <button className={styles.goldButton} onClick={start} disabled={loading || !!busy}><Shuffle size={17}/>{busy || (mode === 'free_daily' ? 'Usar mi carta gratis' : 'Usar 1 tirada de mi saldo')}</button>
+              )}
+              {mode !== 'free_daily' && credits > 0 && <small className={styles.subtle}>Tu saldo es de {credits} {credits === 1 ? 'tirada' : 'tiradas'}. Se descontará una al empezar.</small>}
+              </>}
           </section>
           <section id="oracle-conversation-panel" className={styles.oracle} aria-label="Oráculo de tu lectura" hidden={!oracleOpen}>
             <div className={styles.oracleHeading}><div><span className={styles.eyebrow}><span className={styles.onlineDot}/> ORÁCULO EN LÍNEA</span><h2>Hablemos de tu lectura</h2></div><button type="button" className={styles.closeOracle} onClick={closeOracle} aria-label="Volver a mi lectura"><X size={18}/></button></div>
