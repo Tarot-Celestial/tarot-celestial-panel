@@ -32,4 +32,58 @@ test('history and selected draw remain scoped to the authenticated customer',asy
 test('premium picks persist distinct cards; duplicate position and stale writes are rejected',async()=>{const h=harness();const a=await(await h.post({action:'premium_pick',drawKey:'session-fixture',position:7})).json();assert.equal(a.ok,true);assert.equal(h.state.session.cards_json.length,1);const b=await(await h.post({action:'premium_pick',drawKey:'session-fixture',position:0})).json();assert.equal(b.ok,true);assert.notEqual(a.card.cardId,b.card.cardId);assert.equal((await h.post({action:'premium_pick',drawKey:'session-fixture',position:0})).status,409);assert.equal((await harness({conflict:true}).post({action:'premium_pick',drawKey:'session-fixture',position:3})).status,409);});
 test('new ten-card and family spreads coexist with every legacy saved spread',()=>{for(const key of ['daily','yes_no','choice','love','relationships','question','monthly'])assert.ok(catalog.ORACLE_SPREAD_BY_ID[key]);assert.equal(catalog.ORACLE_SPREAD_BY_ID.celtic.positions.length,10);assert.equal(catalog.ORACLE_SPREAD_BY_ID.family.topic,'familia');});
 
+test('all topics share one rolling 24-hour free draw even with purchased credit', async t => {
+  const lastFree = '2026-11-01T12:00:00.000Z';
+  const boundary = Date.parse(lastFree) + 24 * 60 * 60 * 1000;
+  t.mock.timers.enable({ apis: ['Date'], now: boundary - 1 });
+  const h = harness();
+  const draws = h.state.tables.cliente_oraculo_diario;
+  const later = '2026-11-02T09:00:00.000Z';
+  draws.push(
+    { id: id(51), cliente_id: id(1), is_free: false, card_id: 'sun', tema: 'dinero', created_at: later, revealed_at: later },
+    { id: id(52), cliente_id: id(99), is_free: true, card_id: 'moon', tema: 'familia', created_at: later, revealed_at: later }
+  );
+  const initialCount = draws.length;
+  const initial = await (await h.route.GET(new Request('http://localhost/api/cliente/oraculo'))).json();
+  assert.equal(initial.freeAvailable, false);
+  assert.equal(initial.premiumCredits, 4);
+  assert.equal(initial.totalAvailable, 4);
+
+  for (const { id: tema } of catalog.ORACLE_TOPICS) {
+    for (const action of ['shuffle', 'reveal']) {
+      const response = await h.post({ action, tema, position: 8, shuffleId: 'previous-tab' });
+      const body = await response.json();
+      assert.equal(response.status, 409, action + ' / ' + tema);
+      assert.equal(body.error, 'FREE_DRAW_RECHARGING');
+      assert.equal(body.freeState.lastFreeAt, lastFree);
+      assert.equal(body.freeState.nextFreeAt, new Date(boundary).toISOString());
+      assert.equal(body.freeState.remainingSeconds, 1);
+    }
+  }
+  assert.equal(draws.length, initialCount);
+
+  t.mock.timers.tick(1);
+  const shuffle = await h.post({ action: 'shuffle', tema: 'familia' });
+  const shuffled = await shuffle.json();
+  assert.equal(shuffle.status, 200);
+  assert.equal(shuffled.freeAvailable, true);
+  assert.ok(shuffled.shuffleId);
+  assert.equal(draws.length, initialCount);
+  const reveal = await h.post({ action: 'reveal', tema: 'familia', shuffleId: shuffled.shuffleId, position: 8 });
+  const revealed = await reveal.json();
+  assert.equal(reveal.status, 200);
+  assert.equal(revealed.draw.isFree, true);
+  assert.equal(revealed.draw.tema, 'familia');
+  assert.equal(revealed.draw.revealedAt, new Date(boundary).toISOString());
+  assert.equal(revealed.draw.creditConsumed, false);
+  assert.equal(revealed.credits, 4);
+  assert.equal(draws.length, initialCount + 1);
+
+  const replay = await h.post({ action: 'reveal', tema: 'dinero', shuffleId: shuffled.shuffleId, position: 2 });
+  assert.equal(replay.status, 409);
+  assert.equal((await replay.json()).error, 'FREE_DRAW_RECHARGING');
+  assert.equal(draws.length, initialCount + 1);
+  assert.equal(h.state.rpcCalls, undefined, 'the free route never reserves a paid credit');
+});
+
 test('question route uses one atomic RPC and returns its saved answer; foreign draws never reach it',async()=>{const h=harness();const result=await(await h.post({action:'question',drawId:id(2),pregunta:'¿Qué significa para mí?'})).json();assert.equal(result.ok,true);assert.equal(result.respuesta,'Respuesta guardada de la operación');assert.equal(h.state.rpcCalls.length,1);assert.equal(h.state.rpcCalls[0].name,'tc_oracle_answer_question');assert.equal(h.state.rpcCalls[0].args.p_cliente_id,id(1));assert.equal(h.state.tables.cliente_oraculo_mensajes.length,1);const foreign=harness();assert.equal((await foreign.post({action:'question',drawId:id(3),pregunta:'Ajena'})).status,409);assert.equal(foreign.state.rpcCalls,undefined);});

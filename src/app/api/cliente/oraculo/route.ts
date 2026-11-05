@@ -192,7 +192,13 @@ export async function POST(req: Request) {
 
     if (action === "shuffle") {
       const [freeState, credits] = await Promise.all([getFreeDrawState(gate.admin, gate.cliente.id), getOracleCreditBalance(gate.admin, gate.cliente.id)]);
-      return NextResponse.json({ ok: true, shuffleId: randomUUID(), canReveal: freeState.available || credits > 0, freeAvailable: freeState.available, freeState, creditsConfigured: true, credits, deckSize: TAROT_CARDS.length });
+      if (!freeState.available) {
+        return NextResponse.json({
+          ok: false, error: "FREE_DRAW_RECHARGING", freeState, credits,
+          message: "Tu tirada gratuita es una por cuenta cada 24 horas, para todos los temas.",
+        }, { status: 409 });
+      }
+      return NextResponse.json({ ok: true, shuffleId: randomUUID(), canReveal: true, freeAvailable: true, freeState, creditsConfigured: true, credits, deckSize: TAROT_CARDS.length });
     }
 
     if (action === "reveal") {
