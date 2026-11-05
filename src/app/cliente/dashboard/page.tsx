@@ -193,11 +193,16 @@ export default function ClienteDashboardPage() {
   // Versión de la última cartera aplicada. Evita que una respuesta antigua de /me
   // pise un snapshot más reciente recibido por Realtime/polling.
   const walletAppliedAtRef = useRef(0);
+  const latestWalletRef = useRef<any>(null);
   const redemptionOperationIdsRef = useRef(new Map<string, string>());
 
   const applyWalletSnapshot = useCallback((wallet: any, incomingCliente?: Cliente | null) => {
     const version = Date.parse(String(wallet?.refreshed_at || wallet?.state_version || "")) || Date.now();
     const stale = version < walletAppliedAtRef.current;
+    // /state may finish before the profile. Keep its confirmed balances so a
+    // slower /me can add profile fields without restoring an older wallet.
+    if (!stale) latestWalletRef.current = wallet;
+    const confirmedWallet = latestWalletRef.current || wallet;
 
     setCliente((current) => {
       const base = incomingCliente ? {
@@ -208,12 +213,10 @@ export default function ClienteDashboardPage() {
           (current?.id === incomingCliente.id && current?.onboarding_completado) || false,
       } : current;
       if (!base) return base;
-      if (stale) return base;
-
-      const free = Math.max(0, Number(wallet?.minutes_free ?? base.minutos_free_pendientes ?? 0));
-      const normal = Math.max(0, Number(wallet?.minutes_normal ?? base.minutos_normales_pendientes ?? 0));
-      const points = Math.max(0, Number(wallet?.coins ?? base.puntos ?? 0));
-      const effectiveRank = String(wallet?.effective_rank || base.rango_actual || "sin_rango");
+      const free = Math.max(0, Number(confirmedWallet?.minutes_free ?? base.minutos_free_pendientes ?? 0));
+      const normal = Math.max(0, Number(confirmedWallet?.minutes_normal ?? base.minutos_normales_pendientes ?? 0));
+      const points = Math.max(0, Number(confirmedWallet?.coins ?? base.puntos ?? 0));
+      const effectiveRank = String(confirmedWallet?.effective_rank || base.rango_actual || "sin_rango");
 
       return {
         ...base,
@@ -233,6 +236,7 @@ export default function ClienteDashboardPage() {
   }, []);
 
   const loadWalletState = useCallback(async () => {
+    const requestRevision = dataRevisionRef.current;
     const { data } = await sb.auth.getSession();
     const token = data.session?.access_token;
     if (!token) return;
@@ -247,6 +251,7 @@ export default function ClienteDashboardPage() {
     });
     const json = await res.json().catch(() => null);
     if (!res.ok || !json?.ok || !json?.state) return;
+    if (requestRevision !== dataRevisionRef.current) return;
     applyWalletSnapshot(json.state);
   }, [applyWalletSnapshot]);
   const loadData = useCallback(async () => {
@@ -713,6 +718,12 @@ export default function ClienteDashboardPage() {
       const updatedClient = json?.cliente as Partial<Cliente> | undefined;
       if (!updatedClient?.id) throw new Error("CANJE_SIN_SALDO_ACTUALIZADO");
       dataRevisionRef.current += 1;
+      latestWalletRef.current = {
+        ...latestWalletRef.current,
+        coins: updatedClient.puntos,
+        minutes_free: updatedClient.minutos_free_pendientes,
+        minutes_normal: updatedClient.minutos_normales_pendientes,
+      };
       setCliente((current) => {
         const merged = { ...(current || ({} as Cliente)), ...updatedClient } as Cliente;
         const free = Number(merged.minutos_free_pendientes || 0);
@@ -1045,3 +1056,4 @@ export default function ClienteDashboardPage() {
     </>
   );
 }
+

@@ -19,11 +19,12 @@ const companion = load('src/lib/leonaris-companion.ts', { '@/lib/leo-guide': gui
 const clientId = '00000000-0000-4000-8000-000000000001';
 const otherId = '00000000-0000-4000-8000-000000000002';
 const userId = '10000000-0000-4000-8000-000000000001';
+const snapshotRefreshedAt = '2026-11-05T10:20:30.123456+00:00';
 const memory = { displayName: null, memoryEnabled: true, style: 'warm', memories: [], history: [], helpful: 0, unhelpful: 0, profile: { visit_counts: {}, interest_scores: {}, interaction_counts: {}, last_path: null, last_seen_at: null } };
 function contextFixture(options = {}) {
   const calls = [];
   const now = new Date().toISOString();
-  const state = { cliente_id: clientId, auth_user_id: userId, coins: 1200, minutes_total: 233, oracle_credits: 4, rank_state: { effective: 'diamante', automatic: 'oro', total: 650, compras: 4 }, ...options.state };
+  const state = { cliente_id: clientId, auth_user_id: userId, coins: 1200, minutes_total: 233, oracle_credits: 4, refreshed_at: snapshotRefreshedAt, rank_state: { effective: 'diamante', automatic: 'oro', total: 650, compras: 4 }, ...options.state };
   const roulette = { cliente_id: clientId, level_1_spins: 0, level_2_spins: 2, level_3_spins: 0, level_4_spins: 0, level_5_spins: 3, diamond_access: false, next_spin_2: 'spin-two', next_spin_5: 'spin-five', catalogue: [{ nivel: 2 }, { nivel: 5 }], history: [], entitlements: [], ...options.roulette };
   const tables = {
     crm_clientes: [{ id: clientId, nombre: 'Ana' }, { id: otherId, nombre: 'Otra clienta' }],
@@ -95,6 +96,18 @@ test('live context uses the authenticated owner and rejects missing, invalid or 
   assert.equal(context.name, 'Ana'); assert.equal(context.facts.coins, 1200); assert.equal(context.facts.minutes, 233);
   for (const call of f.calls.filter(call => call.rpc)) assert.equal(call.args.p_cliente_id, clientId);
   assert.deepEqual(f.calls.find(call => call.table === 'crm_clientes').filters, [['eq', 'id', clientId]]);
+});
+
+test('live facts retain the exact database snapshot time instead of response completion time', async () => {
+  const f = contextFixture(), context = await f.api.loadLeonarisContext(f.gate, true);
+  assert.equal(context.factsRefreshedAt, snapshotRefreshedAt);
+  assert.equal(context.snapshot.updatedAt, Date.parse(snapshotRefreshedAt));
+  for (const refreshed_at of [undefined, null, '', 'invalid-date', 0]) {
+    const missing = contextFixture({ state: { refreshed_at } });
+    const result = await missing.api.loadLeonarisContext(missing.gate);
+    assert.equal(result.factsRefreshedAt, null);
+    assert.equal(result.snapshot.updatedAt, 0);
+  }
 });
 
 test('purchase greeting names only a recent completed own payment and its own credited benefits', async () => {
@@ -261,7 +274,7 @@ function endpoint(options = {}) {
   class LeonarisMemoryError extends Error { constructor(code) { super(code); this.code = code; } }
   const operations = {
     LeonarisMemoryError,
-    getLeonarisMemory: async id => { calls.push({ operation: 'read', id }); return options.memory || memory; },
+    getLeonarisMemory: async id => { calls.push({ operation: 'read', id }); if (options.memoryWait) await options.memoryWait; return options.memory || memory; },
     claimLeonarisChat: async (id, rid, question) => { calls.push({ operation: 'claim', id, rid, question }); return options.claim || { status: 'claimed', claimToken: '40000000-0000-4000-8000-000000000004' }; },
   };
   for (const [name, operation] of Object.entries({ updateLeonarisPreferences: 'preferences', rememberLeonarisMemory: 'remember', forgetLeonarisMemory: 'forget', resetLeonarisMemory: 'reset', completeLeonarisChat: 'complete', failLeonarisChat: 'fail', recordLeonarisFeedback: 'feedback', recordLeonarisSignal: 'signal' })) {
@@ -291,6 +304,7 @@ test('API authenticates before reads and mutations and cannot be redirected by r
   const response = await f.api.GET(new Request('http://local/api/cliente/leo?client_id=' + otherId, { headers: { authorization: 'Bearer valid' } }));
   assert.equal(response.status, 200); assert.match(response.headers.get('cache-control'), /private.*no-store/); assert.equal(response.headers.get('vary'), 'Authorization');
   const data = await response.json(); assert.match(data.companion.greeting.message, /Hola, Ana/); assert.doesNotMatch(JSON.stringify(data), /Otra clienta/);
+  assert.equal(data.facts_refreshed_at, snapshotRefreshedAt);
   for (const call of f.calls.filter(call => call.id)) assert.equal(call.id, clientId);
   assert.deepEqual(f.queries.find(query => query.table === 'tc_client_leo_profiles').filters, [['eq', 'client_id', clientId]]);
 });
@@ -305,6 +319,9 @@ test('API memory, feedback and activity operations always use verified client id
   for (const action of actions) {
     const f = endpoint(), result = await f.api.POST(postRequest({ ...action, client_id: otherId, cliente_id: otherId }));
     assert.equal(result.status, 200);
+    const payload = await result.json();
+    assert.equal(payload.facts_refreshed_at, snapshotRefreshedAt);
+    assert.equal(payload.facts.coins, 1200);
     for (const call of f.calls.filter(call => call.id)) assert.equal(call.id, clientId);
     for (const query of f.queries.filter(query => query.rpc)) assert.equal(query.args.p_cliente_id ?? query.args.p_client_id, clientId);
     if (action.action === 'interaction') assert.equal(f.calls.find(call => call.operation === 'signal').args[0].pathname, '/cliente/dashboard');
@@ -318,10 +335,33 @@ test('API rejects malformed, oversized and invalid chat requests without claimin
   }
 });
 
+test('a delayed GET retains its older snapshot revision so the client can reject it', async () => {
+  let release;
+  const memoryWait = new Promise(resolve => { release = resolve; });
+  const older = endpoint({ memoryWait, context: { state: { coins: 2820 } } });
+  const oldResponse = older.api.GET(new Request('http://local/api/cliente/leo', { headers: { authorization: 'Bearer valid' } }));
+  const newerTime = '2026-11-05T10:21:30.234567+00:00';
+  const newer = endpoint({ context: { state: { coins: 420, refreshed_at: newerTime } } });
+  const newPayload = await (await newer.api.GET(new Request('http://local/api/cliente/leo', { headers: { authorization: 'Bearer valid' } }))).json();
+  release();
+  const oldPayload = await (await oldResponse).json();
+  assert.equal(newPayload.facts.coins, 420);
+  assert.equal(newPayload.facts_refreshed_at, newerTime);
+  assert.equal(oldPayload.facts.coins, 2820);
+  assert.equal(oldPayload.facts_refreshed_at, snapshotRefreshedAt);
+  assert.ok(Date.parse(oldPayload.facts_refreshed_at) < Date.parse(newPayload.facts_refreshed_at));
+});
+
 test('API chat completion is scoped and follows claim ownership; in-progress and cached requests never regenerate', async () => {
   const f = endpoint();
   const response = await f.api.POST(postRequest({ action: 'chat', requestId, message: ' mis números del sorteo ', pathname: '/cliente/sorteo', client_id: otherId }));
-  assert.equal(response.status, 200); assert.match((await response.json()).answer.message, /7, 19/);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.match(payload.answer.message, /7, 19/);
+  assert.equal(payload.answer_historical, false);
+  assert.equal(payload.answer_refreshed_at, snapshotRefreshedAt);
+  assert.equal(payload.facts_refreshed_at, snapshotRefreshedAt);
+  assert.equal(payload.facts.coins, 1200);
   assert.equal(f.calls.find(call => call.operation === 'answer').contextClient, clientId);
   const complete = f.calls.find(call => call.operation === 'complete'); assert.equal(complete.id, clientId); assert.equal(complete.args[0], requestId); assert.equal(complete.args[1], '40000000-0000-4000-8000-000000000004');
   assert.ok(!f.calls.some(call => call.operation === 'fail'));
@@ -332,7 +372,12 @@ test('API chat completion is scoped and follows claim ownership; in-progress and
   }
   const saved = { id: requestId, title: 'Respuesta guardada', message: 'Ya respondido', actions: [], mode: 'guided' };
   const cached = endpoint({ claim: { status: 'completed', answer: saved } });
-  assert.deepEqual((await (await cached.api.POST(postRequest({ action: 'chat', requestId, message: 'hola' }))).json()).answer, saved);
+  const retry = await (await cached.api.POST(postRequest({ action: 'chat', requestId, message: 'hola' }))).json();
+  assert.deepEqual(retry.answer, saved);
+  assert.equal(retry.answer_historical, true);
+  assert.equal(retry.answer_refreshed_at, null);
+  assert.equal('facts' in retry, false);
+  assert.equal('facts_refreshed_at' in retry, false);
   assert.deepEqual(cached.calls.map(call => call.operation), ['claim']);
 });
 
@@ -344,3 +389,4 @@ test('unavailable live facts fail the claimed chat safely without logging questi
   assert.ok(!f.calls.some(call => call.operation === 'answer' || call.operation === 'complete'));
   assert.doesNotMatch(JSON.stringify(f.logs), /private-sensitive-question|DOWN/);
 });
+

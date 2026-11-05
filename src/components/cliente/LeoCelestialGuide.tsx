@@ -43,6 +43,8 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
   const [activity,setActivity] = useState(0);
   const abort = useRef<AbortController|null>(null), epoch = useRef(0), userRef = useRef<string|null>(null), readyRef = useRef(false);
   const accountEpoch = useRef(0), mutationEpoch = useRef(0), requests = useRef(new Set<AbortController>());
+  const walletFactsRef = useRef<LeoSnapshot['wallet']>(null);
+  const walletFactsAtRef = useRef(0);
   const chatEpoch = useRef(0), chatAbort = useRef<AbortController|null>(null), chatRequest = useRef<{uid:string;pathname:string;message:string;id:string}|null>(null);
   const currentPath = useRef(pathname);currentPath.current=pathname;
   const sessionMarker = useRef(''), visitRef = useRef(''), greetingSeen = useRef(new Set<string>()), profileRef = useRef({hidden:false,muted:false});
@@ -63,18 +65,30 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
   const pet = useLeonarisMotion({uid,enabled:ready&&!hidden,motion,visible,journey:!!journey,onWake:wake});
   const clearAccount = useCallback((id:string|null, marker='')=>{
     ++accountEpoch.current;++epoch.current;++mutationEpoch.current;++chatEpoch.current;chatRequest.current=null;abort.current?.abort();requests.current.forEach(controller=>controller.abort());requests.current.clear();
-    userRef.current=id;sessionMarker.current=marker;setUid(id);readyRef.current=false;setReady(false);visitRef.current='';greetingSeen.current.clear();lastReaction.current='';
+    userRef.current=id;sessionMarker.current=marker;walletFactsRef.current=null;walletFactsAtRef.current=0;setUid(id);readyRef.current=false;setReady(false);visitRef.current='';greetingSeen.current.clear();lastReaction.current='';
     profileRef.current={hidden:false,muted:false};setHidden(false);setMuted(false);setData(emptyLeoSnapshot());setCompanion(emptyCompanion());setMemoryAvailable(null);setAnswer(null);setReaction(null);setQuestion('');setMemoryDraft('');setMemoryOpen(false);setConfirmForget(false);setFeedback({});setError('');setChatBusy(false);setSaving(false);setLoading(false);setOpen(false);setJourney(null);setPosition(null);setHighlight(null);setWaving(false);setSleeping(false);
     if(waveTimer.current)clearTimeout(waveTimer.current);if(focusTimer.current)clearTimeout(focusTimer.current);
   },[]);
   const applyLeo = useCallback((payload:any, id:string)=>{
     if(userRef.current!==id)return;
+    const factsAt=Date.parse(String(payload?.facts_refreshed_at||''))||0;
+    const staleFacts=Boolean(payload?.facts&&walletFactsAtRef.current>0&&factsAt<walletFactsAtRef.current);
     if(payload?.profile){
       const value={hidden:!!payload.profile.hidden,muted:!!payload.profile.muted};profileRef.current=value;setHidden(value.hidden);setMuted(value.muted);
       if(value.hidden){setOpen(false);setJourney(null);}
       try{localStorage.setItem(storageKey(id),JSON.stringify(value));}catch{}
     }
-    if(payload?.facts)setData(current=>({...current,wallet:payload.facts,updatedAt:Date.now()}));
+    if(payload?.facts&&!staleFacts){
+      const previous=walletFactsRef.current,next=payload.facts;
+      if(previous&&(previous.coins!==next.coins||previous.minutes!==next.minutes||previous.oracleCredits!==next.oracleCredits)){
+        // A greeting or earlier answer is a snapshot, not the current wallet.
+        // Once the server confirms a balance change, show the refreshed facts.
+        setAnswer(null);setReaction(null);
+      }
+      walletFactsRef.current=next;
+      walletFactsAtRef.current=factsAt;
+      setData(current=>({...current,wallet:next,updatedAt:factsAt||Date.now()}));
+    }
     if(!payload?.companion)return;
     setMemoryAvailable(true);
     const source=payload.companion, next:Companion={
@@ -85,6 +99,7 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
       greeting:safeAnswer(source.greeting),
     };
     setCompanion(next);
+    if(staleFacts)return;
     const greeting=next.greeting;
     if(!greeting||profileRef.current.muted||profileRef.current.hidden)return;
     const key=`tc-leonaris-greetings:${id}:${sessionMarker.current}`;
@@ -130,7 +145,7 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
       if(controller.signal.aborted)return;
       setMemoryAvailable(!!leo?.companion);
       const pendingLevels = roulette?.cliente_id ? Object.values(readRoulettePending(roulette.cliente_id)).map(spin => ({ level: spin.level })) : [];
-      setData({pendingLevels,wallet:leo?.facts||null,roulette,ranks,bonuses:bonus?.bonuses||null,oracle:oracle?{credits:oracle.credits,freeAvailable:!!oracle.freeAvailable}:null,updatedAt:Date.now()});
+      setData(current=>({...current,pendingLevels,roulette,ranks,bonuses:bonus?.bonuses||null,oracle:oracle?{credits:oracle.credits,freeAvailable:!!oracle.freeAvailable}:null}));
       if(leo)applyLeo(leo,id);
       if(!readyRef.current){
         readyRef.current=true;
@@ -258,7 +273,7 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
     if(account!==accountEpoch.current)return;
     setSaving(false);return result;
   }
-  function show(){setExpanded(false);focusReturn.current=document.activeElement as HTMLElement;setOpen(true);wake();setMemoryOpen(false);if(reaction){setAnswer(reaction);setReaction(null);}if(focusTimer.current)clearTimeout(focusTimer.current);focusTimer.current=setTimeout(()=>panelRef.current?.focus(),20);}
+  function show(){setExpanded(false);focusReturn.current=document.activeElement as HTMLElement;setOpen(true);wake();setMemoryOpen(false);if(reaction){setAnswer(reaction);setReaction(null);}void refresh();if(focusTimer.current)clearTimeout(focusTimer.current);focusTimer.current=setTimeout(()=>panelRef.current?.focus(),20);}
   function go(action:LeoAction,tour=false,index=0){
     if(!validLeoAction(action))return;
     setExpanded(false);
@@ -283,7 +298,16 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
     if(!chatRequest.current||chatRequest.current.uid!==uid||chatRequest.current.pathname!==pathname||chatRequest.current.message!==message)chatRequest.current={uid:uid!,pathname,message,id:crypto.randomUUID()};
     const result=await signal('chat',{message,requestId:chatRequest.current.id});
     if(account!==accountEpoch.current||version!==chatEpoch.current)return;
-    const reply=safeAnswer(result?.answer);if(reply){chatRequest.current=null;if(currentPath.current===pathname){setAnswer(reply);setQuestion('');}}else if(result)setError('No he recibido una respuesta completa. Inténtalo de nuevo.');
+    const reply=safeAnswer(result?.answer);
+    const answeredAt=Date.parse(String(result?.answer_refreshed_at||''))||0;
+    const outdated=result?.answer_historical===true||(walletFactsAtRef.current>0&&answeredAt<walletFactsAtRef.current);
+    if(reply){
+      chatRequest.current=null;
+      if(currentPath.current===pathname){
+        if(outdated){setAnswer(null);setReaction(null);setTopic('balance');setError('Esa respuesta corresponde a un saldo anterior. Estoy actualizando tu cuenta; puedes volver a preguntar.');void refresh();}
+        else{setAnswer(reply);setQuestion('');}
+      }
+    }else if(result)setError('No he recibido una respuesta completa. Inténtalo de nuevo.');
     setChatBusy(false);
   }
   async function remember(event:FormEvent){
@@ -382,3 +406,4 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
     <span className={styles.srOnly} role="status">{journey?.stage==='arrived'?journey.action.explanation:''}</span>
   </aside>;
 }
+

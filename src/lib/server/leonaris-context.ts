@@ -11,6 +11,7 @@ type Gate = Awaited<ReturnType<typeof rouletteClient>>;
 export type LeonarisContext = {
   name: string | null;
   facts: LeoLiveFacts;
+  factsRefreshedAt: string | null;
   snapshot: LeoSnapshot;
   purchase: { id: string; name: string; coins: number | null } | null;
   purchaseAvailable: boolean;
@@ -53,9 +54,12 @@ export async function loadLeonarisContext(gate: Gate, detailed = false): Promise
     pendingSpins: roulette ? leoSpins(roulette).reduce((sum, row) => sum + row.amount, 0) : 0,
     activePromotion: active ? { id: active.id, name: label(active.name) || "Promoción activa" } : null,
   };
+  // Preserve the database observation time, not the later HTTP/AI completion time.
+  const factsRefreshedAt = typeof state.refreshed_at === "string" && Number.isFinite(Date.parse(state.refreshed_at))
+    ? state.refreshed_at : null;
   const context: LeonarisContext = {
     name: customer.error ? null : label(customer.data?.nombre, 80) || null,
-    facts, snapshot: { roulette, ranks: null, bonuses: null, oracle: null, wallet: facts, updatedAt: Date.now() },
+    facts, factsRefreshedAt, snapshot: { roulette, ranks: null, bonuses: null, oracle: null, wallet: facts, updatedAt: factsRefreshedAt ? Date.parse(factsRefreshedAt) : 0 },
     purchase: null, purchaseAvailable: !payment.error, raffle: null, raffleAvailable: false,
   };
   if (!payment.error && payment.data) {
@@ -111,3 +115,4 @@ export function leonarisCompanion(memory: LeonarisMemoryState, context: Leonaris
     },
   };
 }
+
