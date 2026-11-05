@@ -44,7 +44,7 @@ async function responseFor(gate: Gate) {
   if (row.error) throw new Error("LEONARIS_PROFILE_UNAVAILABLE");
   const profile = leonarisProfile(row.data);
   const interests = memory.memoryEnabled ? profile : { ...profile, visit_counts: {}, interest_scores: {}, interaction_counts: {} };
-  return json({ ok: true, profile: interests, facts: context.facts, recommendation: buildLeoRecommendation(interests, context.facts), companion: leonarisCompanion(memory, context) });
+  return json({ ok: true, profile: interests, facts: context.facts, facts_refreshed_at: context.factsRefreshedAt, recommendation: buildLeoRecommendation(interests, context.facts), companion: leonarisCompanion(memory, context) });
 }
 
 export async function GET(req: Request) {
@@ -66,13 +66,15 @@ export async function POST(req: Request) {
     if (body.action === "chat") {
       if (!validLeonarisId(body.requestId) || typeof body.message !== "string" || !body.message.trim() || Array.from(body.message).length > 2000) return json({ ok: false, error: "Escribe un mensaje de hasta dos mil caracteres." }, 400);
       const claim = await claimLeonarisChat(id, body.requestId, body.message);
-      if (claim.status === "completed") return claim.answer ? json({ ok: true, answer: claim.answer }) : json({ ok: false, error: "Esta respuesta ya no está guardada. Envía una consulta nueva." }, 409);
+      // A retry returns the original answer, which must not be presented as a new balance observation.
+      if (claim.status === "completed") return claim.answer ? json({ ok: true, answer: claim.answer, answer_historical: true, answer_refreshed_at: null }) : json({ ok: false, error: "Esta respuesta ya no está guardada. Envía una consulta nueva." }, 409);
       if (claim.status !== "claimed") return json({ ok: false, error: claim.status === "in_progress" ? "Todavía estoy preparando esta respuesta. Espera un momento." : "Vamos con calma: espera un momento antes de otra consulta." }, 429, { "Retry-After": String(claim.retryAfter) });
       try {
         const [memory, context] = await Promise.all([getLeonarisMemory(id), loadLeonarisContext(gate, true)]);
         const answer = await answerLeonaris(context, memory, body.requestId, body.message.trim(), pathname);
         await completeLeonarisChat(id, body.requestId, claim.claimToken, answer);
-        return json({ ok: true, answer });
+        return json({ ok: true, answer, answer_historical: false, answer_refreshed_at: context.factsRefreshedAt,
+          facts: context.facts, facts_refreshed_at: context.factsRefreshedAt });
       } catch (error) {
         await failLeonarisChat(id, body.requestId, claim.claimToken).catch(() => {});
         throw error;
@@ -95,3 +97,4 @@ export async function POST(req: Request) {
     return await responseFor(gate);
   } catch (error) { return failure(error); }
 }
+

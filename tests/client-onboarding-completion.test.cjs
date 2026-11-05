@@ -6,10 +6,11 @@ function harness({status=200,body,blockedRefresh=false}={}){
  const save=source.slice(source.indexOf('  async function saveOnboarding('),source.indexOf('  async function createPasswordNow('));
  vm.createContext(scope);vm.runInContext(ts.transpileModule(save,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,scope);
  const wallet=source.slice(source.indexOf('  const applyWalletSnapshot ='),source.indexOf('  const loadWalletState ='));
- scope.useCallback=fn=>fn;scope.useRef=v=>({current:v});scope.walletAppliedAtRef={current:0};scope.setOracleCredits=()=>{};scope.setRouletteSpins=()=>{};
+ scope.useCallback=fn=>fn;scope.useRef=v=>({current:v});scope.walletAppliedAtRef={current:0};scope.latestWalletRef={current:null};scope.setOracleCredits=()=>{};scope.setRouletteSpins=()=>{};
  vm.runInContext(ts.transpileModule(wallet+'\nglobalThis.applyWallet=applyWalletSnapshot;',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,scope);
  return {state,scope,save:()=>scope.saveOnboarding({nombre:'Ana nueva',apellido:'',email:'',fecha_nacimiento:'1990-01-01',onboarding_completado:true})};
 }
 test('successful completion closes immediately even while dashboard refresh is pending',async()=>{const h=harness({blockedRefresh:true});await h.save();assert.equal(h.state.open,false);assert.equal(h.state.cliente.onboarding_completado,true);assert.equal(h.state.cliente.nombre,'Ana nueva');assert.equal(h.scope.dataRevisionRef.current,1);assert.equal(h.state.saving,false)});
 test('stale dashboard snapshot and wallet polling cannot undo saved completion',async()=>{const h=harness();await h.save();h.scope.applyWallet({coins:25},{id:'a',onboarding_completado:false});assert.equal(h.state.cliente.onboarding_completado,true);h.scope.applyWallet({coins:30});assert.equal(h.state.cliente.onboarding_completado,true);assert.equal(h.state.cliente.puntos,30);h.scope.applyWallet({coins:0},{id:'b',onboarding_completado:false});assert.equal(h.state.cliente.onboarding_completado,false)});
 test('failed or incomplete saves remain open and propagate an error to the dialog',async()=>{for(const options of [{status:400,body:{ok:false,error:'Introduce un email válido.'}},{body:{ok:true,cliente:{id:'a',onboarding_completado:false}}},{body:{ok:true,cliente:{id:'b',onboarding_completado:true}}}]){const h=harness(options);await assert.rejects(h.save());assert.equal(h.state.open,true);assert.equal(h.state.cliente.onboarding_completado,false);assert.equal(h.state.saving,false);assert.equal(h.state.refreshes,0);assert.equal(h.scope.dataRevisionRef.current,0)}});
+
