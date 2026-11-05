@@ -46,6 +46,7 @@ async function mount({ first = initial, second = other } = {}) {
     '@/components/ui/KpiCard': { default: blank }, '@/components/crm/RegistrarLlamadaModal': { default: blank },
     '@/components/crm/ClienteSidebar': { default: blank }, '@/components/crm/ClienteTimeline': { default: blank },
     '@/components/crm/PayPalCrmPaymentModal': { default: blank },
+    '@/components/crm/PurchaseBenefitReceipt': { default: blank },
     '@/components/global/BrandSwitcher': { getActiveBrand: () => 'celestial' },
     'lucide-react': new Proxy({}, { get: () => blank }), '@/lib/tc-toast': { tcToast: noop },
     '@/hooks/useRouletteSignal': { useRouletteSignal: (_sb, _id, refresh) => { h.refresh = refresh; } },

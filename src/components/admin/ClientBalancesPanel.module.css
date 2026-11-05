@@ -15,3 +15,10 @@
 }
 .oracleActions { display: flex; flex-wrap: wrap; gap: 10px; }
 .panel .editOracle { border-color: #796a81; background: #302837; color: #f2e7f1; }
+.coinsHistoryColumn { display: grid; gap: 18px; min-width: 0; }
+.purchaseHistory { max-height: 620px; overflow: auto; padding-right: 6px; scrollbar-color: #837192 #191723; }
+.purchaseHistory:focus-visible { outline: 3px solid #90cfff; outline-offset: 4px; border-radius: 10px; }
+.purchaseHeading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+.purchaseClassification { padding: 5px 8px; border: 1px solid #63556e; border-radius: 20px; color: #e0d1ea; font-size: 11px; }
+.purchaseSpins { color: #b1e2d0; font-size: 13px; }
+.purchaseReference { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 10px; color: #c7c1cf; font-size: 11px; }

@@ -6,6 +6,8 @@ const vm = require('node:vm');
 const ts = require('typescript');
 const React = require('react');
 const { act, create } = require('react-test-renderer');
+const purchaseSummary = {};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname, '../src/lib/purchase-benefit-summary.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { exports: purchaseSummary });
 
 const source = fs.readFileSync(path.join(__dirname, '../src/components/admin/ClientBalancesPanel.tsx'), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: {
@@ -27,7 +29,7 @@ async function fixture(t) {
     exports,
     require: name => name === '@/lib/supabase-browser'
       ? { supabaseBrowser: () => ({ auth: { getSession: async () => ({ data: { session: { access_token: 'test' } } }) } }) }
-      : name.endsWith('.module.css') ? { default: {} } : require(name),
+      : name === '@/lib/purchase-benefit-summary' ? purchaseSummary : name.endsWith('.module.css') ? { default: {} } : require(name),
     window: { setInterval() { return 1; }, clearInterval() {}, addEventListener() {}, removeEventListener() {} },
     document: { hidden: false }, crypto: { randomUUID: () => `operation-${++ids}` },
     fetch: async (url, init) => {

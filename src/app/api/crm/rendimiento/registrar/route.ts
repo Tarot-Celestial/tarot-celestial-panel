@@ -7,6 +7,7 @@ import { paypalConfig } from "@/lib/server/paypal-crm";
 import { CLIENTE_MINUTE_PACKS } from "@/lib/server/cliente-minute-packs";
 import { handleNewTarotistaGiftCall, newTarotistaGiftPreview } from "@/lib/server/new-tarotista-gift";
 import { handleInitialConsultationGiftCall, initialConsultationGiftPreview } from "@/lib/server/initial-consultation-gift";
+import { purchaseBenefitText, summarizePurchaseBenefits } from "@/lib/purchase-benefit-summary";
 
 export const runtime = "nodejs";
 
@@ -777,18 +778,19 @@ export async function POST(req: Request) {
     try { await syncClienteMonthTag(admin, clienteId); }
     catch (error) { if (!existingPaymentId && !recuperado) throw error; console.error("[CRM] Llamada guardada; etiquetas pendientes", error); }
 
-    const [{ data: awardedSpins, error: spinsReadError }, { data: benefitEvents, error: benefitsReadError }] = economicPayment?.id
+    const [{ data: awardedSpins, error: spinsReadError }, { data: benefitEvents, error: benefitsReadError }, { data: coinMovements, error: coinsReadError }] = economicPayment?.id
       ? await Promise.all([
-        admin.from("cliente_ruleta_giros").select("id,nivel,estado,source").eq("purchase_id", economicPayment.id),
-        admin.from("tc_client_benefit_events").select("coins,oracle_credits").eq("payment_id", economicPayment.id),
-      ]) : [{ data: [], error: null }, { data: [], error: null }];
-    const specialSpin = !spinsReadError ? (awardedSpins || []).find((spin: any) => Number(spin.nivel) === 4) || null : null;
-    const spinLevels = (awardedSpins || []).reduce((levels: Record<string, number>, spin: any) => {
-      const level = String(spin.nivel); levels[level] = (levels[level] || 0) + 1; return levels;
-    }, {} as Record<string, number>);
-    const awardedSpinText = !spinsReadError ? Object.entries(spinLevels).map(([level, count]) =>
-      `+${count} giro${count === 1 ? "" : "s"} ${level === "4" ? "Nivel Especial" : `Nivel ${level}`}`,
-    ).join(" · ") : "";
+        admin.from("cliente_ruleta_giros").select("id,nivel,estado,source").eq("cliente_id", clienteId).eq("purchase_id", economicPayment.id),
+        admin.from("tc_client_benefit_events").select("coins,oracle_credits,benefit_key,snapshot").eq("cliente_id", clienteId).eq("payment_id", economicPayment.id),
+        admin.from("cliente_puntos_historial").select("tipo,puntos,saldo_despues,created_at").eq("cliente_id", clienteId).eq("meta->>payment_id", economicPayment.id),
+      ].map((query) => Promise.resolve(query).catch(() => ({ data: null, error: true }))))
+      : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
+    const specialSpin = !spinsReadError ? (awardedSpins || []).find((spin: any) => Number(spin.nivel) === 4 && spin.estado !== "revoked") || null : null;
+    const benefitSummary = economicPayment?.id ? summarizePurchaseBenefits(economicPayment, {
+      ledger: coinsReadError ? null : coinMovements || [],
+      events: benefitsReadError ? null : benefitEvents || [],
+      spins: spinsReadError ? null : awardedSpins || [],
+    }) : null;
     return NextResponse.json({
       ok: true,
       data: inserted,
@@ -809,16 +811,17 @@ export async function POST(req: Request) {
       capture_assignment: captureAssignment,
       special_spin: specialSpin,
       reward_policy: result?.reward_policy || null,
-      rewards: spinsReadError || benefitsReadError ? null : {
-        coins: (benefitEvents || []).reduce((sum: number, event: any) => sum + Number(event.coins || 0), 0),
-        oracle_credits: (benefitEvents || []).reduce((sum: number, event: any) => sum + Number(event.oracle_credits || 0), 0),
+      purchase_benefits_summary: benefitSummary,
+      rewards: spinsReadError || benefitsReadError || coinsReadError ? null : {
+        coins: benefitSummary?.coins ?? null,
+        oracle_credits: benefitSummary?.oracle_credits ?? null,
         spins: awardedSpins || [],
       },
       created_at: result?.payment?.created_at || result?.rendimiento?.fecha_hora || new Date().toISOString(),
       business: String(cliente?.origen || "celestial"),
       message: (collaboratorDisplayName
         ? "✅ Llamada registrada y vinculada a CALL MARIO"
-        : "✅ Llamada registrada correctamente") + (awardedSpinText ? ` · ${awardedSpinText} confirmados para el cliente.` : ""),
+        : "✅ Llamada registrada correctamente") + (benefitSummary ? ` · ${purchaseBenefitText(benefitSummary)}.` : ""),
     });
   } catch (e: any) {
     console.error("🔥 ERROR GENERAL:", e);

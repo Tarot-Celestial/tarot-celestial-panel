@@ -6,6 +6,8 @@ const vm = require('node:vm');
 const ts = require('typescript');
 const React = require('react');
 const { act, create } = require('react-test-renderer');
+const purchaseSummary = {};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname, '../src/lib/purchase-benefit-summary.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { exports: purchaseSummary });
 
 const clients = [
   { id: 'ana', nombre: 'Ana', apellido: 'Prueba', telefono: '123', email: 'ana@example.test' },
@@ -30,7 +32,7 @@ async function setup(t, overrides = {}) {
   const filename = path.join(__dirname, '../src/components/admin/ClientBalancesPanel.tsx');
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText, {
     exports,
-    require: value => value === '@/lib/supabase-browser' ? { supabaseBrowser: () => ({ auth: { getSession: async () => ({ data: { session: { access_token: 'fixture' } } }) } }) } : value.endsWith('.module.css') ? { default: {} } : require(value),
+    require: value => value === '@/lib/supabase-browser' ? { supabaseBrowser: () => ({ auth: { getSession: async () => ({ data: { session: { access_token: 'fixture' } } }) } }) } : value === '@/lib/purchase-benefit-summary' ? purchaseSummary : value.endsWith('.module.css') ? { default: {} } : require(value),
     window: { setInterval: () => 1, clearInterval() {}, addEventListener() {}, removeEventListener() {} },
     document: { hidden: false },
     crypto: { randomUUID: () => `op-${++state.uuidCount}` },
@@ -169,4 +171,33 @@ test('operation conflict is retained for reconciliation rather than issuing a ne
   assert.equal(coinsForm().findByType('fieldset').props.disabled, true);
   assert.deepEqual(state.posts[0], state.posts[1]);
   assert.equal(state.uuidCount, 1);
+});
+
+test('purchase history displays confirmed grants, Promo, missing evidence and manual additions separately', async t => {
+  const item = (payment_id, changes = {}) => ({payment_id, created_at:'2026-11-05T12:00:00Z',amount:35,currency:'EUR',method:'paypal_manual',benefits:{
+    payment_id,is_purchase:true,classification:'nada',coins:300,coins_status:'confirmed',coins_balance_after:630,spins:[{level:2,count:1}],revoked_spins:0,oracle_credits:0,...changes,
+  }});
+  const current = {...detail(),coins_history:[audit],purchase_coins_history:{limit:30,items:[
+    item('purchase-normal'),item('purchase-promo',{classification:'promo',coins:0,coins_balance_after:null,spins:[]}),
+    item('purchase-unknown',{coins:null,coins_status:'unconfirmed',coins_balance_after:null,spins:null}),
+    item('purchase-special',{classification:'super_promo_ruleta',coins:0,coins_balance_after:null,spins:[{level:4,count:1}]}),
+  ]}};
+  const {view,choose,state}=await setup(t,{current});await choose('ana');
+  const purchases=view.root.findByProps({'aria-labelledby':'admin-purchase-coins-title'});
+  const manual=view.root.findByProps({'aria-labelledby':'admin-manual-coins-title'});
+  assert.match(text(purchases),/\+300 Coins/);assert.match(text(purchases),/Normal · Nada/);
+  assert.match(text(purchases),/Saldo tras el abono: 630 Coins/);assert.match(text(purchases),/Ruleta nivel 2/);
+  assert.match(text(purchases),/Promo: no concede Coins ni ruleta/);assert.match(text(purchases),/Abono no confirmado/);
+  assert.match(text(purchases),/Super Promo Ruleta/);assert.match(text(purchases),/Ruleta Especial/);
+  assert.doesNotMatch(text(purchases),/Premio acordado/);assert.match(text(manual),/Premio acordado/);
+  assert.equal(purchases.findByProps({'aria-label':'Historial de beneficios por compra'}).props.tabIndex,0);
+  assert.equal(state.posts.length,0);
+});
+
+test('unavailable purchase history keeps manual adjustments usable and offers a clear refresh', async t => {
+  const {view,coinsForm,choose,fill}=await setup(t,{current:{...detail(),purchase_coins_history:null}});
+  await choose('ana');await fill();
+  const purchases=view.root.findByProps({'aria-labelledby':'admin-purchase-coins-title'});
+  assert.match(text(purchases),/No se pudo consultar este historial/);assert.match(text(purchases),/Actualizar saldos/);
+  assert.equal(coinsForm().findByType('button').props.disabled,false);
 });

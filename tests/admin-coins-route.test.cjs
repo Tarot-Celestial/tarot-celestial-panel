@@ -5,15 +5,15 @@ const id=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0');
 function load(file,mocks,globals={}) {
  const exports={};
  const code=ts.transpileModule(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
- vm.runInNewContext(code,{exports,require:n=>{if(n in mocks)return mocks[n];throw Error('Unexpected import: '+n);},URL,...globals});
+ vm.runInNewContext(code,{exports,require:n=>{if(n in mocks)return mocks[n];if(n.startsWith('@/lib/'))return load('src/'+n.slice(2)+'.ts',mocks,globals);throw Error('Unexpected import: '+n);},URL,...globals});
  return exports;
 }
 function harness() {
- const h={authenticated:true,role:'admin',active:true,userId:id(1),workerUserId:id(1),balance:17,rpcCalls:[],reads:[],ledger:new Map(),rpcError:null,historyError:false,failAfterCommit:false,malformed:false};
+ const h={authenticated:true,role:'admin',active:true,userId:id(1),workerUserId:id(1),balance:17,rpcCalls:[],reads:[],ledger:new Map(),rpcError:null,historyError:false,failAfterCommit:false,malformed:false,payments:[],purchaseLedger:[],purchaseEvents:[],purchaseSpins:[]};
  const worker=()=>({id:id(2),user_id:h.workerUserId,email:'admin@example.test',role:h.role,is_active:h.active});
  const admin={from(table){
   const filters=[];let columns,options,limit,order;
-  const q={select(c,o){columns=c;options=o;return q;},eq(k,v){filters.push([k,v]);return q;},contains(k,v){filters.push([k,v]);return q;},like(k,v){filters.push([k,v]);return q;},order(k,o){order={key:k,...o};return q;},limit(n){limit=n;return q;},maybeSingle(){return q;},or(){return q;},
+  const q={select(c,o){columns=c;options=o;return q;},eq(k,v){filters.push([k,v]);return q;},contains(k,v){filters.push([k,v]);return q;},like(k,v){filters.push([k,v]);return q;},in(k,v){filters.push([k,v]);return q;},range(){return q;},order(k,o){order={key:k,...o};return q;},limit(n){limit=n;return q;},maybeSingle(){return q;},or(){return q;},
    then(resolve,reject){
     h.reads.push({table,filters,columns,options,limit,order});
     let data=null,error=null,count;
@@ -21,7 +21,10 @@ function harness() {
     if(table==='crm_clientes') data={id:id(3),nombre:'Clienta',apellido:'Prueba',telefono:'123',email:'cliente@example.test'};
     if(table==='tc_admin_spin_adjustments') data=[{operation_id:id(20),nivel:1,delta:1,reason:'Prueba giros',before_count:0,after_count:1,created_at:'2026-10-26T00:00:00Z'}];
     if(table==='tc_admin_coin_adjustments') {data=[{operation_id:id(21),amount:5,reason:'Prueba Coins',before_balance:12,after_balance:17,movement_id:id(30),created_at:'2026-10-26T00:00:00Z'}];if(h.historyError){data=null;error={message:'temporary unavailable'};}}
-    if(table==='cliente_ruleta_giros') {data=null;count=filters.find(([k])=>k==='nivel')[1];}
+    if(table==='cliente_ruleta_giros') {if(options?.head){data=null;count=filters.find(([k])=>k==='nivel')[1];}else data=h.purchaseSpins;}
+    if(table==='crm_cliente_pagos') {data=h.payments;if(h.purchaseHistoryError)error={message:'private query error'};}
+    if(table==='cliente_puntos_historial') {data=h.purchaseLedger;if(h.purchaseLedgerError)error={message:'private ledger error'};}
+    if(table==='tc_client_benefit_events') data=h.purchaseEvents;
     if(table==='cliente_oracle_credit_movements') {data=[];if(h.oracleHistoryError) error={message:'unavailable'};}
     return Promise.resolve({data,error,count}).then(resolve,reject);
    }};return q;
@@ -117,4 +120,33 @@ test('GET keeps Coins and roulette available when only the Oracle balance or its
 test('Existing spin request contract remains available and calls only its original RPC',async()=>{
  const h=harness();const r=await h.post({action:undefined,level:3,delta:-1});assert.equal(r.status,200);
  assert.equal(h.rpcCalls[0].name,'tc_admin_adjust_spins');assert.equal(h.rpcCalls[0].payload.p_level,3);assert.equal(h.rpcCalls[0].payload.p_delta,-1);assert.equal(h.ledger.size,0);
+});
+
+test('GET purchase history uses actual Coins and wheels; Promo zero differs from an unconfirmed award',async()=>{
+ const h=harness(),stamp='2026-11-05T12:00:00Z';
+ const payment=(n,classification,processed=true)=>({id:id(n),source_rendimiento_id:id(100+n),created_at:stamp,importe:'35.00',moneda:'EUR',metodo:'paypal_manual',benefits_processed_at:processed?stamp:null,benefits_context:{purchase_classification:classification,coins:999}});
+ h.payments=[payment(31,'nada'),payment(32,'promo'),payment(33,'nada',false),{...payment(34,'nada'),source_rendimiento_id:null}];
+ h.purchaseLedger=[{id:id(40),tipo:'ganado',puntos:300,saldo_despues:630,created_at:stamp,meta:{payment_id:id(31)}}];
+ h.purchaseEvents=[{payment_id:id(31),benefit_key:'rank_package:2',coins:300},{payment_id:id(31),benefit_key:'purchase_processed',coins:0},{payment_id:id(32),benefit_key:'purchase_processed',coins:0}];
+ h.purchaseSpins=[{id:id(41),purchase_id:id(31),nivel:2,estado:'used'}];
+ const result=await h.get();assert.equal(result.status,200);
+ const history=result.body.purchase_coins_history;assert.equal(history.limit,30);assert.equal(history.items.length,3);
+ assert.equal(history.items[0].benefits.coins,300);assert.equal(history.items[0].benefits.coins_balance_after,630);
+ assert.equal(history.items[0].benefits.spins[0].level,2);assert.equal(history.items[0].amount,35);
+ assert.equal(history.items[1].benefits.classification,'promo');assert.equal(history.items[1].benefits.coins,0);
+ assert.equal(history.items[2].benefits.coins,null);assert.equal(history.items[2].benefits.coins_status,'unconfirmed');
+ assert.equal(JSON.stringify(history).includes('999'),false);
+ const reads=h.reads.filter(row=>['crm_cliente_pagos','cliente_puntos_historial','tc_client_benefit_events'].includes(row.table));
+ assert.ok(reads.every(row=>row.filters.some(([key,value])=>key==='cliente_id'&&value===id(3))));
+ assert.equal(reads.find(row=>row.table==='crm_cliente_pagos').limit,30);
+});
+
+test('purchase history failures preserve balances and never turn missing ledger data into 0 Coins',async()=>{
+ const h=harness();h.purchaseHistoryError=true;
+ let result=await h.get();assert.equal(result.status,200);assert.equal(result.body.wallet.coins,17);assert.equal(result.body.purchase_coins_history,null);
+ h.purchaseHistoryError=false;h.purchaseLedgerError=true;
+ h.payments=[{id:id(31),source_rendimiento_id:id(131),created_at:'2026-11-05T12:00:00Z',importe:12,moneda:'EUR',metodo:'paypal_manual'}];
+ result=await h.get();assert.equal(result.status,200);assert.equal(result.body.purchase_coins_history.items[0].benefits.coins,null);
+ assert.equal(result.body.purchase_coins_history.items[0].benefits.coins_status,'unavailable');
+ assert.doesNotMatch(JSON.stringify(result.body),/private ledger error/);
 });
