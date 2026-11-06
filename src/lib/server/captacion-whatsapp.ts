@@ -4,6 +4,7 @@ import { CAPTACION_BENEFITS_IMAGE, buildCaptacionMessage, captacionWhatsAppPhone
 import { COUNTRY_OPTIONS } from "@/lib/countries";
 import { originMatchesBrand } from "@/lib/server/brand-filter";
 import { whatsappGatewayConfig, whatsappGatewayFetch, whatsappSessionId } from "@/lib/server/whatsapp-gateway";
+import { hasAdminAccess } from "@/lib/server/admin-access";
 
 export const CAPTACION_WHATSAPP_ORIGIN = "https://clientestarotcelestial.es";
 export const CAPTACION_WHATSAPP_CALLBACK_PATH = "/api/webhooks/captacion-whatsapp";
@@ -29,7 +30,7 @@ export async function captacionWhatsAppWorker(req: Request, admin: any) {
     .or(`user_id.eq.${data.user.id},auth_user_id.eq.${data.user.id}`).eq("is_active", true).in("role", ["central", "admin"]).limit(1).maybeSingle();
   if (result.error) throw new CaptacionWhatsAppError("UNAVAILABLE");
   if (!result.data?.is_active || !["admin", "central"].includes(result.data.role)) throw new CaptacionWhatsAppError("FORBIDDEN", 403);
-  return { ...result.data, user_id: data.user.id };
+  return { ...result.data, user_id: data.user.id, can_admin: await hasAdminAccess(admin, data.user.id) };
 }
 export function captacionWhatsAppConfig() {
   const required = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_WHATSAPP_FROM", "TWILIO_WHATSAPP_CAPTACION_CONTENT_SID"];
@@ -78,7 +79,7 @@ export async function captacionWhatsAppLead(admin: any, worker: Row, leadId: str
     .eq("id", leadId).maybeSingle();
   if (result.error) throw new CaptacionWhatsAppError("UNAVAILABLE");
   const lead = result.data;
-  if (!lead || (worker.role !== "admin" && lead.assigned_worker_id && String(lead.assigned_worker_id) !== String(worker.id))) throw new CaptacionWhatsAppError("LEAD_NOT_FOUND", 404);
+  if (!lead || (!worker.can_admin && lead.assigned_worker_id && String(lead.assigned_worker_id) !== String(worker.id))) throw new CaptacionWhatsAppError("LEAD_NOT_FOUND", 404);
   const clientResult = await admin.from("crm_clientes").select("id,nombre,apellido,telefono,telefono_normalizado,pais,origen").eq("id", lead.cliente_id).maybeSingle();
   if (clientResult.error) throw new CaptacionWhatsAppError("UNAVAILABLE");
   const client = clientResult.data;

@@ -1,3 +1,4 @@
+import { hasAdminAccess } from "@/lib/server/admin-access";
 import { normalizeText, validUuid, type AssistantResult } from '@/lib/central-assistant';
 import { originMatchesBrand } from './brand-filter';
 import { madridMidnightUtc, madridTodayKey } from './madrid-reporting-period';
@@ -68,7 +69,7 @@ export async function captureSummary(ctx: AssistantContext, raw: unknown, now = 
   const actor = await ctx.db.from('workers').select('id,role,is_active').eq('id', ctx.worker.id).maybeSingle();
   if (actor.error) throw new AssistantError('No he podido verificar el acceso a Captación. Vuelve a intentarlo.', 503);
   if (actor.data?.is_active !== true || !['central', 'admin'].includes(actor.data.role)) throw new AssistantError('No tienes acceso a Captación.', 403);
-  const role = actor.data.role;
+  const role = await hasAdminAccess(ctx.db, ctx.worker.user_id) ? 'admin' : actor.data.role;
   const end = period.endExclusive < updatedAt ? period.endExclusive : updatedAt;
   const rows = new Map<string, any>();
   let expected: number | undefined;

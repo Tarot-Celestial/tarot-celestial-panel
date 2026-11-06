@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { hasAdminAccess } from "@/lib/server/admin-access";
 
 export function getEnv(name: string) {
   const value = process.env[name];
@@ -60,7 +61,7 @@ export async function requireAdmin(req: Request) {
   }
 
   if (!me) return { ok: false as const, error: "NO_WORKER" as const };
-  if (me.role !== "admin" || me.is_active === false) return { ok: false as const, error: "FORBIDDEN" as const };
+  if (me.user_id !== uid || me.is_active === false || !(await hasAdminAccess(admin, uid))) return { ok: false as const, error: "FORBIDDEN" as const };
 
   // Keep the verified Auth identity separate from a worker found by the legacy
   // email fallback. Sensitive mutations must never act as a stale linked user.

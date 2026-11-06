@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
@@ -15,7 +16,7 @@ async function requireAdmin(req: Request) {
   const db = adminClient();
   const { data: worker, error: workerError } = await db.from("workers").select("id,role").eq("user_id", data.user.id).maybeSingle();
   if (workerError) throw workerError;
-  return worker?.role === "admin" ? worker : null;
+  return (await requestHasAdminAccess(req)) ? worker : null;
 }
 
 function safeInt(value: string | null, fallback: number, minimum: number, maximum: number) {

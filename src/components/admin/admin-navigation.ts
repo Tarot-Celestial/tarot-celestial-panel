@@ -41,6 +41,7 @@ export const ADMIN_NAV = [
     { key: "clientes-web", label: "Clientes web", kicker: "Accesos y cuentas" },
     { key: "ruletas-clientes", label: "Ruletas clientes", kicker: "Premios y probabilidades" },
     { key: "rituales-clientes", label: "Rituales clientes", kicker: "Progreso y experiencias" },
+    { key: "runas-clientes", label: "Runas de clientes", kicker: "Activación individual" },
   ] },
   { key: "sistema-xp", icon: Sparkles, label: "Sistema de XP", kicker: "Niveles y recompensas", tone: "goldPurple", children: [
     { key: "sistema-xp", label: "Configuración XP", kicker: "Acciones y experiencia" },

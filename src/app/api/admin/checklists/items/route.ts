@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
@@ -41,7 +42,7 @@ async function assertAdmin(req: Request) {
     .maybeSingle();
 
   if (em) throw em;
-  if (!me || me.role !== "admin") return { ok: false as const, error: "FORBIDDEN", status: 403 };
+  if (!me || !(await requestHasAdminAccess(req))) return { ok: false as const, error: "FORBIDDEN", status: 403 };
 
   return { ok: true as const, admin };
 }

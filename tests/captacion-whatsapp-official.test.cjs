@@ -24,6 +24,7 @@ function fixture(options = {}) {
       },
     }; return query;
   }, async rpc(name, values) {
+    if (name === 'tc_has_admin_access') return { data: values.p_user_id === worker.user_id && worker.is_active === true && (worker.role === 'admin' || options.delegated === true), error: null };
     rpcs.push({ name, values });
     if (options.rpcError === name) return { data: null, error: { message: 'private rpc' } };
     if (name === 'tc_captacion_whatsapp_qr_claim') {

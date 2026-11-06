@@ -2,6 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { NextResponse } from "next/server";
 import { authFailureStatus } from "@/lib/server/auth-failure";
+import { hasAdminAccess } from "@/lib/server/admin-access";
 
 export class CampaignError extends Error { constructor(message: string, public status = 400) { super(message); } }
 export async function campaignIdentity(req: Request, role: "admin" | "client") {
@@ -21,7 +22,7 @@ export async function campaignIdentity(req: Request, role: "admin" | "client") {
   if (role === "admin") {
     const result = await db.from("workers").select("id,role,is_active").eq("user_id", uid).maybeSingle();
     if (result.error) throw result.error;
-    if (result.data?.role !== "admin" || result.data?.is_active === false) throw new CampaignError("Acceso exclusivo para administradores.", 403);
+    if (!result.data || result.data.is_active === false || !(await hasAdminAccess(db, uid))) throw new CampaignError("Acceso exclusivo para administradores.", 403);
     return { db, uid, clientId: "" };
   }
   const result = await db.from("crm_clientes").select("id").eq("auth_user_id", uid).single();

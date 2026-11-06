@@ -21,7 +21,7 @@ const reservationCode = compile('src/lib/reservas.ts');
 function fixture(options = {}) {
   const calls = [], authTokens = [];
   const tables = {
-    workers: options.worker === undefined ? null : options.worker,
+    workers: options.worker ? { user_id: ownId, ...options.worker } : null,
     notifications: [{ id: 'own-notification', user_id: ownId, title: 'Aviso propio', created_at: '2026-10-16T17:00:00Z' }],
     crm_client_followups: [],
     reservas: [{ id: 'booking', cliente_nombre: 'Clienta de prueba', fecha_reserva: '2026-10-16T18:05:00', estado: 'pendiente' }],
@@ -47,6 +47,13 @@ function fixture(options = {}) {
     require(name) {
       if (name === 'next/server') return { NextResponse: { json: (body, init) => Response.json(body, init) } };
       if (name === '@/lib/reservas') return reservations;
+      if (name === '@/lib/server/admin-access') return { hasAdminAccess: async (client, uid) => {
+        assert.equal(client, admin);
+        assert.equal(uid, ownId);
+        const worker = tables.workers;
+        return worker?.user_id === uid && worker.is_active === true
+          && (worker.role === 'admin' || worker.role === 'central' && options.delegated === true);
+      } };
       if (name === '@supabase/supabase-js') return { createClient: (_url, key) => key === 'service-fixture' ? admin : {
         auth: { getUser: async token => {
           authTokens.push(token);
@@ -118,6 +125,26 @@ test('active central retains operational notifications with explicit Madrid time
   assert.match(booking.message, /20:05 \(hora de España\)/);
   assert.ok(h.calls.find(call => call.table === 'reservas').filters.some(args => args[0] === 'is' && args[1] === 'deleted_at' && args[2] === null));
   assert.ok(!h.calls.some(call => call.table === 'invoices' || call.table === 'rendimiento_llamadas'));
+});
+
+test('delegated Central receives admin summaries only while granted and still cannot request another UID', async () => {
+  const options = { worker: { id: 'worker', user_id: ownId, role: 'central', is_active: true }, delegated: true };
+  const h = fixture(options);
+  const delegated = await h.request();
+  assert.equal(delegated.status, 200);
+  assert.ok((await delegated.json()).data.some(item => item.id.startsWith('virtual:billing:')));
+  assert.ok(h.calls.some(call => call.table === 'invoices'));
+  const readsBeforeForeign = h.calls.length;
+  assert.equal((await h.request(otherId)).status, 403);
+  assert.equal(h.calls.length, readsBeforeForeign);
+  options.delegated = false;
+  const readsBeforeRevocation = h.calls.length;
+  const revoked = await h.request();
+  const body = await revoked.json();
+  assert.equal(revoked.status, 200);
+  assert.ok(body.data.some(item => item.id === 'virtual:reserva:booking'));
+  assert.equal(body.data.some(item => item.id.startsWith('virtual:billing:')), false);
+  assert.equal(h.calls.slice(readsBeforeRevocation).some(call => call.table === 'invoices' || call.table === 'rendimiento_llamadas'), false);
 });
 
 test('database and authentication internals are never returned in errors', async () => {

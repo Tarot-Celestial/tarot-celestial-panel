@@ -12,10 +12,10 @@ function publicWorker(worker: any, presence: Map<string, StaffChatPresence>) {
 export async function GET(req: Request) {
   try {
     const { db, me } = await getStaffChatActor(req);
-    const contactRoles = me.role === "admin" ? ["central", "tarotista"] : me.role === "tarotista" ? ["central", "admin"] : ["tarotista", "admin"];
+    const contactRoles = me.can_admin ? ["admin", "central", "tarotista"] : me.role === "tarotista" ? ["central", "admin"] : ["tarotista", "admin"];
     const contactsQuery = db.from("workers").select("id, display_name, role, team, state").in("role", contactRoles).eq("is_active", true).order("display_name");
     let threadsQuery = db.from("chat_threads").select("id, central_worker_id, tarotist_worker_id, status, created_at, last_message_at, last_message_preview, title").order("last_message_at", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false });
-    if (me.role === "central") threadsQuery = threadsQuery.eq("central_worker_id", me.id);
+    if (me.role === "central" && !me.can_admin) threadsQuery = threadsQuery.eq("central_worker_id", me.id);
     if (me.role === "tarotista") threadsQuery = threadsQuery.eq("tarotist_worker_id", me.id);
     const [{ data: contacts, error: contactsError }, { data: threads, error: threadsError }] = await Promise.all([contactsQuery, threadsQuery]);
     if (contactsError) throw contactsError;
@@ -50,7 +50,7 @@ export async function GET(req: Request) {
       return { ...thread, id: String(thread.id), central_display_name: thread.central_worker_id ? workerById.get(String(thread.central_worker_id))?.display_name || 'Central' : 'Historial anterior', contact: otherId ? workerById.get(String(otherId)) || null : legacyContact, unread_count: unreadByThread.get(String(thread.id)) || 0, latest_incoming: incomingByThread.get(String(thread.id)) || null, legacy: !thread.central_worker_id };
     });
     const legacyContacts = normalizedThreads.filter((thread: any) => thread.legacy && thread.contact).map((thread: any) => thread.contact);
-    return NextResponse.json({ ok: true, mode: me.role, me: { ...me, ...presence.states.get(me.id) }, presence_checked_at: presence.checkedAt, contacts: [...(contacts || []).map((worker: any) => publicWorker(worker, presence.states)), ...legacyContacts], threads: normalizedThreads, unread_total: normalizedThreads.reduce((total: number, thread: any) => total + Number(thread.unread_count || 0), 0) }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ ok: true, mode: me.can_admin ? "admin" : me.role, me: { ...me, ...presence.states.get(me.id) }, presence_checked_at: presence.checkedAt, contacts: [...(contacts || []).filter((worker: any) => String(worker.id) !== me.id).map((worker: any) => publicWorker(worker, presence.states)), ...legacyContacts], threads: normalizedThreads, unread_total: normalizedThreads.reduce((total: number, thread: any) => total + Number(thread.unread_count || 0), 0) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const { code, status } = staffChatError(error);
     return NextResponse.json({ ok: false, error: code }, { status, headers: { "Cache-Control": "no-store" } });
@@ -68,7 +68,7 @@ export async function POST(req: Request) {
     const { data: contact, error: contactError } = await db.from("workers").select("id, display_name, role, team, state, is_active").eq("id", requestedId).eq("is_active", true).maybeSingle();
     if (contactError) throw contactError;
     if (!contact?.id) throw new Error("CONTACT_NOT_FOUND");
-    const allowedRoles = me.role === "admin" ? ["central", "tarotista"] : me.role === "central" ? ["tarotista", "admin"] : ["central", "admin"];
+    const allowedRoles = me.can_admin ? ["admin", "central", "tarotista"] : me.role === "central" ? ["tarotista", "admin"] : ["central", "admin"];
     if (me.id === String(contact.id) || !allowedRoles.includes(contact.role)) throw new Error("INVALID_CONTACT_ROLE");
     // Legacy column names are preserved. A Central occupies the first slot,
     // a Tarotista the second; Admin takes the other slot. Either participant

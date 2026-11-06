@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { NextResponse } from "next/server";
 import { getAdminClient, workerFromRequest } from "@/lib/server/auth-worker";
 import { buildTeamCompetitionSnapshot, TEAM_KEYS, type TeamMetricKey } from "@/lib/server/team-competition";
@@ -8,7 +9,7 @@ const METRICS = new Set<TeamMetricKey>(["team_score", "captadas_total", "minutes
 
 async function requireAdmin(req: Request) {
   const me = await workerFromRequest(req);
-  if (!me || !["admin", "ceo", "supervisor"].includes(String(me.role || ""))) return null;
+  if (!me || !(await requestHasAdminAccess(req))) return null;
   return me;
 }
 

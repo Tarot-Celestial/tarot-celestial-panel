@@ -68,6 +68,7 @@ const ClientCampaignsPanel = nextDynamic(() => import("@/components/admin/Client
 const ClientRouletteAdminPanel = nextDynamic(() => import("@/components/admin/ClientRouletteAdminPanel"), { ssr:false });
 const ClientBalancesPanel = nextDynamic(() => import("@/components/admin/ClientBalancesPanel"), { ssr:false });
 const ClientRitualsAdminPanel = nextDynamic(() => import("@/components/admin/ClientRitualsAdminPanel"), { ssr:false });
+const ClientRunesAdminPanel = nextDynamic(() => import("@/components/admin/ClientRunesAdminPanel"), { ssr:false });
 const ManualInvoiceModal = nextDynamic(() => import("@/components/admin/ManualInvoiceModal"), { ssr:false });
 const BonusAdminPanel = nextDynamic(() => import("@/components/bonuses/BonusAdminPanel"), { ssr:false });
 const TarotistaRanksAdminPanel = nextDynamic(() => import("@/components/admin/TarotistaRanksAdminPanel"), { ssr:false });
@@ -511,7 +512,7 @@ function AdminPage() {
         const identity = await loadPanelIdentity(sb);
         if (!active) return;
         const role = String(identity.role || "").toLowerCase();
-        if (role !== "admin") {
+        if (role !== "admin" && identity.can_admin !== true) {
           window.location.replace(panelPathForRole(role));
           return;
         }
@@ -2892,6 +2893,7 @@ function AdminPage() {
           {tab === "ruletas-clientes" && <ClientRouletteAdminPanel />}
           {tab === "client-balances" && <ClientBalancesPanel />}
           {tab === "rituales-clientes" && <ClientRitualsAdminPanel />}
+          {tab === "runas-clientes" && <ClientRunesAdminPanel />}
 
           {tab === "bonos-tarotistas" && <BonusAdminPanel />}
           {tab === "rangos-tarotistas" && <TarotistaRanksAdminPanel />}

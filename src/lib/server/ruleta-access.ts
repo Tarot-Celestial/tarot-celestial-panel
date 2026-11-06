@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { authFailureStatus } from "@/lib/server/auth-failure";
+import { hasAdminAccess } from "@/lib/server/admin-access";
 
 export class RouletteAccessError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -34,5 +35,5 @@ export async function rouletteStaff(req: Request) {
   if (!data || data.is_active === false || !["admin", "central"].includes(data.role)) {
     throw new RouletteAccessError(403, "Acceso reservado a centrales y administración.");
   }
-  return { ...gate, worker: data };
+  return { ...gate, worker: { ...data, can_admin: await hasAdminAccess(gate.admin, gate.user.id) } };
 }

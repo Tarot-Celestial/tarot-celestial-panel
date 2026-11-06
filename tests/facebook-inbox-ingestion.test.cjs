@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),ts=require('typescript');
-function load(file,mocks={}){const exports={};const code=ts.transpileModule(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;vm.runInNewContext(code,{exports,Buffer,Date,Map,Set,require:n=>n in mocks?mocks[n]:n==='server-only'?{}:require(n)});return exports;}
+function load(file,mocks={}){const exports={};const code=ts.transpileModule(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;vm.runInNewContext(code,{exports,Buffer,Date,Map,Set,require:n=>n in mocks?mocks[n]:n==='@/lib/server/admin-access'?{hasAdminAccess:async()=>{throw Error('Webhook must not check staff permission');}}:n==='server-only'?{}:require(n)});return exports;}
 class FacebookError extends Error{constructor(code,message,status=503){super(message);this.code=code;this.status=status;}}
 function harness(graph,cursor={}){
  const account={accountId:'123',username:'Tarot Celestial',token:'FIXTURE'},calls=[],rows=new Map(),activity=new Map();let available=true,finished=cursor;

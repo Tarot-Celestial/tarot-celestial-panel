@@ -1,0 +1,914 @@
+{
+  "rolePolicies": [
+  {
+    "schemaname": "public",
+    "tablename": "calls",
+    "policyname": "calls_select_admin_central",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "(\"current_role\"() = ANY (ARRAY['admin'::text, 'central'::text]))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "incidencias",
+    "policyname": "incidencias_select_scope",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "((\"current_role\"() = 'admin'::text) OR (\"current_role\"() = 'central'::text) OR (worker_id = current_worker_id()))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "incidencias",
+    "policyname": "incidencias_insert_admin_central",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "(\"current_role\"() = ANY (ARRAY['admin'::text, 'central'::text]))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "incidencias",
+    "policyname": "incidencias_update_admin",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "UPDATE",
+    "qual": "(\"current_role\"() = 'admin'::text)",
+    "with_check": "(\"current_role\"() = 'admin'::text)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "checklist_turnos",
+    "policyname": "checklist_select_scope",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "((\"current_role\"() = 'admin'::text) OR ((\"current_role\"() = 'central'::text) AND (EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.id = checklist_turnos.worker_id) AND (w.role = 'tarotista'::text))))) OR (worker_id = current_worker_id()))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "checklist_turnos",
+    "policyname": "checklist_upsert_self_or_admin",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "((worker_id = current_worker_id()) OR (\"current_role\"() = 'admin'::text) OR (\"current_role\"() = 'central'::text))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "checklist_turnos",
+    "policyname": "checklist_update_self_or_admin",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "UPDATE",
+    "qual": "((worker_id = current_worker_id()) OR (\"current_role\"() = ANY (ARRAY['admin'::text, 'central'::text])))",
+    "with_check": "((worker_id = current_worker_id()) OR (\"current_role\"() = ANY (ARRAY['admin'::text, 'central'::text])))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "internal_chat",
+    "policyname": "chat_select_by_role",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "((\"current_role\"() = 'admin'::text) OR (to_role = \"current_role\"()))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "work_sessions",
+    "policyname": "sessions_select_scope",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "((\"current_role\"() = 'admin'::text) OR (worker_id = current_worker_id()) OR ((\"current_role\"() = 'central'::text) AND (EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.id = work_sessions.worker_id) AND (w.role = 'tarotista'::text))))))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "work_sessions",
+    "policyname": "sessions_insert_self_or_admin",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "((worker_id = current_worker_id()) OR (\"current_role\"() = 'admin'::text))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "work_sessions",
+    "policyname": "sessions_update_self_or_admin",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "UPDATE",
+    "qual": "((worker_id = current_worker_id()) OR (\"current_role\"() = 'admin'::text))",
+    "with_check": "((worker_id = current_worker_id()) OR (\"current_role\"() = 'admin'::text))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "invoices",
+    "policyname": "invoices_select_scope",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "((\"current_role\"() = 'admin'::text) OR (worker_id = current_worker_id()))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "invoices",
+    "policyname": "invoices_update_admin_only",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "UPDATE",
+    "qual": "(\"current_role\"() = 'admin'::text)",
+    "with_check": "(\"current_role\"() = 'admin'::text)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "workers",
+    "policyname": "workers_select_self",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "SELECT",
+    "qual": "((user_id = ( SELECT auth.uid() AS uid)) OR (auth_user_id = ( SELECT auth.uid() AS uid)) OR (( SELECT \"current_role\"() AS \"current_role\") = 'admin'::text) OR ((( SELECT \"current_role\"() AS \"current_role\") = 'central'::text) AND (role = ANY (ARRAY['central'::text, 'tarotista'::text]))))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "workers",
+    "policyname": "workers_update_state_self",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "UPDATE",
+    "qual": "((user_id = ( SELECT auth.uid() AS uid)) OR (auth_user_id = ( SELECT auth.uid() AS uid)) OR (( SELECT \"current_role\"() AS \"current_role\") = 'admin'::text))",
+    "with_check": "((user_id = ( SELECT auth.uid() AS uid)) OR (auth_user_id = ( SELECT auth.uid() AS uid)) OR (( SELECT \"current_role\"() AS \"current_role\") = 'admin'::text))"
+  }
+],
+  "functions": [
+    {
+      "schema": "public",
+      "name": "tc_admin_grant_oracle_draws",
+      "args": "p_operation_id uuid, p_cliente_id uuid, p_actor_user_id uuid, p_amount numeric, p_reason text",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_admin_grant_oracle_draws(p_operation_id uuid, p_cliente_id uuid, p_actor_user_id uuid, p_amount numeric, p_reason text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\ndeclare\n  actor public.workers%rowtype;\n  movement public.cliente_oracle_credit_movements%rowtype;\n  grant_reference text := 'admin:oracle:tiradas:' || p_operation_id::text;\n  clean_reason text := btrim(coalesce(p_reason, ''));\n  balance_before integer;\n  balance_after integer;\n  receipt jsonb;\nbegin\n  if p_operation_id is null or p_cliente_id is null or p_actor_user_id is null then\n    raise exception 'INVALID_ADJUSTMENT';\n  end if;\n  if p_amount is null or p_amount <> trunc(p_amount) or p_amount not between 1 and 100 then\n    raise exception 'INVALID_AMOUNT';\n  end if;\n  if char_length(clean_reason) not between 3 and 500 then raise exception 'INVALID_REASON'; end if;\n\n  select * into actor from public.workers\n    where user_id = p_actor_user_id and role = 'admin' and is_active is distinct from false for share;\n  if not found then raise exception 'FORBIDDEN'; end if;\n\n  perform pg_advisory_xact_lock(hashtextextended(grant_reference, 0));\n  select * into movement from public.cliente_oracle_credit_movements where reference = grant_reference;\n  if found then\n    if movement.cliente_id <> p_cliente_id or movement.amount <> p_amount\n      or movement.movement_type <> 'adjustment' or movement.notes is distinct from clean_reason\n      or movement.meta->>'source' is distinct from 'admin_client_balances'\n      or movement.meta->>'actor_user_id' is distinct from p_actor_user_id::text\n      or movement.meta->>'actor_worker_id' is distinct from actor.id::text then\n      raise exception 'OPERATION_CONFLICT';\n    end if;\n    return movement.meta || jsonb_build_object('movement_id',movement.id,'created_at',movement.created_at,'replayed',true);\n  end if;\n\n  -- Same per-customer lock as consume_cliente_oracle_credit. The parent-row\n  -- FOR UPDATE also serializes inserts from purchase grants via their client FK.\n  perform pg_advisory_xact_lock(hashtext(p_cliente_id::text));\n  perform 1 from public.crm_clientes where id = p_cliente_id for update;\n  if not found then raise exception 'CLIENT_NOT_FOUND'; end if;\n  balance_before := public.get_cliente_oracle_balance(p_cliente_id);\n  if balance_before::bigint + p_amount > 2147483647 then raise exception 'ORACLE_BALANCE_LIMIT'; end if;\n  balance_after := balance_before + p_amount::integer;\n  receipt := jsonb_build_object(\n    'source','admin_client_balances','operation_id',p_operation_id,'cliente_id',p_cliente_id,\n    'actor_user_id',p_actor_user_id,'actor_worker_id',actor.id,\n    'actor_name',coalesce(nullif(btrim(actor.display_name),''),'Administración'),\n    'reason',clean_reason,'amount',p_amount::integer,\n    'before_balance',balance_before,'after_balance',balance_after\n  );\n  insert into public.cliente_oracle_credit_movements\n    (cliente_id,amount,movement_type,reference,notes,meta,created_at)\n  values (p_cliente_id,p_amount::integer,'adjustment',grant_reference,clean_reason,receipt,clock_timestamp())\n  returning * into movement;\n  if public.get_cliente_oracle_balance(p_cliente_id) is distinct from balance_after then\n    raise exception 'ORACLE_GRANT_CONTRACT_MISMATCH';\n  end if;\n  return receipt || jsonb_build_object('movement_id',movement.id,'created_at',movement.created_at,'replayed',false);\nend;\n$function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_assert_benefit_admin",
+      "args": "p_actor uuid",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_assert_benefit_admin(p_actor uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\r\nbegin\r\n  if p_actor is null or not exists(\r\n    select 1 from public.workers w\r\n    where w.user_id=p_actor and w.role='admin' and coalesce(w.is_active,true)=true\r\n  ) then raise exception 'ADMIN_REQUIRED'; end if;\r\nend $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "current_role",
+      "args": "",
+      "definition": "CREATE OR REPLACE FUNCTION public.\"current_role\"()\n RETURNS text\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_catalog'\nAS $function$\r\n  select private.current_worker_role()\r\n$function$\n",
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_admin_adjust_spins",
+      "args": "p_operation_id uuid, p_cliente_id uuid, p_actor_user_id uuid, p_level integer, p_delta integer, p_reason text",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_admin_adjust_spins(p_operation_id uuid, p_cliente_id uuid, p_actor_user_id uuid, p_level integer, p_delta integer, p_reason text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\ndeclare prior public.tc_admin_spin_adjustments; ids uuid[]; n integer; actor text;\nbegin\n if p_operation_id is null or p_cliente_id is null or p_actor_user_id is null or p_level is null or p_level not between 1 and 5 or p_delta is null or p_delta=0 or abs(p_delta::bigint)>100 or length(trim(coalesce(p_reason,''))) not between 3 and 500 then raise exception 'INVALID_ADJUSTMENT'; end if;\n select coalesce(display_name,email,'Admin') into actor from public.workers where user_id=p_actor_user_id and role='admin' and is_active is distinct from false;\n if not found then raise exception 'FORBIDDEN'; end if;\n perform pg_advisory_xact_lock(hashtext('admin-spin:'||p_operation_id::text));\n select * into prior from public.tc_admin_spin_adjustments where operation_id=p_operation_id;\n if found then\n  if prior.cliente_id<>p_cliente_id or prior.actor_user_id<>p_actor_user_id or prior.nivel<>p_level or prior.delta<>p_delta or prior.reason<>trim(p_reason) then raise exception 'OPERATION_CONFLICT'; end if;\n  return to_jsonb(prior)||jsonb_build_object('replayed',true);\n end if;\n -- Same locking order as cliente_girar_ruleta_ultra_v1: client, then spin.\n perform 1 from public.crm_clientes where id=p_cliente_id for update;\n if not found then raise exception 'CLIENT_NOT_FOUND'; end if;\n select count(*) into n from public.cliente_ruleta_giros where cliente_id=p_cliente_id and nivel=p_level and estado='pending';\n if p_delta<0 and n < -p_delta then raise exception 'INSUFFICIENT_SPINS'; end if;\n if p_delta>0 then\n  with added as (\n   insert into public.cliente_ruleta_giros(cliente_id,payment_key,source,nivel,estado,required_rank)\n   select p_cliente_id,'admin-adjustment:'||p_operation_id||':'||i,'admin_adjustment',p_level,'pending',case when p_level=5 then 'diamante' else null end from generate_series(1,p_delta) i returning id\n  ) select array_agg(id) into ids from added;\n else\n  select array_agg(id) into ids from (select id from public.cliente_ruleta_giros where cliente_id=p_cliente_id and nivel=p_level and estado='pending' order by created_at desc,id limit -p_delta for update) s;\n  update public.cliente_ruleta_giros set estado='revoked' where id=any(ids) and estado='pending';\n end if;\n insert into public.tc_admin_spin_adjustments values(p_operation_id,p_cliente_id,p_actor_user_id,p_level,p_delta,trim(p_reason),n,n+p_delta,ids,now()) returning * into prior;\n insert into public.crm_client_notes(cliente_id,texto,author_user_id,author_name,event_type,event_data,is_pinned)\n values(p_cliente_id::text,format('Ajuste de giros · Nivel %s · %s → %s. %s',p_level,n,n+p_delta,trim(p_reason)),p_actor_user_id,actor,'admin_spin_adjustment',to_jsonb(prior),false);\n return to_jsonb(prior)||jsonb_build_object('replayed',false);\nend $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_recovery_mission_overview",
+      "args": "p_user uuid",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_recovery_mission_overview(p_user uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nbegin\n if not exists(select 1 from workers where user_id=p_user and role='admin' and is_active is distinct from false) then raise exception 'FORBIDDEN'; end if;\n return jsonb_build_object('server_now',tc_recovery_mission_now(),'timezone','America/Guayaquil','missions',coalesce((select jsonb_agg(\n  tc_recovery_mission_snapshot(w.id,tc_recovery_mission_now())||jsonb_build_object('worker_name',w.display_name) order by s.start_time)\n  from crm_recovery_mission_schedules s join workers w on w.id=s.worker_id where s.enabled and w.is_active is distinct from false),'[]'::jsonb));\nend $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_atlas_admin",
+      "args": "p_user uuid",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_atlas_admin(p_user uuid)\n RETURNS uuid\n LANGUAGE plpgsql\n STABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\r\ndeclare actor uuid; begin\r\n select id into actor from workers where user_id=p_user and role='admin' and is_active is distinct from false order by id limit 1;\r\n if actor is null then raise exception 'FORBIDDEN'; end if;\r\n return actor;\r\nend $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_atlas_execute_action",
+      "args": "p_user uuid, p_proposal uuid",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_atlas_execute_action(p_user uuid, p_proposal uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\ndeclare actor public.workers; proposal public.atlas_admin_proposals; v_result jsonb; promo public.tc_client_promotions; detail jsonb; disabled jsonb;\nbegin\n select * into actor from public.workers where user_id=p_user and role='admin' and is_active is distinct from false;\n if not found then raise exception 'FORBIDDEN'; end if;\n select * into proposal from public.atlas_admin_proposals where id=p_proposal and worker_id=actor.id for update;\n if not found then raise exception 'PROPOSAL_NOT_FOUND'; end if;\n if proposal.status='completed' then return jsonb_build_object('result',proposal.result,'replayed',true); end if;\n if proposal.status<>'pending' or proposal.expires_at<=now() then raise exception 'PROPOSAL_UNAVAILABLE'; end if;\n detail:=proposal.payload;\n if proposal.kind='grant_spins' then\n   v_result:=public.tc_admin_adjust_spins(proposal.id,(detail->>'client_id')::uuid,p_user,(detail->>'level')::integer,(detail->>'amount')::integer,detail->>'reason');\n elsif proposal.kind='grant_coins' then\n   v_result:=public.admin_gift_client_coins((detail->>'client_id')::uuid,actor.id,(detail->>'amount')::integer,detail->>'reason',proposal.id);\n elsif proposal.kind in ('activate_promotion','deactivate_promotion') then\n   perform pg_advisory_xact_lock(hashtext('atlas-promotions'));\n   lock table public.tc_client_promotions,public.tc_client_promotion_packages in share row exclusive mode;\n   select * into promo from public.tc_client_promotions where id=(detail->>'promotion_id')::uuid for update;\n   if not found then raise exception 'PROMOTION_NOT_FOUND'; end if;\n   if promo.promotion_kind is distinct from 'standard' then raise exception 'INVALID_PROMOTION_KIND'; end if;\n   if promo.updated_at is distinct from (detail->>'updated_at')::timestamptz then raise exception 'PROMOTION_CHANGED'; end if;\n   if proposal.kind='activate_promotion' then\n     if coalesce((select jsonb_agg(id order by id) from public.tc_client_promotions where status='active' and promotion_kind='standard' and id<>promo.id),'[]') is distinct from detail->'previous_active' then raise exception 'PROMOTION_CHANGED'; end if;\n     if (select count(*) from public.tc_client_promotion_packages where promotion_id=promo.id and is_active)<>jsonb_array_length(detail->'package_versions') or exists(select 1 from public.tc_client_promotion_packages p where p.promotion_id=promo.id and p.is_active and not exists(select 1 from jsonb_array_elements(detail->'package_versions') v where (v->>'id')::uuid=p.id and (v->>'updated_at')::timestamptz is not distinct from p.updated_at)) then raise exception 'PROMOTION_CHANGED'; end if;\n     if promo.status='archived' or (not coalesce(promo.active_until_disabled,false) and promo.ends_at<=now()) then raise exception 'PROMOTION_EXPIRED'; end if;\n     if not exists(select 1 from public.tc_client_promotion_packages where promotion_id=promo.id and is_active=true and price>0) then raise exception 'PROMOTION_WITHOUT_PACKAGES'; end if;\n     select coalesce(jsonb_agg(jsonb_build_object('id',id,'name',name)),'[]') into disabled from public.tc_client_promotions where status='active' and promotion_kind='standard' and id<>promo.id;\n     update public.tc_client_promotions set status='inactive',deactivated_at=now(),updated_at=now() where status='active' and promotion_kind='standard' and id<>promo.id;\n     update public.tc_client_promotions set status='active',activated_at=now(),activated_by=p_user,deactivated_at=null,starts_at=now(),updated_at=now() where id=promo.id returning * into promo;\n   else\n     update public.tc_client_promotions set status='inactive',deactivated_at=now(),updated_at=now() where id=promo.id returning * into promo;\n   end if;\n   v_result:=jsonb_build_object('promotion_id',promo.id,'name',promo.name,'status',promo.status,'deactivated_promotions',coalesce(disabled,'[]'));\n   insert into public.tc_client_promotion_audit(promotion_id,action,actor_user_id,snapshot) values(promo.id,proposal.kind,p_user,v_result||jsonb_build_object('source','atlas','proposal_id',proposal.id));\n elsif proposal.kind='save_memory' then\n   if length(btrim(coalesce(detail->>'content',''))) not between 1 and 2000 then raise exception 'INVALID_MEMORY'; end if;\n   insert into public.atlas_admin_memories(worker_id,content) values(actor.id,btrim(detail->>'content')) returning jsonb_build_object('memory_id',id,'saved',true) into v_result;\n elsif proposal.kind='dispatch_contacts' or proposal.kind='create_task' then\n   v_result:=public.tc_atlas_dispatch(p_user,detail,proposal.id);\n else raise exception 'UNKNOWN_ACTION'; end if;\n update public.atlas_admin_proposals set status='completed',result=v_result,executed_at=now(),updated_at=now() where id=proposal.id;\n insert into public.atlas_admin_audit(worker_id,operation_id,action,entity_type,entity_id,detail)\n values(actor.id,proposal.id,proposal.kind,'proposal',proposal.id::text,v_result);\n return jsonb_build_object('result',v_result,'replayed',false);\nend $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "admin_gift_client_coins",
+      "args": "p_client_id uuid, p_admin_worker_id uuid, p_amount integer, p_reason text, p_operation_id uuid",
+      "definition": "CREATE OR REPLACE FUNCTION public.admin_gift_client_coins(p_client_id uuid, p_admin_worker_id uuid, p_amount integer, p_reason text, p_operation_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\r\ndeclare\r\n  v_balance integer;\r\n  v_existing record;\r\n  v_movement_id text;\r\n  v_client_name text;\r\nbegin\r\n  if p_client_id is null or p_admin_worker_id is null or p_operation_id is null then\r\n    raise exception 'GIFT_REQUIRED_FIELDS';\r\n  end if;\r\n  if p_amount < 1 or p_amount > 1000000 then\r\n    raise exception 'COIN_AMOUNT_INVALID';\r\n  end if;\r\n  if nullif(btrim(p_reason), '') is null or length(btrim(p_reason)) > 500 then\r\n    raise exception 'COIN_REASON_INVALID';\r\n  end if;\r\n  if not exists (\r\n    select 1 from public.workers w\r\n    where w.id = p_admin_worker_id\r\n      and w.role = 'admin'\r\n      and coalesce(w.is_active, true) = true\r\n  ) then\r\n    raise exception 'ADMIN_NOT_ALLOWED';\r\n  end if;\r\n\r\n  -- Serializa reintentos simultáneos de la misma operación.\r\n  perform pg_advisory_xact_lock(hashtextextended(p_operation_id::text, 0));\r\n\r\n  select h.id, h.saldo_despues, h.cliente_id, h.puntos\r\n    into v_existing\r\n  from public.cliente_puntos_historial h\r\n  where h.operation_id = p_operation_id;\r\n\r\n  if found then\r\n    if v_existing.cliente_id <> p_client_id or v_existing.puntos <> p_amount then\r\n      raise exception 'OPERATION_ID_CONFLICT';\r\n    end if;\r\n    return jsonb_build_object(\r\n      'duplicated', true,\r\n      'movement_id', v_existing.id,\r\n      'balance', coalesce(v_existing.saldo_despues, 0)\r\n    );\r\n  end if;\r\n\r\n  update public.crm_clientes c\r\n  set puntos = coalesce(c.puntos, 0) + p_amount,\r\n      updated_at = now()\r\n  where c.id = p_client_id\r\n  returning coalesce(c.puntos, 0), concat_ws(' ', c.nombre, c.apellido)\r\n    into v_balance, v_client_name;\r\n\r\n  if not found then\r\n    raise exception 'CLIENT_NOT_FOUND';\r\n  end if;\r\n\r\n  insert into public.cliente_puntos_historial (\r\n    cliente_id, tipo, puntos, descripcion, operation_id,\r\n    admin_worker_id, saldo_despues, meta, created_at\r\n  ) values (\r\n    p_client_id,\r\n    'regalo_admin',\r\n    p_amount,\r\n    'Regalo de administración: ' || btrim(p_reason),\r\n    p_operation_id,\r\n    p_admin_worker_id,\r\n    v_balance,\r\n    jsonb_build_object('source', 'admin_client_web', 'reason', btrim(p_reason)),\r\n    now()\r\n  ) returning id::text into v_movement_id;\r\n\r\n  insert into public.cliente_notificaciones (\r\n    cliente_id, tipo, titulo, mensaje, leida, meta, created_at\r\n  ) values (\r\n    p_client_id,\r\n    'coin_gift',\r\n    '¡Tienes un obsequio!',\r\n    'Has recibido +' || p_amount || ' Coins. ' || btrim(p_reason) ||\r\n      ' Nuevo saldo: ' || v_balance || ' Coins.',\r\n    false,\r\n    jsonb_build_object(\r\n      'operation_id', p_operation_id,\r\n      'amount', p_amount,\r\n      'balance', v_balance,\r\n      'reason', btrim(p_reason),\r\n      'admin_worker_id', p_admin_worker_id\r\n    ),\r\n    now()\r\n  );\r\n\r\n  return jsonb_build_object(\r\n    'duplicated', false,\r\n    'movement_id', v_movement_id,\r\n    'client_name', nullif(btrim(v_client_name), ''),\r\n    'amount', p_amount,\r\n    'balance', v_balance\r\n  );\r\nend;\r\n$function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_rendimiento_update_v2",
+      "args": "p_worker uuid, p_id uuid, p_revision bigint, p_tiempo numeric, p_importe numeric, p_tarotista_nombre text, p_blocks jsonb",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_rendimiento_update_v2(p_worker uuid, p_id uuid, p_revision bigint, p_tiempo numeric, p_importe numeric, p_tarotista_nombre text, p_blocks jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\r\nDECLARE r public.rendimiento_llamadas; updated public.rendimiento_llamadas;\r\n reason text; b jsonb; blocks jsonb; summary text; before_data jsonb; n integer; tarotista_name text;\r\nBEGIN\r\n SELECT * INTO r FROM public.rendimiento_llamadas WHERE id=p_id FOR UPDATE;\r\n IF NOT FOUND THEN RAISE EXCEPTION 'El registro ya no existe.' USING ERRCODE='P0002'; END IF;\r\n -- Serializa la corrección frente a cambios de estado de facturas existentes.\r\n PERFORM i.id FROM public.invoices i WHERE i.month_key=to_char(r.fecha_hora AT TIME ZONE 'UTC','YYYY-MM')\r\n ORDER BY i.id FOR SHARE;\r\n reason:=public.tc_rendimiento_edit_reason(r,p_worker);\r\n IF reason IS NOT NULL THEN RAISE EXCEPTION '%',reason USING ERRCODE='42501'; END IF;\r\n IF p_revision IS NULL OR p_revision<>r.edit_revision THEN\r\n RAISE EXCEPTION 'El registro cambió desde que lo abriste. Cancela y actualiza antes de editar de nuevo.' USING ERRCODE='40001'; END IF;\r\n IF p_tiempo IS NULL OR p_importe IS NULL OR p_tiempo<0 OR p_importe<0\r\n OR p_tiempo>1000000 OR p_importe>1000000 OR round(p_tiempo,2)<>p_tiempo OR round(p_importe,2)<>p_importe\r\n OR p_tiempo::text='NaN' OR p_importe::text='NaN' THEN RAISE EXCEPTION 'Cifras inválidas.' USING ERRCODE='22023'; END IF;\r\n tarotista_name:=regexp_replace(btrim(coalesce(p_tarotista_nombre,'')),'[[:space:]]+',' ','g');\r\n IF tarotista_name='' OR char_length(tarotista_name)>120 THEN RAISE EXCEPTION 'Nombre de tarotista inválido.' USING ERRCODE='22023'; END IF;\r\n IF jsonb_typeof(p_blocks) IS DISTINCT FROM 'array' OR jsonb_array_length(p_blocks)>32 THEN\r\n RAISE EXCEPTION 'Distribución inválida.' USING ERRCODE='22023'; END IF;\r\n FOR b IN SELECT value FROM jsonb_array_elements(p_blocks) LOOP\r\n   IF coalesce(b->>'code','') NOT IN ('FREE','RUEDA','CLIENTE','REPITE','CALL','OTROS')\r\n   OR coalesce(b->>'minutes','') !~ '^[0-9]+(\\.[0-9]{1,2})?$'\r\n   THEN RAISE EXCEPTION 'Código o minutos inválidos.' USING ERRCODE='22023'; END IF;\r\n   IF (b->>'minutes')::numeric<=0 OR (b->>'minutes')::numeric>1000000 THEN\r\n   RAISE EXCEPTION 'Los minutos del tramo deben ser positivos.' USING ERRCODE='22023'; END IF;\r\n END LOOP;\r\n IF (SELECT coalesce(sum((value->>'minutes')::numeric),0) FROM jsonb_array_elements(p_blocks))<>p_tiempo\r\n THEN RAISE EXCEPTION 'Los tramos deben sumar exactamente el tiempo total.' USING ERRCODE='22023'; END IF;\r\n SELECT coalesce(jsonb_agg(jsonb_build_object('code',code,'minutes',minutes) ORDER BY pos),'[]'::jsonb),\r\n coalesce(string_agg(trim_scale(minutes)::text||' '||lower(code),' · ' ORDER BY pos),'')\r\n INTO blocks,summary FROM (\r\n SELECT value->>'code' code,sum((value->>'minutes')::numeric) minutes,\r\n array_position(ARRAY['FREE','RUEDA','CLIENTE','REPITE','CALL','OTROS'],value->>'code') pos\r\n FROM jsonb_array_elements(p_blocks) GROUP BY value->>'code') s;\r\n n:=jsonb_array_length(blocks);\r\n before_data:=jsonb_build_object('tiempo',r.tiempo,'importe',r.importe,'resumen_codigo',r.resumen_codigo,\r\n 'tarotista_nombre',r.tarotista_nombre,'codigo_1',r.codigo_1,'minutos_1',r.minutos_1,'codigo_2',r.codigo_2,'minutos_2',r.minutos_2,'code_blocks',r.code_blocks,'revision',r.edit_revision);\r\n -- No incluir importe en el UPDATE si no cambia: evita disparar lógica de compra ajena a los códigos.\r\n UPDATE public.rendimiento_llamadas SET tiempo=p_tiempo,tarotista_nombre=tarotista_name,code_blocks=blocks,resumen_codigo=summary,\r\n codigo_1=CASE WHEN n<=2 THEN blocks->0->>'code' ELSE NULL END,\r\n minutos_1=CASE WHEN n<=2 THEN coalesce((blocks->0->>'minutes')::numeric,0) ELSE 0 END,\r\n codigo_2=CASE WHEN n<=2 THEN blocks->1->>'code' ELSE NULL END,\r\n minutos_2=CASE WHEN n<=2 THEN coalesce((blocks->1->>'minutes')::numeric,0) ELSE 0 END WHERE id=p_id;\r\n IF r.importe IS DISTINCT FROM p_importe THEN UPDATE public.rendimiento_llamadas SET importe=p_importe WHERE id=p_id; END IF;\r\n SELECT * INTO updated FROM public.rendimiento_llamadas WHERE id=p_id;\r\n INSERT INTO public.crm_audit_logs(worker_id,action_type,entity_type,entity_id,payload)\r\n VALUES(p_worker,'rendimiento_update','rendimiento_llamadas',p_id,jsonb_build_object('before',before_data,\r\n 'after',jsonb_build_object('tarotista_nombre',updated.tarotista_nombre,'tiempo',updated.tiempo,'importe',updated.importe,'code_blocks',updated.code_blocks,\r\n 'resumen_codigo',updated.resumen_codigo,'revision',updated.edit_revision)));\r\n RETURN to_jsonb(updated)||jsonb_build_object('can_edit',true,'can_delete',\r\n (SELECT role::text='admin' OR updated.telefonista_worker_id=p_worker::text FROM public.workers WHERE id=p_worker),'edit_reason',NULL);\r\nEND $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_captacion_whatsapp_claim",
+      "args": "p_delivery_id uuid, p_request_id uuid, p_lead_id uuid, p_worker_id uuid, p_auth_user_id uuid, p_submission_key text, p_content_sid text, p_from_number text, p_to_number text, p_callback_token uuid, p_expected_cliente_id uuid, p_client_snapshot jsonb",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_captacion_whatsapp_claim(p_delivery_id uuid, p_request_id uuid, p_lead_id uuid, p_worker_id uuid, p_auth_user_id uuid, p_submission_key text, p_content_sid text, p_from_number text, p_to_number text, p_callback_token uuid, p_expected_cliente_id uuid, p_client_snapshot jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\ndeclare\n  v_lead public.captacion_leads%rowtype;\n  v_worker public.workers%rowtype;\n  v_client public.crm_clientes%rowtype;\n  v_delivery public.captacion_whatsapp_deliveries%rowtype;\n  v_origin text;\n  v_event_key text;\n  v_submitted_at timestamptz;\nbegin\n  -- Serialize different central users and tabs acting on the same customer lead.\n  select * into v_lead from public.captacion_leads where id = p_lead_id for update;\n  if not found then raise exception 'LEAD_NOT_FOUND'; end if;\n  select * into v_worker from public.workers where id = p_worker_id and is_active = true\n    and role in ('admin','central') and (user_id = p_auth_user_id or auth_user_id = p_auth_user_id);\n  if not found then raise exception 'FORBIDDEN'; end if;\n  if v_worker.role <> 'admin' and v_lead.assigned_worker_id is not null and v_lead.assigned_worker_id <> p_worker_id then raise exception 'FORBIDDEN'; end if;\n  -- Provider preflight can take seconds. Recheck the exact CRM snapshot while\n  -- locking both the lead and client before reserving any outbound message.\n  if v_lead.cliente_id is distinct from p_expected_cliente_id then raise exception 'CLIENT_CHANGED'; end if;\n  select * into v_client from public.crm_clientes where id = v_lead.cliente_id for share;\n  if not found then raise exception 'LEAD_NOT_FOUND'; end if;\n  if p_client_snapshot is distinct from jsonb_build_object(\n    'telefono_normalizado',v_client.telefono_normalizado,'telefono',v_client.telefono,\n    'pais',v_client.pais,'nombre',v_client.nombre,'apellido',v_client.apellido\n  ) then raise exception 'CLIENT_CHANGED'; end if;\n  v_origin := coalesce(nullif(v_client.origen,''),v_lead.origen,'');\n  if lower(v_origin) like '%orion%' then raise exception 'LEAD_NOT_FOUND'; end if;\n  select * into v_delivery from public.captacion_whatsapp_deliveries where request_id = p_request_id;\n  if found then\n    if v_delivery.lead_id <> p_lead_id then raise exception 'REQUEST_CONFLICT'; end if;\n    return jsonb_build_object('claimed',false,'delivery',to_jsonb(v_delivery));\n  end if;\n  select 'meta:' || leadgen_id, meta_created_at into v_event_key, v_submitted_at\n    from public.meta_lead_events where captacion_lead_id = p_lead_id and status = 'processed' and meta_created_at <= now()\n    order by meta_created_at desc, leadgen_id desc limit 1;\n  v_event_key := coalesce(v_event_key,'initial');\n  if p_submission_key is distinct from v_event_key then raise exception 'SUBMISSION_CHANGED'; end if;\n  select * into v_delivery from public.captacion_whatsapp_deliveries where lead_id = p_lead_id and submission_key = p_submission_key;\n  if found then return jsonb_build_object('claimed',false,'delivery',to_jsonb(v_delivery)); end if;\n  if v_lead.closed_at is not null and (v_submitted_at is null or v_lead.closed_at >= v_submitted_at) then raise exception 'LEAD_CLOSED'; end if;\n  if p_content_sid !~ '^HX[0-9a-fA-F]{32}$' or p_from_number !~ '^whatsapp:\\+[1-9][0-9]{7,14}$' or p_to_number !~ '^whatsapp:\\+[1-9][0-9]{7,14}$' then raise exception 'INVALID_MESSAGE'; end if;\n  insert into public.captacion_whatsapp_deliveries (id,lead_id,cliente_id,submission_key,request_id,worker_id,auth_user_id,content_sid,from_number,to_number,callback_token)\n    values (p_delivery_id,p_lead_id,v_lead.cliente_id,p_submission_key,p_request_id,p_worker_id,p_auth_user_id,p_content_sid,p_from_number,p_to_number,p_callback_token)\n    returning * into v_delivery;\n  insert into public.captacion_whatsapp_delivery_events (delivery_id,status,source) values (v_delivery.id,'sending','claim');\n  return jsonb_build_object('claimed',true,'delivery',to_jsonb(v_delivery));\nend;\n$function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_rendimiento_update",
+      "args": "p_worker uuid, p_id uuid, p_revision bigint, p_tiempo numeric, p_importe numeric, p_blocks jsonb",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_rendimiento_update(p_worker uuid, p_id uuid, p_revision bigint, p_tiempo numeric, p_importe numeric, p_blocks jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\r\nDECLARE r public.rendimiento_llamadas; updated public.rendimiento_llamadas;\r\n reason text; b jsonb; blocks jsonb; summary text; before_data jsonb; n integer;\r\nBEGIN\r\n SELECT * INTO r FROM public.rendimiento_llamadas WHERE id=p_id FOR UPDATE;\r\n IF NOT FOUND THEN RAISE EXCEPTION 'El registro ya no existe.' USING ERRCODE='P0002'; END IF;\r\n -- Serializa la corrección frente a cambios de estado de facturas existentes.\r\n PERFORM i.id FROM public.invoices i WHERE i.month_key=to_char(r.fecha_hora AT TIME ZONE 'UTC','YYYY-MM')\r\n ORDER BY i.id FOR SHARE;\r\n reason:=public.tc_rendimiento_edit_reason(r,p_worker);\r\n IF reason IS NOT NULL THEN RAISE EXCEPTION '%',reason USING ERRCODE='42501'; END IF;\r\n IF p_revision IS NULL OR p_revision<>r.edit_revision THEN\r\n RAISE EXCEPTION 'El registro cambió desde que lo abriste. Cancela y actualiza antes de editar de nuevo.' USING ERRCODE='40001'; END IF;\r\n IF p_tiempo IS NULL OR p_importe IS NULL OR p_tiempo<0 OR p_importe<0\r\n OR p_tiempo>1000000 OR p_importe>1000000 OR round(p_tiempo,2)<>p_tiempo OR round(p_importe,2)<>p_importe\r\n OR p_tiempo::text='NaN' OR p_importe::text='NaN' THEN RAISE EXCEPTION 'Cifras inválidas.' USING ERRCODE='22023'; END IF;\r\n IF jsonb_typeof(p_blocks) IS DISTINCT FROM 'array' OR jsonb_array_length(p_blocks)>32 THEN\r\n RAISE EXCEPTION 'Distribución inválida.' USING ERRCODE='22023'; END IF;\r\n FOR b IN SELECT value FROM jsonb_array_elements(p_blocks) LOOP\r\n   IF coalesce(b->>'code','') NOT IN ('FREE','RUEDA','CLIENTE','REPITE','CALL','OTROS')\r\n   OR coalesce(b->>'minutes','') !~ '^[0-9]+(\\.[0-9]{1,2})?$'\r\n   THEN RAISE EXCEPTION 'Código o minutos inválidos.' USING ERRCODE='22023'; END IF;\r\n   IF (b->>'minutes')::numeric<=0 OR (b->>'minutes')::numeric>1000000 THEN\r\n   RAISE EXCEPTION 'Los minutos del tramo deben ser positivos.' USING ERRCODE='22023'; END IF;\r\n END LOOP;\r\n IF (SELECT coalesce(sum((value->>'minutes')::numeric),0) FROM jsonb_array_elements(p_blocks))<>p_tiempo\r\n THEN RAISE EXCEPTION 'Los tramos deben sumar exactamente el tiempo total.' USING ERRCODE='22023'; END IF;\r\n SELECT coalesce(jsonb_agg(jsonb_build_object('code',code,'minutes',minutes) ORDER BY pos),'[]'::jsonb),\r\n coalesce(string_agg(trim_scale(minutes)::text||' '||lower(code),' · ' ORDER BY pos),'')\r\n INTO blocks,summary FROM (\r\n SELECT value->>'code' code,sum((value->>'minutes')::numeric) minutes,\r\n array_position(ARRAY['FREE','RUEDA','CLIENTE','REPITE','CALL','OTROS'],value->>'code') pos\r\n FROM jsonb_array_elements(p_blocks) GROUP BY value->>'code') s;\r\n n:=jsonb_array_length(blocks);\r\n before_data:=jsonb_build_object('tiempo',r.tiempo,'importe',r.importe,'resumen_codigo',r.resumen_codigo,\r\n 'codigo_1',r.codigo_1,'minutos_1',r.minutos_1,'codigo_2',r.codigo_2,'minutos_2',r.minutos_2,'code_blocks',r.code_blocks,'revision',r.edit_revision);\r\n -- No incluir importe en el UPDATE si no cambia: evita disparar lógica de compra ajena a los códigos.\r\n UPDATE public.rendimiento_llamadas SET tiempo=p_tiempo,code_blocks=blocks,resumen_codigo=summary,\r\n codigo_1=CASE WHEN n<=2 THEN blocks->0->>'code' ELSE NULL END,\r\n minutos_1=CASE WHEN n<=2 THEN (blocks->0->>'minutes')::numeric ELSE NULL END,\r\n codigo_2=CASE WHEN n<=2 THEN blocks->1->>'code' ELSE NULL END,\r\n minutos_2=CASE WHEN n<=2 THEN (blocks->1->>'minutes')::numeric ELSE NULL END WHERE id=p_id;\r\n IF r.importe IS DISTINCT FROM p_importe THEN UPDATE public.rendimiento_llamadas SET importe=p_importe WHERE id=p_id; END IF;\r\n SELECT * INTO updated FROM public.rendimiento_llamadas WHERE id=p_id;\r\n INSERT INTO public.crm_audit_logs(worker_id,action_type,entity_type,entity_id,payload)\r\n VALUES(p_worker,'rendimiento_update','rendimiento_llamadas',p_id,jsonb_build_object('before',before_data,\r\n 'after',jsonb_build_object('tiempo',updated.tiempo,'importe',updated.importe,'code_blocks',updated.code_blocks,\r\n 'resumen_codigo',updated.resumen_codigo,'revision',updated.edit_revision)));\r\n RETURN to_jsonb(updated)||jsonb_build_object('can_edit',true,'can_delete',\r\n (SELECT role::text='admin' OR updated.telefonista_worker_id=p_worker::text FROM public.workers WHERE id=p_worker),'edit_reason',NULL);\r\nEND $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_rendimiento_list",
+      "args": "p_worker uuid, p_filters jsonb, p_page integer, p_size integer",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_rendimiento_list(p_worker uuid, p_filters jsonb, p_page integer DEFAULT 1, p_size integer DEFAULT 50)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\r\nDECLARE result jsonb;\r\nBEGIN\r\n IF NOT EXISTS(SELECT 1 FROM public.workers WHERE id=p_worker AND is_active IS DISTINCT FROM false AND role::text IN ('admin','central'))\r\n THEN RAISE EXCEPTION 'Acceso no autorizado.' USING ERRCODE='42501'; END IF;\r\n p_size:=least(100,greatest(20,coalesce(p_size,50)));p_page:=greatest(1,coalesce(p_page,1));\r\n WITH base AS MATERIALIZED (\r\n SELECT r.* FROM public.rendimiento_llamadas r\r\n WHERE (coalesce(p_filters->>'from','')='' OR r.fecha_hora >= (nullif(p_filters->>'from','')||'T00:00:00Z')::timestamptz)\r\n AND (coalesce(p_filters->>'to','')='' OR r.fecha_hora < (nullif(p_filters->>'to','')||'T00:00:00Z')::timestamptz+interval '1 day')\r\n AND (coalesce(p_filters->>'cliente','')='' OR position(public.tc_rendimiento_text(p_filters->>'cliente') in public.tc_rendimiento_text(r.cliente_nombre))>0)\r\n AND (coalesce(p_filters->>'telefonista','')='' OR position(public.tc_rendimiento_text(p_filters->>'telefonista') in public.tc_rendimiento_text(r.telefonista_nombre))>0)\r\n AND (coalesce(p_filters->>'tarotista','')='' OR position(public.tc_rendimiento_text(p_filters->>'tarotista') in public.tc_rendimiento_text(concat_ws(' ',r.tarotista_nombre,r.tarotista_manual_call)))>0)\r\n AND (coalesce(p_filters->>'captado','')='' OR r.captado=(p_filters->>'captado')::boolean)\r\n AND (coalesce(p_filters->>'promo','')='' OR r.promo=(p_filters->>'promo')::boolean)\r\n AND (coalesce(p_filters->>'call','')='' OR r.llamada_call=(p_filters->>'call')::boolean)\r\n AND (coalesce(p_filters->>'importe','all')<>'positive' OR r.importe>0)\r\n AND (coalesce(p_filters->>'importe','all')<>'zero' OR coalesce(r.importe,0)=0)\r\n AND NOT EXISTS(SELECT 1 FROM public.crm_clientes c WHERE c.id::text=btrim(r.cliente_id) AND lower(coalesce(c.origen,'')) LIKE '%orion%')\r\n ), filtered AS MATERIALIZED (\r\n SELECT * FROM base WHERE\r\n (coalesce(p_filters->>'codigo','')='' OR position(public.tc_rendimiento_text(p_filters->>'codigo') in public.tc_rendimiento_text(concat_ws(' ',resumen_codigo,codigo_1,codigo_2,tipo_registro)))>0)\r\n AND (coalesce(p_filters->>'metodo','')='' OR public.tc_rendimiento_text(forma_pago)=public.tc_rendimiento_text(p_filters->>'metodo'))\r\n ), stats AS (SELECT count(*) total,coalesce(sum(tiempo),0) minutes,coalesce(sum(importe),0) amount,count(*) FILTER(WHERE captado) captured FROM filtered),\r\n page_rows AS (SELECT * FROM filtered ORDER BY fecha_hora DESC,id DESC LIMIT p_size OFFSET (p_page-1)::bigint*p_size),\r\n checked AS (SELECT r.*,public.tc_rendimiento_edit_reason(r::public.rendimiento_llamadas,p_worker) edit_reason FROM page_rows r)\r\n SELECT jsonb_build_object(\r\n 'data',coalesce((SELECT jsonb_agg(to_jsonb(r)||jsonb_build_object('can_edit',r.edit_reason IS NULL,'can_delete',\r\n (SELECT role::text='admin' OR r.telefonista_worker_id=p_worker::text FROM public.workers WHERE id=p_worker)) ORDER BY r.fecha_hora DESC,r.id DESC) FROM checked r),'[]'::jsonb),\r\n 'totals',jsonb_build_object('records',s.total,'minutes',round(s.minutes,2),'amount',round(s.amount,2),'captured',s.captured),\r\n 'pagination',jsonb_build_object('page',p_page,'page_size',p_size,'total',s.total,'pages',greatest(1,ceil(s.total::numeric/p_size))),\r\n 'payment_methods',coalesce((SELECT jsonb_agg(jsonb_build_object('value',value,'label',label) ORDER BY label) FROM\r\n (SELECT public.tc_rendimiento_text(forma_pago) value,min(btrim(forma_pago)) label FROM base\r\n WHERE btrim(coalesce(forma_pago,''))<>'' GROUP BY public.tc_rendimiento_text(forma_pago)) m),'[]'::jsonb))\r\n INTO result FROM stats s;\r\n RETURN result;\r\nEND $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_captacion_whatsapp_qr_claim",
+      "args": "p_delivery_id uuid, p_request_id uuid, p_lead_id uuid, p_worker_id uuid, p_auth_user_id uuid, p_submission_key text, p_from_number text, p_to_number text, p_callback_token uuid, p_expected_cliente_id uuid, p_client_snapshot jsonb, p_gateway_session_id text",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_captacion_whatsapp_qr_claim(p_delivery_id uuid, p_request_id uuid, p_lead_id uuid, p_worker_id uuid, p_auth_user_id uuid, p_submission_key text, p_from_number text, p_to_number text, p_callback_token uuid, p_expected_cliente_id uuid, p_client_snapshot jsonb, p_gateway_session_id text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\ndeclare\n  v_lead public.captacion_leads%rowtype;\n  v_worker public.workers%rowtype;\n  v_client public.crm_clientes%rowtype;\n  v_delivery public.captacion_whatsapp_deliveries%rowtype;\n  v_origin text;\n  v_event_key text;\n  v_submitted_at timestamptz;\nbegin\n  -- Serialize different central users and tabs acting on the same customer lead.\n  select * into v_lead from public.captacion_leads where id = p_lead_id for update;\n  if not found then raise exception 'LEAD_NOT_FOUND'; end if;\n  select * into v_worker from public.workers where id = p_worker_id and is_active = true\n    and role in ('admin','central') and (user_id = p_auth_user_id or auth_user_id = p_auth_user_id);\n  if not found then raise exception 'FORBIDDEN'; end if;\n  if v_worker.role <> 'admin' and v_lead.assigned_worker_id is not null and v_lead.assigned_worker_id <> p_worker_id then raise exception 'FORBIDDEN'; end if;\n  -- Provider preflight can take seconds. Recheck the exact CRM snapshot while\n  -- locking both the lead and client before reserving any outbound message.\n  if v_lead.cliente_id is distinct from p_expected_cliente_id then raise exception 'CLIENT_CHANGED'; end if;\n  select * into v_client from public.crm_clientes where id = v_lead.cliente_id for share;\n  if not found then raise exception 'LEAD_NOT_FOUND'; end if;\n  if p_client_snapshot is distinct from jsonb_build_object(\n    'telefono_normalizado',v_client.telefono_normalizado,'telefono',v_client.telefono,\n    'pais',v_client.pais,'nombre',v_client.nombre,'apellido',v_client.apellido\n  ) then raise exception 'CLIENT_CHANGED'; end if;\n  v_origin := coalesce(nullif(v_client.origen,''),v_lead.origen,'');\n  if lower(v_origin) like '%orion%' then raise exception 'LEAD_NOT_FOUND'; end if;\n  select * into v_delivery from public.captacion_whatsapp_deliveries where request_id = p_request_id;\n  if found then\n    if v_delivery.lead_id <> p_lead_id then raise exception 'REQUEST_CONFLICT'; end if;\n    return jsonb_build_object('claimed',false,'delivery',to_jsonb(v_delivery));\n  end if;\n  select 'meta:' || leadgen_id, meta_created_at into v_event_key, v_submitted_at\n    from public.meta_lead_events where captacion_lead_id = p_lead_id and status = 'processed' and meta_created_at <= now()\n    order by meta_created_at desc, leadgen_id desc limit 1;\n  v_event_key := coalesce(v_event_key,'initial');\n  if p_submission_key is distinct from v_event_key then raise exception 'SUBMISSION_CHANGED'; end if;\n  select * into v_delivery from public.captacion_whatsapp_deliveries where lead_id = p_lead_id and submission_key = p_submission_key;\n  if found then return jsonb_build_object('claimed',false,'delivery',to_jsonb(v_delivery)); end if;\n  if v_lead.closed_at is not null and (v_submitted_at is null or v_lead.closed_at >= v_submitted_at) then raise exception 'LEAD_CLOSED'; end if;\n  if p_gateway_session_id is null or p_gateway_session_id !~ '^[A-Za-z0-9_-]{1,64}$' or p_from_number !~ '^whatsapp:\\+[1-9][0-9]{7,14}$' or p_to_number !~ '^whatsapp:\\+[1-9][0-9]{7,14}$' then raise exception 'INVALID_MESSAGE'; end if;\n  insert into public.captacion_whatsapp_deliveries (id,lead_id,cliente_id,submission_key,request_id,worker_id,auth_user_id,content_sid,from_number,to_number,callback_token,provider,gateway_session_id)\n    values (p_delivery_id,p_lead_id,v_lead.cliente_id,p_submission_key,p_request_id,p_worker_id,p_auth_user_id,'qr:captacion-beneficios-v1',p_from_number,p_to_number,p_callback_token,'qr',p_gateway_session_id)\n    returning * into v_delivery;\n  insert into public.captacion_whatsapp_delivery_events (delivery_id,status,source) values (v_delivery.id,'sending','claim');\n  return jsonb_build_object('claimed',true,'delivery',to_jsonb(v_delivery));\nend;\n$function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_raffle_action",
+      "args": "p_raffle uuid, p_worker uuid, p_action text, p_data jsonb",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_raffle_action(p_raffle uuid, p_worker uuid, p_action text, p_data jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\r\ndeclare r public.raffles; w public.workers; p public.raffle_prizes; e public.raffle_entries;\r\n v_revision bigint; v_entry uuid; v_pool jsonb; v_payload jsonb; v_action text; v_name text; v_position integer;\r\nbegin\r\n select * into w from public.workers where id=p_worker and role in ('central','admin') and is_active is not false;\r\n if not found then raise exception 'Sin permiso' using errcode='42501'; end if;\r\n if p_action='rule' and w.role<>'admin' then\r\n   raise exception 'Solo un administrador puede realizar esta acción' using errcode='42501'; end if;\r\n if p_action not in ('save','draw','manual','confirm','cancel','rule') then raise exception 'Acción inválida'; end if;\r\n select * into r from public.raffles where id=p_raffle for update;\r\n if not found or r.status<>'active' then raise exception 'El sorteo ya no está activo'; end if;\r\n if p_action='rule' then\r\n   if jsonb_typeof(p_data->'allow_repeat_winners') is distinct from 'boolean' then raise exception 'Regla inválida'; end if;\r\n   if exists(select 1 from public.raffle_prizes where raffle_id=r.id and selected_at is not null and confirmed_at is null) then\r\n     raise exception 'Hay un ganador pendiente de confirmar o descartar.'; end if;\r\n   update public.raffles set allow_repeat_winners=(p_data->>'allow_repeat_winners')::boolean,updated_at=now() where id=r.id;\r\n   v_payload=jsonb_build_object('previous',r.allow_repeat_winners,'allow_repeat_winners',p_data->'allow_repeat_winners');\r\n   v_action='raffle_rule_changed';\r\n elsif p_action='save' then\r\n   v_position=(p_data->>'position')::integer; v_name=btrim(p_data->>'name');\r\n   if v_position is null or v_position not between 1 and 100 or v_name is null or char_length(v_name) not between 1 and 200 then raise exception 'Nombre o posición inválidos'; end if;\r\n   select * into p from public.raffle_prizes where raffle_id=r.id and position=v_position for update;\r\n   if found then\r\n     if p.selected_at is not null then raise exception 'No se puede cambiar un premio con un número seleccionado'; end if;\r\n     if p.name is distinct from p_data->>'previous_name' then raise exception 'El premio cambió en otro panel. Revisa antes de guardar.'; end if;\r\n     update public.raffle_prizes set name=v_name where id=p.id;\r\n   else\r\n     insert into public.raffle_prizes(raffle_id,position,name) values(r.id,v_position,v_name) returning * into p;\r\n   end if;\r\n   v_payload=jsonb_build_object('prize_id',p.id,'position',v_position,'name',v_name);\r\n   v_action='raffle_prize_saved';\r\n else\r\n   select * into p from public.raffle_prizes where id=(p_data->>'prize_id')::uuid and raffle_id=r.id for update;\r\n   if not found then raise exception 'Premio no encontrado'; end if;\r\n   v_revision=(p_data->>'revision')::bigint;\r\n   if v_revision is null or v_revision<>p.selection_revision then raise exception 'La selección cambió en otro panel. Actualiza antes de continuar.'; end if;\r\n   -- Idempotencia de confirmación: no publica ni audita dos veces.\r\n   if p.confirmed_at is not null then\r\n     if p_action='confirm' then return jsonb_build_object('ok',true,'already_confirmed',true); end if;\r\n     raise exception 'El premio ya está confirmado; no puede volver a sortearse ni descartarse';\r\n   end if;\r\n   if p_action in ('draw','manual') then\r\n     if p.selected_at is not null then\r\n       raise exception 'Hay un ganador pendiente de confirmar o descartar.'; end if;\r\n     if p_action='draw' then\r\n       -- La API usa crypto.randomInt. Verificar exactamente la población utilizada.\r\n       select coalesce(jsonb_agg(x.id order by x.raffle_number),'[]'::jsonb) into v_pool\r\n       from public.raffle_entries x join public.crm_clientes c on c.id=x.client_id where x.raffle_id=r.id and\r\n       (r.allow_repeat_winners or not exists(select 1 from public.raffle_prizes q where q.raffle_id=r.id and q.confirmed_at is not null and q.candidate_client_id=x.client_id));\r\n       if v_pool is distinct from p_data->'pool_ids' then raise exception 'Los participantes cambiaron. Actualiza y vuelve a girar.'; end if;\r\n     end if;\r\n     v_entry=(p_data->>'entry_id')::uuid;\r\n     select * into e from public.raffle_entries where id=v_entry and raffle_id=r.id for share;\r\n     if not found then raise exception 'Participación no válida para este sorteo'; end if;\r\n     if not r.allow_repeat_winners and exists(select 1 from public.raffle_prizes where raffle_id=r.id and confirmed_at is not null and candidate_client_id=e.client_id) then\r\n       raise exception 'Este cliente ya ganó; todos sus números quedan excluidos'; end if;\r\n     if p_action='manual' and (jsonb_typeof(p_data->'is_test') is distinct from 'boolean' or jsonb_typeof(p_data->'simulation_only') is distinct from 'boolean') then raise exception 'Indica si la selección manual es una prueba'; end if;\r\n     update public.raffle_prizes set candidate_entry_id=e.id,candidate_number=e.raffle_number,candidate_client_id=e.client_id,\r\n       selected_at=now(),selected_by=w.id,selection_method=case when p_action='draw' then 'roulette' else 'manual' end,\r\n       is_test=p_action='manual' and (p_data->>'is_test')::boolean,\r\n       simulation_only=p_action='manual' and (p_data->>'is_test')::boolean and (p_data->>'simulation_only')::boolean,\r\n       selection_revision=selection_revision+1 where id=p.id returning * into p;\r\n     v_action='raffle_selected';\r\n   else\r\n     if p.selected_at is null then raise exception 'No hay un ganador provisional'; end if;\r\n     if p_action='confirm' then\r\n       select * into e from public.raffle_entries where id=p.candidate_entry_id and raffle_id=r.id for share;\r\n       if not found or e.client_id is distinct from p.candidate_client_id or e.raffle_number is distinct from p.candidate_number then\r\n         raise exception 'La participación cambió; descarta y revisa el candidato'; end if;\r\n       if not r.allow_repeat_winners and exists(select 1 from public.raffle_prizes where raffle_id=r.id and confirmed_at is not null and candidate_client_id=p.candidate_client_id) then\r\n         raise exception 'Este cliente ya ganó; descarta la selección pendiente'; end if;\r\n       if not p.simulation_only then\r\n         update public.raffle_prizes set confirmed_at=now(),confirmed_by=w.id where id=p.id returning * into p;\r\n         insert into public.raffle_public_winners(prize_id,raffle_id,position,prize_name,winning_number,confirmed_at,selection_method,is_test)\r\n           values(p.id,r.id,p.position,p.name,p.candidate_number,p.confirmed_at,p.selection_method,p.is_test);\r\n         v_action='raffle_confirmed';\r\n       else v_action='raffle_simulated'; end if;\r\n     else v_action='raffle_cancelled'; end if;\r\n     if p_action='cancel' or p.simulation_only then\r\n       update public.raffle_prizes set candidate_entry_id=null,candidate_number=null,candidate_client_id=null,selected_at=null,selected_by=null,\r\n         selection_method='roulette',is_test=false,simulation_only=false,selection_revision=selection_revision+1 where id=p.id;\r\n     end if;\r\n   end if;\r\n   select nullif(btrim(concat_ws(' ',nombre,apellido)),'') into v_name from public.crm_clientes where id=p.candidate_client_id;\r\n   v_payload=jsonb_build_object('prize_id',p.id,'position',p.position,'prize_name',p.name,'entry_id',p.candidate_entry_id,\r\n     'client_id',p.candidate_client_id,'number',p.candidate_number,'name',v_name,'method',p.selection_method,\r\n     'is_test',p.is_test,'simulation_only',p.simulation_only,'selected_by',p.selected_by,'confirmed_by',p.confirmed_by,\r\n     'selected_at',p.selected_at,'confirmed_at',p.confirmed_at,'revision',p.selection_revision);\r\n end if;\r\n -- Solo la API privada de administradores puede consultar este registro.\r\n insert into public.raffle_selection_audit(worker_id,action_type,entity_type,entity_id,payload)\r\n values(w.id,v_action,'raffle_selection',r.id,v_payload);\r\n return jsonb_build_object('ok',true);\r\nend $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_raffle_state",
+      "args": "p_raffle uuid, p_worker uuid",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_raffle_state(p_raffle uuid, p_worker uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\r\ndeclare r public.raffles; w public.workers; result jsonb;\r\nbegin\r\n select * into w from public.workers where id=p_worker and role in ('central','admin') and is_active is not false;\r\n if not found then raise exception 'Sin permiso' using errcode='42501'; end if;\r\n select * into r from public.raffles where id=p_raffle and status='active';\r\n if not found then raise exception 'El sorteo ya no está activo' using errcode='P0001'; end if;\r\n if (select count(*) from public.raffle_entries where raffle_id=r.id)>10000 then\r\n   raise exception 'El sorteo supera 10000 participaciones; no se cargará una lista parcial'; end if;\r\n select jsonb_build_object(\r\n   'raffle',jsonb_build_object('id',r.id,'title',r.title,'allow_repeat_winners',r.allow_repeat_winners),\r\n   'canManage',w.role='admin',\r\n   'canSelect',w.role in ('central','admin'),\r\n   'entries',coalesce((select jsonb_agg(jsonb_build_object(\r\n     'id',e.id,'number',e.raffle_number,'clientId',e.client_id,\r\n     'name',coalesce(nullif(btrim(concat_ws(' ',c.nombre,c.apellido)),''),'Cliente sin nombre'),\r\n     'phone',case when w.role='admin' then coalesce(c.telefono_normalizado,c.telefono,'') else null end,\r\n     'won',exists(select 1 from public.raffle_prizes p where p.raffle_id=r.id and p.confirmed_at is not null and p.candidate_client_id=e.client_id),\r\n     'eligible',r.allow_repeat_winners or not exists(select 1 from public.raffle_prizes p where p.raffle_id=r.id and p.confirmed_at is not null and p.candidate_client_id=e.client_id)\r\n   ) order by e.raffle_number) from public.raffle_entries e join public.crm_clientes c on c.id=e.client_id where e.raffle_id=r.id),'[]'::jsonb),\r\n   'prizes',coalesce((select jsonb_agg(to_jsonb(p) || jsonb_build_object(\r\n     'candidate_name',nullif(btrim(concat_ws(' ',c.nombre,c.apellido)),''),\r\n     'selected_by_name',s.display_name,'confirmed_by_name',f.display_name\r\n   ) order by p.position) from public.raffle_prizes p\r\n     left join public.crm_clientes c on c.id=p.candidate_client_id\r\n     left join public.workers s on s.id=p.selected_by left join public.workers f on f.id=p.confirmed_by\r\n     where p.raffle_id=r.id),'[]'::jsonb),\r\n   'audit',case when w.role='admin' then coalesce((select jsonb_agg(to_jsonb(a)) from\r\n      (select l.id,l.action_type,l.payload,l.created_at,wk.display_name as actor\r\n       from public.raffle_selection_audit l left join public.workers wk on wk.id=l.worker_id\r\n       where l.entity_type='raffle_selection' and l.entity_id=r.id order by l.created_at desc limit 100) a),'[]'::jsonb) else '[]'::jsonb end\r\n ) into result;\r\n return result;\r\nend $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "private",
+      "name": "current_worker_role",
+      "args": "",
+      "definition": "CREATE OR REPLACE FUNCTION private.current_worker_role()\n RETURNS text\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\r\n  select w.role::text\r\n  from public.workers w\r\n  where w.user_id = (select auth.uid())\r\n     or w.auth_user_id = (select auth.uid())\r\n  order by case when w.user_id = (select auth.uid()) then 0 else 1 end\r\n  limit 1\r\n$function$\n",
+      "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_admin_adjust_coins",
+      "args": "p_operation_id uuid, p_cliente_id uuid, p_actor_user_id uuid, p_amount numeric, p_reason text",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_admin_adjust_coins(p_operation_id uuid, p_cliente_id uuid, p_actor_user_id uuid, p_amount numeric, p_reason text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\ndeclare\n  prior public.tc_admin_coin_adjustments%rowtype;\n  actor public.workers%rowtype;\n  movement public.cliente_puntos_historial%rowtype;\n  gift jsonb;\n  before_coins integer;\n  after_coins integer;\n  note_uuid uuid;\n  audit_data jsonb;\n  clean_reason text:=btrim(coalesce(p_reason,''));\nbegin\n  if p_operation_id is null or p_cliente_id is null or p_actor_user_id is null then\n    raise exception 'INVALID_ADJUSTMENT';\n  end if;\n  -- Numeric input prevents PostgreSQL from silently rounding a fractional JSON\n  -- number to integer before validation at the RPC boundary.\n  if p_amount is null or p_amount::text in ('NaN','Infinity','-Infinity')\n    or p_amount<>trunc(p_amount) or p_amount<1 or p_amount>1000000 then\n    raise exception 'INVALID_AMOUNT';\n  end if;\n  if char_length(clean_reason) not between 3 and 500 then\n    raise exception 'INVALID_REASON';\n  end if;\n\n  -- The server passes its verified auth user, never an actor from the browser.\n  -- Resolve/lock the current worker record so a stale or revoked role cannot\n  -- authorize the transaction. Keep the existing null-is-active convention.\n  select * into actor from public.workers\n    where user_id=p_actor_user_id and role='admin' and is_active is distinct from false\n    for share;\n  if not found then raise exception 'FORBIDDEN'; end if;\n\n  -- Same operation lock as admin_gift_client_coins. This also serializes callers\n  -- using the existing admin-gift entry point, preventing cross-route retries.\n  perform pg_advisory_xact_lock(hashtextextended(p_operation_id::text,0));\n  select * into prior from public.tc_admin_coin_adjustments where operation_id=p_operation_id;\n  if found then\n    if prior.cliente_id<>p_cliente_id or prior.actor_user_id<>p_actor_user_id\n      or prior.actor_worker_id<>actor.id or prior.amount<>p_amount or prior.reason<>clean_reason then\n      raise exception 'OPERATION_CONFLICT';\n    end if;\n    return to_jsonb(prior)||jsonb_build_object('replayed',true);\n  end if;\n  -- Never adopt another feature's receipt as a new manual adjustment.\n  if exists(select 1 from public.cliente_puntos_historial where operation_id=p_operation_id) then\n    raise exception 'OPERATION_CONFLICT';\n  end if;\n\n  select coalesce(puntos,0) into before_coins from public.crm_clientes\n    where id=p_cliente_id for update;\n  if not found then raise exception 'CLIENT_NOT_FOUND'; end if;\n  if before_coins::bigint+p_amount>2147483647 then raise exception 'COIN_BALANCE_LIMIT'; end if;\n  after_coins:=(before_coins::bigint+p_amount)::integer;\n\n  gift:=public.admin_gift_client_coins(p_cliente_id,actor.id,p_amount::integer,clean_reason,p_operation_id);\n  select * into movement from public.cliente_puntos_historial where operation_id=p_operation_id;\n  if gift is null or coalesce((gift->>'duplicated')::boolean,false)\n    or movement.id is null or movement.cliente_id is distinct from p_cliente_id\n    or movement.admin_worker_id is distinct from actor.id or movement.puntos is distinct from p_amount::integer\n    or movement.saldo_despues is distinct from after_coins\n    or gift->>'movement_id' is distinct from movement.id::text\n    or (select puntos from public.crm_clientes where id=p_cliente_id) is distinct from after_coins then\n    raise exception 'COIN_GIFT_CONTRACT_MISMATCH';\n  end if;\n\n  audit_data:=jsonb_build_object(\n    'operation_id',p_operation_id,'cliente_id',p_cliente_id,\n    'actor_user_id',p_actor_user_id,'actor_worker_id',actor.id,\n    'amount',p_amount::integer,'reason',clean_reason,\n    'before_balance',before_coins,'after_balance',after_coins,\n    'movement_id',movement.id,'source','admin_client_balances'\n  );\n  insert into public.crm_client_notes(cliente_id,texto,author_user_id,author_name,event_type,event_data,is_pinned)\n  values(p_cliente_id::text,\n    format('Coins añadidas manualmente por administración · +%s Coins · Saldo: %s → %s. Motivo: %s',p_amount::integer,before_coins,after_coins,clean_reason),\n    p_actor_user_id,coalesce(nullif(btrim(actor.display_name),''),actor.email,'Admin'),\n    'admin_coin_adjustment',audit_data,false)\n  returning id into note_uuid;\n\n  insert into public.tc_admin_coin_adjustments(\n    operation_id,cliente_id,actor_user_id,actor_worker_id,amount,reason,\n    before_balance,after_balance,movement_id,note_id\n  ) values(\n    p_operation_id,p_cliente_id,p_actor_user_id,actor.id,p_amount::integer,clean_reason,\n    before_coins,after_coins,movement.id,note_uuid\n  ) returning * into prior;\n\n  -- The existing crm_clientes state trigger refreshes the shared client signal\n  -- when puntos changes. No second signal write, purchase or spin is created.\n  return to_jsonb(prior)||jsonb_build_object('replayed',false);\nend $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_admin_whatsapp_draft_get",
+      "args": "p_actor_user_id uuid",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_admin_whatsapp_draft_get(p_actor_user_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\ndeclare v_result jsonb;\nbegin\n  perform 1 from public.workers w where w.user_id=p_actor_user_id and w.is_active is true and lower(w.role)='admin' for share;\n  if not found then raise exception 'FORBIDDEN'; end if;\n  select jsonb_build_object('version',d.version,'updated_at',d.updated_at,'slots',d.document->'slots') into v_result\n  from public.tc_admin_whatsapp_drafts d where d.actor_user_id=p_actor_user_id;\n  return coalesce(v_result, jsonb_build_object('version',0,'updated_at',null,'slots',jsonb_build_array(\n    jsonb_build_object('slot',1,'label','WhatsApp 1','sender_phone','','message','','image_url','','contacts','[]'::jsonb),\n    jsonb_build_object('slot',2,'label','WhatsApp 2','sender_phone','','message','','image_url','','contacts','[]'::jsonb))));\nend;\n$function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_admin_whatsapp_draft_save",
+      "args": "p_actor_user_id uuid, p_request_id uuid, p_expected_version bigint, p_document jsonb",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_admin_whatsapp_draft_save(p_actor_user_id uuid, p_request_id uuid, p_expected_version bigint, p_document jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\ndeclare\n  v_document jsonb; v_request public.tc_admin_whatsapp_draft_requests%rowtype;\n  v_version bigint := 0; v_updated_at timestamptz; v_result jsonb;\nbegin\n  perform 1 from public.workers w where w.user_id=p_actor_user_id and w.is_active is true and lower(w.role)='admin' for share;\n  if not found then raise exception 'FORBIDDEN'; end if;\n  if p_request_id is null then raise exception 'INVALID_REQUEST_ID'; end if;\n  if p_expected_version is null or p_expected_version < 0 or p_expected_version > 9007199254740990 then raise exception 'INVALID_VERSION'; end if;\n  v_document := public.tc_admin_whatsapp_draft_normalize(p_document);\n  -- Serializes first-save and existing-draft edits for this actor only.\n  perform pg_advisory_xact_lock(hashtextextended('admin-whatsapp-draft:' || p_actor_user_id::text,0));\n  select * into v_request from public.tc_admin_whatsapp_draft_requests r where r.actor_user_id=p_actor_user_id and r.request_id=p_request_id;\n  if found then\n    if v_request.expected_version <> p_expected_version or v_request.result_snapshot->'slots' <> v_document->'slots' then raise exception 'OPERATION_CONFLICT'; end if;\n    return v_request.result_snapshot || jsonb_build_object('replayed',true);\n  end if;\n  select d.version into v_version from public.tc_admin_whatsapp_drafts d where d.actor_user_id=p_actor_user_id for update;\n  v_version := coalesce(v_version,0);\n  if v_version <> p_expected_version then raise exception 'VERSION_CONFLICT' using detail=jsonb_build_object('current_version',v_version)::text; end if;\n  v_updated_at := clock_timestamp();\n  v_result := jsonb_build_object('version',v_version+1,'updated_at',v_updated_at,'slots',v_document->'slots');\n  insert into public.tc_admin_whatsapp_drafts(actor_user_id,version,document,updated_at) values(p_actor_user_id,v_version+1,v_document,v_updated_at)\n  on conflict(actor_user_id) do update set version=excluded.version,document=excluded.document,updated_at=excluded.updated_at;\n  insert into public.tc_admin_whatsapp_draft_requests(actor_user_id,request_id,expected_version,result_snapshot) values(p_actor_user_id,p_request_id,p_expected_version,v_result);\n  return v_result || jsonb_build_object('replayed',false);\nend;\n$function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_admin_whatsapp_draft_resolve",
+      "args": "p_actor_user_id uuid, p_phones text[]",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_admin_whatsapp_draft_resolve(p_actor_user_id uuid, p_phones text[])\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\ndeclare v_phones text[] := '{}'::text[]; v_phone text; v_result jsonb;\nbegin\n  perform 1 from public.workers w where w.user_id=p_actor_user_id and w.is_active is true and lower(w.role)='admin' for share;\n  if not found then raise exception 'FORBIDDEN'; end if;\n  if p_phones is null or cardinality(p_phones)>600 then raise exception 'TOO_MANY_CONTACTS'; end if;\n  foreach v_phone in array p_phones loop\n    v_phone := public.tc_admin_whatsapp_draft_phone(v_phone);\n    if not (v_phone=any(v_phones)) then v_phones := array_append(v_phones,v_phone); end if;\n  end loop;\n  -- Exact indexed comparisons only. No suffix matching, broad export, or country inference.\n  -- CRM currently has no canonical WhatsApp blocklist/opt-out field. A web-login ban is not marketing consent.\n  select coalesce(jsonb_agg(jsonb_build_object('phone',r.phone,'match',case when m.n=0 then 'none' when m.n=1 then 'unique' else 'ambiguous' end,\n    'name',case when m.n=1 then m.name else '' end) order by r.ordinality),'[]'::jsonb) into v_result\n  from unnest(v_phones) with ordinality r(phone,ordinality)\n  cross join lateral (\n    select count(*) n,min(c.name) name from (\n      select left(btrim(concat_ws(' ',cl.nombre,nullif(btrim(cl.apellido),''))),160) name\n      from public.crm_clientes cl where cl.telefono_normalizado=any(array[r.phone,substr(r.phone,2),'00'||substr(r.phone,2)]) limit 2\n    ) c\n  ) m;\n  return v_result;\nend;\n$function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "invoice_edit_atomic",
+      "args": "p_invoice_id uuid, p_actor_id uuid, p_action text, p_line_id uuid, p_data jsonb",
+      "definition": "CREATE OR REPLACE FUNCTION public.invoice_edit_atomic(p_invoice_id uuid, p_actor_id uuid, p_action text, p_line_id uuid, p_data jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\r\ndeclare v_inv public.invoices%rowtype; v_actor public.workers%rowtype; v_line public.invoice_lines%rowtype;\r\n v_id uuid; v_inc_id uuid; v_meta jsonb; v_amount numeric; v_kind text; v_label text; v_total numeric; v_date timestamptz; v_cancel boolean;\r\nbegin\r\n select * into v_actor from public.workers where id=p_actor_id and role='admin' and is_active is distinct from false;\r\n if not found then raise exception 'FORBIDDEN'; end if;\r\n select * into strict v_inv from public.invoices where id=p_invoice_id for update;\r\n if p_action='set_status' then\r\n  if p_data->>'status' not in ('draft','pending','review','final','paid') then raise exception 'INVALID_STATUS'; end if;\r\n  update public.invoices set status=p_data->>'status',updated_at=now() where id=p_invoice_id;\r\n  return jsonb_build_object('ok',true);\r\n end if;\r\n if coalesce(v_inv.status,'') not in ('draft','pending','review') then raise exception 'La factura está cerrada. Vuelve a borrador para editarla.'; end if;\r\n if p_action='set_notes' then\r\n  update public.invoices set notes=p_data->>'notes',updated_at=now() where id=p_invoice_id;\r\n  return jsonb_build_object('ok',true);\r\n end if;\r\n if p_action not in ('add_line','update_line','delete_line') or p_line_id is null then raise exception 'INVALID_ACTION'; end if;\r\n select * into v_line from public.invoice_lines where id=p_line_id;\r\n if p_action='add_line' and found then\r\n  if v_line.invoice_id<>p_invoice_id then raise exception 'INVALID_REQUEST'; end if;\r\n  return jsonb_build_object('ok',true,'replayed',true,'total',v_inv.total);\r\n end if;\r\n if p_action<>'add_line' then\r\n  if v_line.id is null or v_line.invoice_id<>p_invoice_id then raise exception 'LINE_NOT_FOUND'; end if;\r\n  if v_line.kind='salary_base' or v_line.meta->>'locked'='true' or v_line.meta->>'protected'='true' then raise exception 'El sueldo fijo está protegido.'; end if;\r\n end if;\r\n v_cancel:=p_action='delete_line';\r\n v_kind:=coalesce(p_data->>'kind',v_line.kind,'adjustment');\r\n if v_line.kind='incident' then v_kind:='incident'; end if;\r\n v_label:=coalesce(nullif(trim(p_data->>'label'),''),v_line.label,'Ajuste');\r\n v_meta:=coalesce(v_line.meta,'{}')||coalesce(p_data->'meta','{}')||jsonb_build_object('source','manual_edit');\r\n if p_action='update_line' and (v_line.meta->>'source'='auto_generate' or v_line.meta->>'manual_override'='true') then v_meta:=v_meta||jsonb_build_object('manual_override',true); end if;\r\n v_amount:=round(coalesce((p_data->>'amount')::numeric,v_line.amount,0),2);\r\n if v_kind='incident' then\r\n  v_amount:=-abs(v_amount);\r\n  if not v_cancel and (v_amount=0 or nullif(trim(v_meta->>'occurred_at'),'') is null or (nullif(trim(v_meta->>'client_name'),'') is null and nullif(trim(v_meta->>'situation'),'') is null)) then\r\n   raise exception 'Indica importe, fecha y hora, y la clienta o situación de la incidencia.';\r\n  end if;\r\n  v_inc_id:=coalesce((v_line.meta->>'incident_id')::uuid,p_line_id);\r\n  v_date:=coalesce((v_meta->>'occurred_at')::timestamptz,v_line.created_at,now());\r\n  v_meta:=v_meta||jsonb_build_object('incident_id',v_inc_id,'occurred_at',v_date,'invoice_id',p_invoice_id);\r\n  insert into public.incidents(id,worker_id,month_key,title,amount,created_by,reason,kind,status,decided_by,decided_at,meta)\r\n  values(v_inc_id,v_inv.worker_id,v_inv.month_key,v_label,abs(v_amount),p_actor_id,v_label,'manual',case when v_cancel then 'justified' else 'unjustified' end,p_actor_id,now(),v_meta)\r\n  on conflict(id) do update set title=excluded.title,reason=excluded.reason,amount=excluded.amount,status=excluded.status,decided_by=p_actor_id,decided_at=now(),meta=excluded.meta;\r\n  insert into public.central_notifications(business,recipient_worker_id,type,priority,title,description,action_label,action_path,state,deduplication_key,metadata,created_by)\r\n  values('celestial',v_inv.worker_id,'invoice_incident','attention',\r\n  case when v_cancel then 'Incidencia anulada' else 'Has recibido una multa' end,\r\n  'Factura: '||v_inv.month_key||'. Motivo: '||v_label||'. Importe: '||abs(v_amount)||' €. Fecha y hora: '||to_char(v_date at time zone 'Europe/Madrid','DD/MM/YYYY HH24:MI')||' (Madrid). '||\r\n  case when nullif(v_meta->>'client_name','') is not null then 'Clienta: '||(v_meta->>'client_name')||'. ' else '' end||coalesce(v_meta->>'situation',''),\r\n  'Ver mi factura','/panel-central?tab=mi-factura','pending','invoice_incident:'||v_inc_id,\r\n  v_meta||jsonb_build_object('amount',abs(v_amount),'cancelled',v_cancel,'month',v_inv.month_key),v_actor.user_id)\r\n  on conflict(deduplication_key) do update set title=excluded.title,description=excluded.description,metadata=excluded.metadata,state='pending',read_at=null,resolved_at=null,updated_at=now();\r\n end if;\r\n if v_cancel then delete from public.invoice_lines where id=p_line_id and invoice_id=p_invoice_id;\r\n elsif p_action='add_line' then\r\n  insert into public.invoice_lines(id,invoice_id,kind,label,amount,meta) values(p_line_id,p_invoice_id,v_kind,v_label,v_amount,v_meta);\r\n else update public.invoice_lines set label=v_label,amount=v_amount,meta=v_meta where id=p_line_id and invoice_id=p_invoice_id;\r\n end if;\r\n select coalesce(sum(amount),0) into v_total from public.invoice_lines where invoice_id=p_invoice_id;\r\n update public.invoices set total=v_total,total_calc=v_total,\r\n incidencias_total=(select coalesce(sum(abs(amount)),0) from public.invoice_lines where invoice_id=p_invoice_id and kind='incident'),updated_at=now()\r\n where id=p_invoice_id;\r\n return jsonb_build_object('ok',true,'total',v_total);\r\nend $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tarotista_bonus_save_rule",
+      "args": "p_rule jsonb, p_actor uuid",
+      "definition": "CREATE OR REPLACE FUNCTION public.tarotista_bonus_save_rule(p_rule jsonb, p_actor uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\ndeclare r public.tarotista_bonus_rules%rowtype; old public.tarotista_bonus_rules%rowtype;\nbegin\n if not exists(select 1 from public.workers where id=p_actor and role='admin' and is_active is distinct from false) then raise exception 'ADMIN_REQUIRED'; end if;\n perform pg_advisory_xact_lock(hashtext('tarotista_bonus_catalog'));\n r:=jsonb_populate_record(null::public.tarotista_bonus_rules,p_rule);\n if r.id is not null then\n  select * into strict old from public.tarotista_bonus_rules where id=r.id for update;\n  if r.version is distinct from old.version then raise exception 'La regla ha cambiado. Recarga antes de guardar.'; end if;\n else r.id:=gen_random_uuid(); end if;\n if r.active and r.kind in ('tier','ranking') and exists(\n  select 1 from public.tarotista_bonus_rules b where b.id<>r.id and b.active and b.kind=r.kind and b.metric=r.metric\n   and daterange(b.start_date,b.end_date,'[]') && daterange(r.start_date,r.end_date,'[]')\n   and ((r.kind='ranking' and b.position=r.position) or (r.kind='tier' and numrange(b.minimum,b.maximum,'[]') && numrange(r.minimum,r.maximum,'[]')))\n ) then raise exception 'Ya existe un tramo o posición activo que se solapa con esta regla.'; end if;\n insert into public.tarotista_bonus_rules(id,name,description,kind,metric,minimum,maximum,target,reward,position,active,start_date,end_date,periodicity,stackable,max_claims,sort_order,image_url,updated_by)\n values(r.id,r.name,r.description,r.kind,r.metric,r.minimum,r.maximum,r.target,r.reward,r.position,r.active,r.start_date,r.end_date,r.periodicity,r.stackable,r.max_claims,r.sort_order,r.image_url,p_actor)\n on conflict(id) do update set name=excluded.name,description=excluded.description,kind=excluded.kind,metric=excluded.metric,minimum=excluded.minimum,maximum=excluded.maximum,target=excluded.target,reward=excluded.reward,position=excluded.position,active=excluded.active,start_date=excluded.start_date,end_date=excluded.end_date,periodicity=excluded.periodicity,stackable=excluded.stackable,max_claims=excluded.max_claims,sort_order=excluded.sort_order,image_url=excluded.image_url,version=public.tarotista_bonus_rules.version+1,updated_at=now(),updated_by=p_actor returning * into r;\n return to_jsonb(r);\nend $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tarotista_bonus_void",
+      "args": "p_award uuid, p_actor uuid, p_reason text",
+      "definition": "CREATE OR REPLACE FUNCTION public.tarotista_bonus_void(p_award uuid, p_actor uuid, p_reason text)\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\ndeclare a public.tarotista_bonus_awards%rowtype; inv public.invoices%rowtype;\nbegin\n if not exists(select 1 from public.workers where id=p_actor and role='admin' and is_active is distinct from false) then raise exception 'ADMIN_REQUIRED'; end if;\n if length(trim(p_reason))<3 then raise exception 'Indica el motivo de anulación.'; end if;\n select * into strict a from public.tarotista_bonus_awards where id=p_award;\n select * into strict inv from public.invoices where id=a.invoice_id for update;\n if inv.status not in ('draft','pending','review') then raise exception 'La factura está cerrada. No se puede modificar el premio.'; end if;\n update public.tarotista_bonus_awards set status='void',voided_at=now(),voided_by=p_actor,void_reason=p_reason where id=p_award and status='included';\n delete from public.invoice_lines where invoice_id=inv.id and meta->>'bonus_award_id'=p_award::text;\n update public.invoices set total=(select coalesce(sum(amount),0) from public.invoice_lines where invoice_id=inv.id),total_calc=(select coalesce(sum(amount),0) from public.invoice_lines where invoice_id=inv.id),bonus_captadas=(select coalesce(sum(amount),0) from public.invoice_lines where invoice_id=inv.id and kind='bonus_captadas'),bonus_ranking=(select coalesce(sum(amount),0) from public.invoice_lines where invoice_id=inv.id and kind='bonus_ranking'),updated_at=now() where id=inv.id;\nend $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "invoice_regenerate_preserving_manual",
+      "args": "p_worker_id uuid, p_month text, p_lines jsonb, p_snapshot jsonb",
+      "definition": "CREATE OR REPLACE FUNCTION public.invoice_regenerate_preserving_manual(p_worker_id uuid, p_month text, p_lines jsonb, p_snapshot jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\ndeclare v_inv public.invoices%rowtype; v_line jsonb; v_inc public.incidents%rowtype; v_total numeric; v_new boolean:=false; v_candidate jsonb; v_rule public.tarotista_bonus_rules%rowtype; v_award public.tarotista_bonus_awards%rowtype; v_versions jsonb;\nbegin\n if p_month !~ '^\\d{4}-\\d{2}$' or jsonb_typeof(p_lines)<>'array' then raise exception 'INVALID_INPUT'; end if;\n insert into public.invoices(worker_id,month_key,status,total,total_calc)\n values(p_worker_id,p_month,'draft',0,0) on conflict(worker_id,month_key) do nothing;\n v_new:=found;\n select * into strict v_inv from public.invoices where worker_id=p_worker_id and month_key=p_month for update;\n if coalesce(v_inv.status,'') not in ('draft','pending','review') then return jsonb_build_object('skipped',true); end if;\n\n if coalesce((p_snapshot->>'bonus_engine')::boolean,false) then\n  -- The existing invoice lock serializes concurrent closing, regeneration and cancellation.\n  if exists(select 1 from public.invoice_lines where invoice_id=v_inv.id and kind in ('bonus_captadas','bonus_ranking','bonus_repite_goal') and not(meta ? 'bonus_award_id') and (coalesce(meta->>'source','')<>'auto_generate' or meta->>'manual_override'='true')) then\n   raise exception 'Esta factura contiene bonos anteriores o editados manualmente. Revísalos antes de cerrar los nuevos bonos.';\n  end if;\n  if coalesce((p_snapshot->>'close_bonuses')::boolean,false) and v_inv.bonus_closed_at is null then\n   if p_month>=to_char(now() at time zone 'Europe/Madrid','YYYY-MM') then raise exception 'El periodo todavía no ha terminado.'; end if;\n   if not exists(select 1 from public.workers where id=(p_snapshot->>'actor_id')::uuid and role='admin' and is_active is distinct from false) then raise exception 'ADMIN_REQUIRED'; end if;\n   perform pg_advisory_xact_lock(hashtext('tarotista_bonus_catalog'));\n   select coalesce(jsonb_agg(jsonb_build_object('id',id,'version',version) order by id),'[]') into v_versions from public.tarotista_bonus_rules;\n   if v_versions is distinct from p_snapshot->'bonus_versions' then raise exception 'La configuración ha cambiado. Actualiza y vuelve a cerrar.'; end if;\n   for v_candidate in select value from jsonb_array_elements(coalesce(p_snapshot->'bonus_candidates','[]')) loop\n    select * into strict v_rule from public.tarotista_bonus_rules where id=(v_candidate->>'rule_id')::uuid;\n    if not v_rule.active or v_rule.start_date>(p_month||'-01')::date+interval '1 month'-interval '1 day' or (v_rule.end_date is not null and v_rule.end_date<(p_month||'-01')::date) then raise exception 'Regla fuera de periodo.'; end if;\n    if (v_candidate->>'units')::numeric<=0 or (v_rule.kind<>'tier' and (v_candidate->>'units')::numeric>v_rule.max_claims) then raise exception 'Cantidad de premios no válida.'; end if;\n    if (v_rule.periodicity='monthly' and v_candidate->>'period_key'<>p_month) or (v_rule.periodicity='once' and v_candidate->>'period_key'<>'once:'||v_rule.start_date::text||':'||v_rule.end_date::text) then raise exception 'Referencia de periodo no válida.'; end if;\n    insert into public.tarotista_bonus_awards(worker_id,rule_id,period_key,invoice_month,amount,units,rule_snapshot,metrics_snapshot,reason,invoice_id,confirmed_by)\n    values(p_worker_id,v_rule.id,v_candidate->>'period_key',p_month,round((v_candidate->>'units')::numeric*v_rule.reward,2),(v_candidate->>'units')::numeric,to_jsonb(v_rule),v_candidate,v_rule.name,v_inv.id,(p_snapshot->>'actor_id')::uuid)\n    on conflict(worker_id,rule_id,period_key) do nothing;\n   end loop;\n   update public.invoices set bonus_closed_at=now(),bonus_rules_snapshot=p_snapshot->'bonus_versions' where id=v_inv.id;\n  end if;\n end if;\n -- Solo se sustituyen conceptos automáticos. Ajustes y bonus manuales conservan ID.\n delete from public.invoice_lines where invoice_id=v_inv.id\n and meta->>'source' in ('auto_generate','fixed_salary');\n for v_line in select value from jsonb_array_elements(p_lines) loop\n  if (v_inv.bonus_closed_at is not null or coalesce((p_snapshot->>'bonus_engine')::boolean,false)) and v_line->>'kind' in ('bonus_captadas','bonus_ranking','bonus_repite_goal','bonus_challenge') then continue; end if;\n  if exists(select 1 from public.invoice_lines where invoice_id=v_inv.id and kind=v_line->>'kind' and meta->>'manual_override'='true') then continue; end if;\n  if v_line->>'kind'='salary_bonus' and exists(select 1 from public.invoice_lines where invoice_id=v_inv.id and kind='salary_bonus') then continue; end if;\n  insert into public.invoice_lines(invoice_id,kind,label,amount,meta)\n  values(v_inv.id,v_line->>'kind',v_line->>'label',(v_line->>'amount')::numeric,v_line->'meta');\n end loop;\n -- Las incidencias guardadas son la fuente; una decisión justificada deja de descontar.\n delete from public.invoice_lines l where l.invoice_id=v_inv.id and l.meta ? 'incident_id'\n and exists(select 1 from public.incidents i where i.id::text=l.meta->>'incident_id' and coalesce(i.status,'unjustified')<>'unjustified');\n for v_inc in select * from public.incidents where worker_id=p_worker_id and month_key=p_month and coalesce(status,'unjustified')='unjustified' loop\n  update public.invoice_lines set amount=-abs(v_inc.amount),label=v_inc.title\n   where invoice_id=v_inv.id and meta->>'incident_id'=v_inc.id::text;\n  if not found then\n   insert into public.invoice_lines(invoice_id,kind,label,amount,meta)\n   values(v_inv.id,'incident',v_inc.title,-abs(v_inc.amount),coalesce(v_inc.meta,'{}')||jsonb_build_object('incident_id',v_inc.id,'source','incident_record'));\n  end if;\n end loop;\n\n -- Confirmed rewards are restored by their own stable reference, never recalculated from new rules.\n for v_award in select * from public.tarotista_bonus_awards where invoice_id=v_inv.id and status='included' loop\n  insert into public.invoice_lines(invoice_id,kind,label,amount,meta)\n  values(v_inv.id,case v_award.rule_snapshot->>'kind' when 'tier' then 'bonus_captadas' when 'ranking' then 'bonus_ranking' else 'bonus_challenge' end,v_award.reason,v_award.amount,\n   jsonb_build_object('source','bonus_award','bonus_award_id',v_award.id,'rule_id',v_award.rule_id,'period',v_award.period_key,'locked',true,'protected',true))\n  on conflict(invoice_id,(meta->>'bonus_award_id')) where meta ? 'bonus_award_id' do nothing;\n end loop;\n select coalesce(sum(amount),0) into v_total from public.invoice_lines where invoice_id=v_inv.id;\n update public.invoices set total=v_total,total_calc=v_total,\n incidencias_total=(select coalesce(sum(abs(amount)),0) from public.invoice_lines where invoice_id=v_inv.id and kind='incident'),\n minutes_total=coalesce((p_snapshot->>'minutes_total')::numeric,0),pay_minutes=coalesce((p_snapshot->>'pay_minutes')::numeric,0),\n captadas_total=coalesce((p_snapshot->>'captadas_total')::integer,0),bonus_captadas=(select coalesce(sum(amount),0) from public.invoice_lines where invoice_id=v_inv.id and kind='bonus_captadas'),bonus_ranking=(select coalesce(sum(amount),0) from public.invoice_lines where invoice_id=v_inv.id and kind='bonus_ranking'),\n salary_base=coalesce((p_snapshot->>'salary_base')::numeric,0),updated_at=now() where id=v_inv.id;\n return jsonb_build_object('id',v_inv.id,'created',v_new,'total',v_total,'line_count',(select count(*) from public.invoice_lines where invoice_id=v_inv.id));\nend $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_central_statistics_update",
+      "args": "p_actor uuid, p_worker uuid, p_action text, p_payload jsonb, p_operation uuid",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_central_statistics_update(p_actor uuid, p_worker uuid, p_action text, p_payload jsonb, p_operation uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\ndeclare prior central_statistics_operations; result jsonb; cfg central_work_config_versions; at_time timestamptz:=clock_timestamp();\n today date:=(clock_timestamp() at time zone 'America/Guayaquil')::date; month_start date; day date; requested date[]; existing date[]; delta integer;\nbegin\n if not exists(select 1 from workers where id=p_actor and role='admin' and is_active=true) then raise exception 'FORBIDDEN'; end if;\n if not exists(select 1 from workers where id=p_worker and role in ('central','admin') and is_active=true) then raise exception 'WORKER_NOT_FOUND'; end if;\n if p_operation is null or p_payload is null or jsonb_typeof(p_payload)<>'object' then raise exception 'INVALID_PAYLOAD'; end if;\n perform pg_advisory_xact_lock(hashtextextended('central-statistics:'||p_worker::text,0));\n select * into prior from central_statistics_operations where id=p_operation;\n if found then\n  if prior.worker_id<>p_worker or prior.actor_id<>p_actor or prior.action<>p_action or prior.payload<>p_payload then raise exception 'OPERATION_CONFLICT'; end if;\n  return prior.result||jsonb_build_object('duplicate_prevented',true);\n end if;\n if p_action='settings' then\n  if not (p_payload ?& array['monthly_salary_eur','overtime_hourly_rate_eur','weekday_start','weekday_end','weekend_start','weekend_end']) then raise exception 'INVALID_SETTINGS'; end if;\n  if (p_payload->>'monthly_salary_eur')::numeric<0 or (p_payload->>'monthly_salary_eur')::numeric>100000\n     or (p_payload->>'overtime_hourly_rate_eur')::numeric<0 or (p_payload->>'overtime_hourly_rate_eur')::numeric>10000 then raise exception 'INVALID_RATE'; end if;\n  insert into central_work_config_versions(worker_id,effective_from,monthly_salary_eur,overtime_hourly_rate_eur,weekday_start,weekday_end,weekend_start,weekend_end,created_by,reason)\n  values(p_worker,at_time,(p_payload->>'monthly_salary_eur')::numeric,(p_payload->>'overtime_hourly_rate_eur')::numeric,\n   nullif(p_payload->>'weekday_start','')::time,nullif(p_payload->>'weekday_end','')::time,\n   (p_payload->>'weekend_start')::time,(p_payload->>'weekend_end')::time,p_actor,'Cambio administrativo; válido desde este instante.') returning * into cfg;\n  result:=jsonb_build_object('ok',true,'version_id',cfg.id,'effective_from',cfg.effective_from);\n elsif p_action='weekends' then\n  if coalesce(p_payload->>'month','') !~ '^\\d{4}-(0[1-9]|1[0-2])$' or jsonb_typeof(p_payload->'days')<>'array' or jsonb_array_length(p_payload->'days')>10 then raise exception 'INVALID_WEEKENDS'; end if;\n  month_start:=((p_payload->>'month')||'-01')::date;\n  if month_start<date_trunc('month',today)::date or month_start>today+interval '1 year' then raise exception 'INVALID_MONTH'; end if;\n  select coalesce(array_agg(distinct value::date),'{}'::date[]) into requested from jsonb_array_elements_text(p_payload->'days');\n  if exists(select 1 from unnest(requested) d where d<=today or date_trunc('month',d)::date<>month_start or extract(isodow from d) not in (6,7)) then raise exception 'ONLY_FUTURE_WEEKEND_DATES'; end if;\n  select * into cfg from central_work_config_versions where worker_id=p_worker order by effective_from desc,id desc limit 1;\n  if not found then raise exception 'CONFIG_REQUIRED'; end if;\n  -- Consider adjacent months too; Saturday and Sunday can straddle a boundary.\n  if exists(with latest as(select distinct on(work_date) work_date,is_working from central_workday_overrides where worker_id=p_worker order by work_date,created_at desc,id desc),\n   chosen as(select unnest(requested) d union select work_date from latest where is_working and (date_trunc('month',work_date)::date<>month_start or work_date<=today) and extract(isodow from work_date) in (6,7))\n   select 1 from chosen group by date_trunc('week',d) having count(*)>1) then raise exception 'ONE_WEEKEND_DAY_PER_WEEK'; end if;\n  select coalesce(array_agg(work_date),'{}'::date[]) into existing from (select distinct on(work_date) work_date,is_working from central_workday_overrides where worker_id=p_worker and work_date>today and date_trunc('month',work_date)::date=month_start order by work_date,created_at desc,id desc) x where is_working;\n  foreach day in array existing loop\n   if not(day=any(requested)) then insert into central_workday_overrides(worker_id,work_date,is_working,created_by) values(p_worker,day,false,p_actor); end if;\n  end loop;\n  foreach day in array requested loop\n   insert into central_workday_overrides(worker_id,work_date,is_working,start_time,end_time,created_by) values(p_worker,day,true,cfg.weekend_start,cfg.weekend_end,p_actor);\n  end loop;\n  result:=jsonb_build_object('ok',true,'days',to_jsonb(requested));\n elsif p_action='adjustment' then\n  if coalesce(p_payload->>'date','') !~ '^\\d{4}-\\d{2}-\\d{2}$' then raise exception 'INVALID_DATE'; end if;\n  day:=(p_payload->>'date')::date;delta:=(p_payload->>'minutes')::integer;\n  if day>today or day<(select (activated_at at time zone 'America/Guayaquil')::date from central_statistics_activation where singleton)\n     then raise exception 'OUTSIDE_RECORDED_PERIOD'; end if;\n  if delta=0 or abs(delta)>1440 or p_payload->>'category' not in ('ordinary','outside_schedule') or length(btrim(coalesce(p_payload->>'reason',''))) not between 5 and 2000 then raise exception 'INVALID_ADJUSTMENT'; end if;\n  if coalesce((select sum(minutes) from central_time_adjustments where worker_id=p_worker and work_date=day and category=p_payload->>'category'),0)\n     <>coalesce((p_payload->>'expected_category_adjustment')::integer,0) then raise exception 'ADJUSTMENT_CHANGED'; end if;\n  if coalesce((select sum(minutes) from central_time_adjustments where worker_id=p_worker and work_date=day),0)\n     <>coalesce((p_payload->>'expected_total_adjustment')::integer,0) then raise exception 'ADJUSTMENT_CHANGED'; end if;\n  if coalesce((p_payload->>'category_recorded_minutes')::numeric,0)+delta<0 then raise exception 'NEGATIVE_RECORDED_HOURS'; end if;\n  if coalesce((p_payload->>'total_recorded_minutes')::numeric,0)+delta>1440 then raise exception 'INVALID_DAILY_HOURS'; end if;\n  select * into cfg from central_work_config_versions where worker_id=p_worker and effective_from<least(at_time,(day+1)::timestamp at time zone 'America/Guayaquil') order by effective_from desc,id desc limit 1;\n  insert into central_time_adjustments(id,worker_id,work_date,minutes,category,reason,created_by,hourly_rate_eur)\n   values(p_operation,p_worker,day,delta,p_payload->>'category',btrim(p_payload->>'reason'),p_actor,cfg.overtime_hourly_rate_eur);\n  result:=jsonb_build_object('ok',true,'adjustment_id',p_operation);\n else raise exception 'UNKNOWN_ACTION'; end if;\n insert into central_statistics_operations(id,worker_id,actor_id,action,payload,result) values(p_operation,p_worker,p_actor,p_action,p_payload,result);\n return result;\nend $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "staff_chat_mark_read",
+      "args": "p_worker_id uuid, p_thread_id uuid, p_through_message_id uuid",
+      "definition": "CREATE OR REPLACE FUNCTION public.staff_chat_mark_read(p_worker_id uuid, p_thread_id uuid, p_through_message_id uuid)\n RETURNS timestamp with time zone\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\r\ndeclare\r\n  v_role text;\r\n  v_message_at timestamptz;\r\n  v_read_at timestamptz;\r\nbegin\r\n  select w.role into v_role from public.workers w\r\n    where w.id=p_worker_id and w.is_active and w.role in ('admin','central','tarotista') for share;\r\n  if not found then raise exception 'FORBIDDEN'; end if;\r\n  perform 1 from public.chat_threads t where t.id=p_thread_id\r\n    and (v_role='admin' or p_worker_id=t.central_worker_id or p_worker_id=t.tarotist_worker_id) for share;\r\n  if not found then raise exception 'FORBIDDEN'; end if;\r\n  select m.created_at into v_message_at from public.chat_messages m\r\n    where m.id=p_through_message_id and m.thread_id=p_thread_id;\r\n  if not found then raise exception 'MESSAGE_NOT_FOUND'; end if;\r\n  if v_message_at>clock_timestamp() then raise exception 'INVALID_MESSAGE_TIMESTAMP'; end if;\r\n  insert into public.chat_thread_reads as r(thread_id,worker_id,last_read_at,updated_at)\r\n    values(p_thread_id,p_worker_id,v_message_at,clock_timestamp())\r\n    on conflict on constraint chat_thread_reads_pkey do update\r\n      set last_read_at=greatest(r.last_read_at,excluded.last_read_at),\r\n        updated_at=case when excluded.last_read_at>r.last_read_at then excluded.updated_at else r.updated_at end\r\n    returning last_read_at into v_read_at;\r\n  return v_read_at;\r\nend;\r\n$function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "staff_chat_latest_incoming",
+      "args": "p_worker_id uuid, p_thread_ids uuid[]",
+      "definition": "CREATE OR REPLACE FUNCTION public.staff_chat_latest_incoming(p_worker_id uuid, p_thread_ids uuid[])\n RETURNS TABLE(id uuid, thread_id uuid, sender_worker_id uuid, sender_display_name text, text text, created_at timestamp with time zone)\n LANGUAGE sql\n STABLE\n SET search_path TO ''\nAS $function$\r\n  select distinct on (m.thread_id) m.id,m.thread_id,m.sender_worker_id,\r\n    coalesce(m.sender_display_name,''),m.body,m.created_at\r\n  from public.chat_messages m\r\n  join public.chat_threads t on t.id=m.thread_id\r\n  join public.workers w on w.id=p_worker_id and w.is_active\r\n    and w.role in ('admin','central','tarotista')\r\n  where m.thread_id=any(p_thread_ids) and m.sender_worker_id<>p_worker_id\r\n    and (w.role='admin' or w.id=t.central_worker_id or w.id=t.tarotist_worker_id)\r\n  order by m.thread_id,m.created_at desc,m.id desc;\r\n$function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "staff_chat_send_media_message",
+      "args": "p_worker_id uuid, p_thread_id uuid, p_client_message_id text, p_body text, p_attachment_id uuid",
+      "definition": "CREATE OR REPLACE FUNCTION public.staff_chat_send_media_message(p_worker_id uuid, p_thread_id uuid, p_client_message_id text, p_body text, p_attachment_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\ndeclare w public.workers%rowtype; t public.chat_threads%rowtype;\n a public.staff_chat_attachments%rowtype; m public.chat_messages%rowtype;\n saved_attachment uuid; duplicate boolean:=false;\nbegin\n select * into w from public.workers where id=p_worker_id and is_active is true and role in ('central','tarotista','admin');\n if w.id is null then raise exception 'FORBIDDEN'; end if;\n select * into t from public.chat_threads where id=p_thread_id;\n if t.id is null then raise exception 'THREAD_NOT_FOUND'; end if;\n if w.role<>'admin' and w.id is distinct from t.central_worker_id and w.id is distinct from t.tarotist_worker_id then raise exception 'FORBIDDEN'; end if;\n if p_attachment_id is null or length(btrim(coalesce(p_client_message_id,''))) not between 1 and 128\n    or length(btrim(coalesce(p_body,''))) not between 1 and 2000 then raise exception 'INVALID_MESSAGE'; end if;\n perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(p_worker_id::text||':'||p_client_message_id,0));\n select * into m from public.chat_messages where sender_worker_id=p_worker_id and client_message_id=p_client_message_id;\n if found then\n  select id into saved_attachment from public.staff_chat_attachments where message_id=m.id;\n  if m.thread_id<>p_thread_id or m.body<>p_body or saved_attachment is distinct from p_attachment_id then raise exception 'MESSAGE_ID_CONFLICT'; end if;\n  duplicate:=true;\n else\n  select * into a from public.staff_chat_attachments where id=p_attachment_id for update;\n  if a.id is null then raise exception 'ATTACHMENT_NOT_FOUND'; end if;\n  if a.sender_worker_id<>p_worker_id or a.thread_id<>p_thread_id then raise exception 'FORBIDDEN'; end if;\n  if a.message_id is not null then raise exception 'ATTACHMENT_ALREADY_USED'; end if;\n  if a.validated_at is null then raise exception 'ATTACHMENT_NOT_UPLOADED'; end if;\n  insert into public.chat_messages(thread_id,sender_worker_id,sender_display_name,body,client_message_id)\n   values(p_thread_id,p_worker_id,w.display_name,p_body,p_client_message_id) returning * into m;\n  update public.staff_chat_attachments set message_id=m.id where id=a.id;\n  update public.chat_threads set last_message_at=m.created_at,last_message_preview=left(m.body,180),status='open'\n   where id=p_thread_id and (last_message_at is null or last_message_at<=m.created_at);\n end if;\n return jsonb_build_object('message',to_jsonb(m),'duplicate',duplicate);\nend $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_save_roulette_config",
+      "args": "p_actor uuid, p_data jsonb",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_save_roulette_config(p_actor uuid, p_data jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare action text:=p_data->>'action'; cid uuid:=nullif(p_data->>'campaign_id','')::uuid;\r\n rid uuid:=nullif(p_data->>'id','')::uuid; before_row jsonb; after_row jsonb; n integer; lvl smallint;\r\n total numeric; items jsonb:=p_data->'probabilities';\r\nbegin\r\n if not exists(select 1 from workers where user_id=p_actor and role='admin' and is_active is distinct from false) then raise exception 'ADMIN_REQUIRED'; end if;\r\n perform pg_advisory_xact_lock(hashtext('tc_roulette_config'));\r\n if action='create_campaign' then\r\n   insert into tc_client_roulette_campaigns(name,title,subtitle,status,active_until_disabled,created_by,updated_at)\r\n   values(coalesce(nullif(p_data->>'name',''),'Nueva Ruleta'),coalesce(nullif(p_data->>'title',''),'Ruleta Celestial'),p_data->>'subtitle','draft',true,p_actor,now())\r\n   returning id,to_jsonb(tc_client_roulette_campaigns.*) into cid,after_row;\r\n elsif action in ('save_campaign','activate_campaign') then\r\n   cid:=rid; select to_jsonb(c) into before_row from tc_client_roulette_campaigns c where id=cid for update;\r\n   if before_row is null then raise exception 'CAMPAIGN_NOT_FOUND'; end if;\r\n   if action='activate_campaign' then\r\n     update tc_client_roulette_campaigns set status='inactive',updated_at=now() where status='active' and id<>cid;\r\n     update tc_client_roulette_campaigns set status='active',starts_at=now(),ends_at=null,active_until_disabled=true,updated_at=now() where id=cid returning to_jsonb(tc_client_roulette_campaigns.*) into after_row;\r\n   else\r\n     if nullif(btrim(p_data->>'name'),'') is null or nullif(btrim(p_data->>'title'),'') is null or p_data->>'status' not in ('draft','scheduled','active','inactive','finished','archived') then raise exception 'INVALID_CAMPAIGN'; end if;\r\n     if nullif(p_data->>'ends_at','')::timestamptz<=nullif(p_data->>'starts_at','')::timestamptz then raise exception 'INVALID_DATES'; end if;\r\n     if p_data->>'status'='active' then update tc_client_roulette_campaigns set status='inactive',updated_at=now() where status='active' and id<>cid; end if;\r\n     update tc_client_roulette_campaigns set name=left(p_data->>'name',120),title=left(p_data->>'title',160),subtitle=left(p_data->>'subtitle',300),\r\n      status=p_data->>'status',starts_at=nullif(p_data->>'starts_at','')::timestamptz,\r\n      ends_at=case when (p_data->>'active_until_disabled')::boolean then null else nullif(p_data->>'ends_at','')::timestamptz end,\r\n      active_until_disabled=(p_data->>'active_until_disabled')::boolean,diamond_enabled=(p_data->>'diamond_enabled')::boolean,\r\n      diamond_rank=p_data->>'diamond_rank',updated_at=now() where id=cid returning to_jsonb(tc_client_roulette_campaigns.*) into after_row;\r\n   end if;\r\n elsif action='save_reward' then\r\n   lvl:=(p_data->>'nivel')::smallint;\r\n   if cid is null or lvl not between 1 and 5 or nullif(btrim(p_data->>'name'),'') is null\r\n      or p_data->>'reward_type' not in ('minutes','coins','oracle_credits','rank','ritual','streak_minutes','perk')\r\n      or p_data->>'rarity' not in ('common','uncommon','rare','epic','legendary','ultra','diamond','jackpot')\r\n      or p_data->>'fulfillment_mode' not in ('immediate','temporary','manual','claim','scheduled')\r\n      or (p_data->>'weight')::numeric<0 or (p_data->>'reward_value')::numeric<0 then raise exception 'INVALID_REWARD'; end if;\r\n   if p_data->>'reward_type' in ('coins','minutes','oracle_credits') and ((p_data->>'reward_value')::numeric<>trunc((p_data->>'reward_value')::numeric) or (p_data->>'reward_value')::numeric<1) then raise exception 'REWARD_VALUE_MUST_BE_POSITIVE_INTEGER'; end if;\r\n   if rid is not null then select to_jsonb(r) into before_row from tc_client_roulette_rewards r where id=rid for update; end if;\r\n   rid:=coalesce(rid,gen_random_uuid());\r\n   insert into tc_client_roulette_rewards(id,campaign_id,nivel,name,description,reward_type,reward_value,rarity,weight,special,fulfillment_mode,icon_key,metadata,is_active,sort_order,updated_at)\r\n   values(rid,cid,lvl,left(p_data->>'name',140),left(p_data->>'description',500),p_data->>'reward_type',(p_data->>'reward_value')::numeric,\r\n      p_data->>'rarity',(p_data->>'weight')::numeric,coalesce((p_data->>'special')::boolean,false),p_data->>'fulfillment_mode',left(p_data->>'icon_key',50),\r\n      coalesce(p_data->'metadata','{}'),coalesce((p_data->>'is_active')::boolean,true),coalesce((p_data->>'sort_order')::integer,0),now())\r\n   on conflict(id) do update set campaign_id=excluded.campaign_id,nivel=excluded.nivel,name=excluded.name,description=excluded.description,\r\n      reward_type=excluded.reward_type,reward_value=excluded.reward_value,rarity=excluded.rarity,weight=excluded.weight,special=excluded.special,\r\n      fulfillment_mode=excluded.fulfillment_mode,icon_key=excluded.icon_key,metadata=excluded.metadata,is_active=excluded.is_active,sort_order=excluded.sort_order,updated_at=now()\r\n   returning to_jsonb(tc_client_roulette_rewards.*) into after_row;\r\n elsif action='save_probabilities' then\r\n   lvl:=(p_data->>'nivel')::smallint;\r\n   if cid is null or lvl not between 1 and 5 or jsonb_typeof(items)<>'array' then raise exception 'INVALID_PROBABILITIES'; end if;\r\n   select count(*),sum((x->>'probability')::numeric) into n,total from jsonb_array_elements(items) x;\r\n   if n=0 or abs(total-100)>0.00001 or exists(select 1 from jsonb_array_elements(items) x where (x->>'probability')::numeric<0 or (x->>'probability')::numeric>100)\r\n     or n<>(select count(distinct x->>'id') from jsonb_array_elements(items) x)\r\n     or n<>(select count(*) from tc_client_roulette_rewards where campaign_id=cid and nivel=lvl and is_active)\r\n     or n<>(select count(*) from tc_client_roulette_rewards r join jsonb_array_elements(items) x on r.id=(x->>'id')::uuid where r.campaign_id=cid and r.nivel=lvl and r.is_active) then raise exception 'PROBABILITIES_MUST_COVER_ALL_ACTIVE_REWARDS_AND_SUM_100'; end if;\r\n   select jsonb_agg(to_jsonb(r)) into before_row from tc_client_roulette_rewards r where campaign_id=cid and nivel=lvl;\r\n   update tc_client_roulette_rewards r set weight=(x->>'probability')::numeric,updated_at=now() from jsonb_array_elements(items) x where r.id=(x->>'id')::uuid;\r\n   after_row:=jsonb_build_object('nivel',lvl,'probabilities',items);\r\n elsif action in ('toggle_reward','delete_reward') then\r\n   select to_jsonb(r),campaign_id into before_row,cid from tc_client_roulette_rewards r where id=rid for update;\r\n   if before_row is null then raise exception 'REWARD_NOT_FOUND'; end if;\r\n   if action='toggle_reward' then update tc_client_roulette_rewards set is_active=(p_data->>'is_active')::boolean,updated_at=now() where id=rid returning to_jsonb(tc_client_roulette_rewards.*) into after_row;\r\n   elsif exists(select 1 from cliente_ruleta_giros where reward_id=rid::text) then update tc_client_roulette_rewards set is_active=false,updated_at=now() where id=rid returning to_jsonb(tc_client_roulette_rewards.*) into after_row;\r\n   else delete from tc_client_roulette_rewards where id=rid; end if;\r\n elsif action='complete_entitlement' then\r\n   select to_jsonb(e),campaign_id into before_row,cid from tc_client_roulette_entitlements e where id=rid for update;\r\n   if before_row is null then raise exception 'BENEFIT_NOT_FOUND'; end if;\r\n   update tc_client_roulette_entitlements set status='completed',updated_at=now() where id=rid returning to_jsonb(tc_client_roulette_entitlements.*) into after_row;\r\n else raise exception 'INVALID_ACTION'; end if;\r\n insert into tc_client_roulette_audit(campaign_id,reward_id,actor_user_id,action,snapshot)\r\n values(cid,case when action in ('save_reward','toggle_reward') then rid end,p_actor,action,jsonb_build_object('before',before_row,'after',after_row));\r\n insert into tc_client_benefit_audit(actor_user_id,action,entity,entity_id,before_data,after_data)\r\n values(p_actor,action,'roulette_config',coalesce(rid,cid)::text,before_row,after_row);\r\nend $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_save_rank_benefit_config",
+      "args": "p_actor uuid, p_action text, p_data jsonb",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_save_rank_benefit_config(p_actor uuid, p_action text, p_data jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare r public.tc_client_rank_benefits%rowtype; b public.tc_client_purchase_bands%rowtype; promo public.tc_client_promotions%rowtype;\r\n  v_id uuid; before_row jsonb; after_row jsonb; rev integer;\r\nbegin\r\n  if not exists(select 1 from public.workers where user_id=p_actor and role='admin' and is_active is distinct from false) then raise exception 'ADMIN_REQUIRED'; end if;\r\n  perform set_config('tc.benefit_actor',p_actor::text,true);\r\n  if p_action='rank' then\r\n    select * into r from public.tc_client_rank_benefits where rank_key=p_data->>'rank_key' for update;\r\n    if r.rank_key is not null and r.revision<>coalesce((p_data->>'revision')::integer,0) then raise exception 'CONFIG_CONFLICT'; end if;\r\n    insert into public.tc_client_rank_benefits(rank_key,label,min_spend,sort_order,is_active,coins_enabled,purchase_coins,roulette_enabled,roulette_level,roulette_spins,daily_bonus_enabled,revision,updated_by)\r\n    values(p_data->>'rank_key',p_data->>'label',(p_data->>'min_spend')::numeric,coalesce((p_data->>'sort_order')::integer,0),\r\n      (p_data->>'is_active')::boolean,(p_data->>'coins_enabled')::boolean,(p_data->>'purchase_coins')::integer,\r\n      (p_data->>'roulette_enabled')::boolean,(p_data->>'roulette_level')::smallint,(p_data->>'roulette_spins')::integer,\r\n      (p_data->>'daily_bonus_enabled')::boolean,coalesce(r.revision,0)+1,p_actor)\r\n    on conflict(rank_key) do update set label=excluded.label,min_spend=excluded.min_spend,sort_order=excluded.sort_order,is_active=excluded.is_active,\r\n      coins_enabled=excluded.coins_enabled,purchase_coins=excluded.purchase_coins,roulette_enabled=excluded.roulette_enabled,\r\n      roulette_level=excluded.roulette_level,roulette_spins=excluded.roulette_spins,daily_bonus_enabled=excluded.daily_bonus_enabled,\r\n      revision=excluded.revision,updated_by=p_actor,updated_at=now() returning to_jsonb(tc_client_rank_benefits.*) into after_row;\r\n  elsif p_action='band' then\r\n    perform pg_advisory_xact_lock(hashtext('tc_purchase_bands'));\r\n    v_id:=coalesce(nullif(p_data->>'id','')::uuid,gen_random_uuid());\r\n    select * into b from public.tc_client_purchase_bands where tc_client_purchase_bands.id=v_id for update;\r\n    if b.id is not null and b.revision<>coalesce((p_data->>'revision')::integer,0) then raise exception 'CONFIG_CONFLICT'; end if;\r\n    insert into public.tc_client_purchase_bands(id,currency,min_amount,max_amount,roulette_level,spins,is_active,revision,updated_by)\r\n    values(v_id,p_data->>'currency',(p_data->>'min_amount')::numeric,nullif(p_data->>'max_amount','')::numeric,(p_data->>'roulette_level')::smallint,\r\n      (p_data->>'spins')::integer,(p_data->>'is_active')::boolean,coalesce(b.revision,0)+1,p_actor)\r\n    on conflict(id) do update set currency=excluded.currency,min_amount=excluded.min_amount,max_amount=excluded.max_amount,\r\n      roulette_level=excluded.roulette_level,spins=excluded.spins,is_active=excluded.is_active,revision=excluded.revision,updated_by=p_actor,updated_at=now()\r\n    returning to_jsonb(tc_client_purchase_bands.*) into after_row;\r\n  elsif p_action='bonus' then\r\n    v_id:=coalesce(nullif(p_data->>'id','')::uuid,gen_random_uuid());\r\n    select * into promo from public.tc_client_promotions where tc_client_promotions.id=v_id for update;\r\n    if promo.id is not null and (promo.promotion_kind<>'rank_bonus' or promo.benefit_revision<>coalesce((p_data->>'benefit_revision')::integer,0)) then raise exception 'CONFIG_CONFLICT'; end if;\r\n    if p_data->>'status' not in ('active','inactive','draft','scheduled') then raise exception 'INVALID_STATUS'; end if;\r\n    if (p_data->>'ends_at')::timestamptz<=(p_data->>'starts_at')::timestamptz then raise exception 'INVALID_DATES'; end if;\r\n    if coalesce((p_data->'benefit'->>'coins')::integer,0)<0 or coalesce((p_data->'benefit'->>'minutes')::integer,0)<0 or coalesce((p_data->'benefit'->>'oracle_credits')::integer,0)<0\r\n      or coalesce((p_data->'benefit'->>'coins')::integer,0)+coalesce((p_data->'benefit'->>'minutes')::integer,0)+coalesce((p_data->'benefit'->>'oracle_credits')::integer,0)<=0 then raise exception 'BONUS_INVALID'; end if;\r\n    before_row:=case when promo.id is not null then to_jsonb(promo) end;\r\n    insert into public.tc_client_promotions(id,name,description,status,starts_at,ends_at,active_until_disabled,promotion_kind,authorized_rank,image_url,benefit,max_uses_per_client,benefit_revision,created_by,updated_at)\r\n    values(v_id,p_data->>'name',p_data->>'description',p_data->>'status',nullif(p_data->>'starts_at','')::timestamptz,nullif(p_data->>'ends_at','')::timestamptz,\r\n      coalesce((p_data->>'active_until_disabled')::boolean,false),'rank_bonus',p_data->>'authorized_rank',nullif(p_data->>'image_url',''),\r\n      p_data->'benefit',coalesce((p_data->>'max_uses_per_client')::integer,1),coalesce(promo.benefit_revision,0)+1,p_actor,now())\r\n    on conflict(id) do update set name=excluded.name,description=excluded.description,status=excluded.status,starts_at=excluded.starts_at,ends_at=excluded.ends_at,\r\n      active_until_disabled=excluded.active_until_disabled,authorized_rank=excluded.authorized_rank,image_url=excluded.image_url,\r\n      benefit=excluded.benefit,max_uses_per_client=excluded.max_uses_per_client,benefit_revision=excluded.benefit_revision,updated_at=now()\r\n    returning to_jsonb(tc_client_promotions.*) into after_row;\r\n    insert into public.tc_client_benefit_audit(actor_user_id,action,entity,entity_id,before_data,after_data)\r\n      values(p_actor,'bonus_saved','tc_client_promotions',v_id::text,before_row,after_row);\r\n    insert into public.tc_client_promotion_audit(promotion_id,action,actor_user_id,snapshot) values(v_id,'rank_bonus_saved',p_actor,after_row);\r\n  else raise exception 'INVALID_ACTION'; end if;\r\n  return after_row;\r\nend $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_save_benefit_rule",
+      "args": "p_rule jsonb, p_actor uuid, p_expected_revision integer",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_save_benefit_rule(p_rule jsonb, p_actor uuid, p_expected_revision integer)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\ndeclare r public.client_benefit_rules%rowtype; old_r public.client_benefit_rules%rowtype; v_id uuid;\nbegin\n if not exists(select 1 from public.workers where id=p_actor and lower(role) in ('admin','ceo','supervisor') and coalesce(is_active,true)) then raise exception 'FORBIDDEN'; end if;\n perform pg_catalog.pg_advisory_xact_lock(872191);\n v_id := coalesce(nullif(p_rule->>'id','')::uuid,gen_random_uuid());\n select * into old_r from public.client_benefit_rules where id=v_id for update;\n if old_r.id is not null and old_r.revision is distinct from p_expected_revision then raise exception 'RULE_CHANGED_RELOAD'; end if;\n select * into r from jsonb_populate_record(null::public.client_benefit_rules,\n   jsonb_build_object('id',v_id,'name','','description','','event','purchase','claim_mode','automatic','scope','regular','currency','EUR','min_amount',0,'mode','add','priority',0,'sort_order',0,'active',false,'starts_at',now()) || p_rule);\n r.id:=v_id; r.revision:=coalesce(old_r.revision,0)+1; r.created_at:=coalesce(old_r.created_at,now()); r.updated_at:=now();\n if r.active and r.archived_at is null and r.event='purchase' and exists(\n  select 1 from public.client_benefit_rules b where b.id<>r.id and b.active and b.archived_at is null and b.event='purchase'\n   and b.currency=r.currency and (b.rank is null or r.rank is null or b.rank=r.rank) and b.priority=r.priority\n   and (b.scope=r.scope or b.scope='all' or r.scope='all')\n   and numrange(b.min_amount,b.max_amount,'(]') && numrange(r.min_amount,r.max_amount,'(]')\n   and tstzrange(b.starts_at,b.ends_at,'[)') && tstzrange(r.starts_at,r.ends_at,'[)')\n ) then raise exception 'OVERLAPPING_RULE_SET_DISTINCT_PRIORITY'; end if;\n insert into public.client_benefit_rules select r.* on conflict(id) do update set\n name=excluded.name,description=excluded.description,rank=excluded.rank,event=excluded.event,claim_mode=excluded.claim_mode,\n scope=excluded.scope,currency=excluded.currency,min_amount=excluded.min_amount,max_amount=excluded.max_amount,mode=excluded.mode,\n coins=excluded.coins,coins_rate=excluded.coins_rate,free_minutes=excluded.free_minutes,oracle_credits=excluded.oracle_credits,\n roulette_spins=excluded.roulette_spins,roulette_level=excluded.roulette_level,priority=excluded.priority,sort_order=excluded.sort_order,\n active=excluded.active,starts_at=excluded.starts_at,ends_at=excluded.ends_at,archived_at=excluded.archived_at,revision=excluded.revision,updated_at=excluded.updated_at;\n insert into public.client_benefit_rule_audit(rule_id,actor_id,before_value,after_value) values(v_id,p_actor,case when old_r.id is null then null else to_jsonb(old_r) end,to_jsonb(r));\n return to_jsonb(r);\nend $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "schema": "public",
+      "name": "tc_recovery_act",
+      "args": "p_user uuid, p_client uuid, p_action text, p_version integer, p_payment uuid, p_note text",
+      "definition": "CREATE OR REPLACE FUNCTION public.tc_recovery_act(p_user uuid, p_client uuid, p_action text, p_version integer, p_payment uuid DEFAULT NULL::uuid, p_note text DEFAULT ''::text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\r\ndeclare actor workers; r crm_client_recovery; payment crm_cliente_pagos; next_status text; client_name text;\r\nbegin\r\n select * into actor from workers where user_id=p_user and role in ('central','admin') and is_active is distinct from false order by case when role='central' then 0 else 1 end,id limit 1;\r\n if actor.id is null then raise exception 'FORBIDDEN'; end if;\r\n if p_action not in ('contacted','no_response','recycled','recovered','restore') then raise exception 'INVALID_ACTION'; end if;\r\n select nombre into client_name from tc_recovery_candidates where id=p_client and eligible;\r\n if not found then raise exception 'NOT_ELIGIBLE'; end if;\r\n insert into crm_client_recovery(client_id) values(p_client) on conflict do nothing;\r\n select * into r from crm_client_recovery where client_id=p_client for update;\r\n if r.status='recovered' then return jsonb_build_object('status','recovered','already_recovered',true,'xp',75); end if;\r\n if r.version<>p_version then raise exception 'STALE_VERSION'; end if;\r\n if r.responsible_id is not null and r.responsible_id<>actor.id and actor.role<>'admin' and p_action not in ('recovered') then raise exception 'OTHER_OWNER'; end if;\r\n if r.status='recycled' and p_action not in ('restore','recovered') then raise exception 'RESTORE_FIRST'; end if;\r\n if p_action='restore' and r.status<>'recycled' then raise exception 'INVALID_ACTION'; end if;\r\n next_status:=case when p_action='restore' then case when r.contacted_at is null then 'pending' else 'contacted' end else p_action end;\r\n if p_action in ('contacted','no_response') then\r\n  r.contacted_at:=coalesce(r.contacted_at,now()); r.responsible_id:=coalesce(r.responsible_id,actor.id);\r\n end if;\r\n if p_action='recovered' then\r\n  if r.contacted_at is null or r.responsible_id is null then raise exception 'CONTACT_FIRST'; end if;\r\n  select * into payment from crm_cliente_pagos where id=p_payment and cliente_id=p_client and estado='completed' and importe>0 and created_at>=r.contacted_at and created_at<=now() for update;\r\n  if not found then raise exception 'PAYMENT_REQUIRED'; end if;\r\n  insert into worker_xp_events(worker_id,action_key,xp_amount,reference_id,reference_label,origin,status,metadata,created_by_worker_id)\r\n  values(r.responsible_id,'client_recovery',75,'client_recovery:'||p_client,'Cliente recuperado: '||client_name,'client_recovery','applied',jsonb_build_object('client_id',p_client,'payment_id',p_payment,'confirmed_by',actor.id),actor.id);\r\n end if;\r\n update crm_client_recovery set status=next_status,responsible_id=r.responsible_id,contacted_at=r.contacted_at,\r\n updated_at=now(),version=version+1,recovered_at=case when p_action='recovered' then now() else recovered_at end,\r\n payment_id=case when p_action='recovered' then p_payment else payment_id end,\r\n purchase_amount=case when p_action='recovered' then payment.importe else purchase_amount end,\r\n xp=case when p_action='recovered' then 75 else xp end where client_id=p_client;\r\n insert into crm_client_recovery_history(client_id,actor_id,status,note) values(p_client,actor.id,next_status,nullif(left(trim(p_note),1000),''));\r\n return jsonb_build_object('status',next_status,'xp',case when p_action='recovered' then 75 else 0 end);\r\nend $function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    }
+  ],
+  "policies": [
+    {
+      "schemaname": "public",
+      "tablename": "billing_collaborators",
+      "policyname": "billing_collaborators_admin_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = 'admin'::text) AND (COALESCE(w.is_active, true) = true))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "billing_collaborator_report_exclusions",
+      "policyname": "billing_collaborator_report_exclusions_admin_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = 'admin'::text) AND (COALESCE(w.is_active, true) = true))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "billing_collaborator_report_exclusions",
+      "policyname": "billing_collaborator_report_exclusions_admin_insert",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = 'admin'::text) AND (COALESCE(w.is_active, true) = true) AND ((w.id)::text = billing_collaborator_report_exclusions.deleted_by_worker_id))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "crm_client_followups",
+      "policyname": "followups_select_authorized_workers",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = ANY (ARRAY['admin'::text, 'central'::text])) AND ((w.role = 'admin'::text) OR (w.role = 'central'::text)))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "crm_client_followups",
+      "policyname": "followups_update_authorized_workers",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "UPDATE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = ANY (ARRAY['admin'::text, 'central'::text])) AND ((w.role = 'admin'::text) OR (w.id = crm_client_followups.worker_id)))))",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = ANY (ARRAY['admin'::text, 'central'::text])) AND ((w.role = 'admin'::text) OR (w.id = crm_client_followups.worker_id)))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "client_rank_overrides",
+      "policyname": "client_rank_overrides_admin_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (lower(w.role) = ANY (ARRAY['admin'::text, 'ceo'::text, 'supervisor'::text])) AND (COALESCE(w.is_active, true) = true))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "client_rank_override_audit",
+      "policyname": "client_rank_override_audit_admin_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (lower(w.role) = ANY (ARRAY['admin'::text, 'ceo'::text, 'supervisor'::text])) AND (COALESCE(w.is_active, true) = true))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "crm_client_followups",
+      "policyname": "crm_client_followups_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND ((w.role = ANY (ARRAY['admin'::text, 'ceo'::text, 'supervisor'::text])) OR ((w.role = 'central'::text) AND (EXISTS ( SELECT 1\n           FROM crm_clientes c\n          WHERE ((c.id = crm_client_followups.client_id) AND ((c.captured_by_worker_id IS NULL) OR (c.captured_by_worker_id = w.id))))))))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "crm_client_followups",
+      "policyname": "crm_client_followups_insert",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.id = crm_client_followups.worker_id) AND ((w.role = ANY (ARRAY['admin'::text, 'ceo'::text, 'supervisor'::text])) OR ((w.role = 'central'::text) AND (EXISTS ( SELECT 1\n           FROM crm_clientes c\n          WHERE ((c.id = crm_client_followups.client_id) AND ((c.captured_by_worker_id IS NULL) OR (c.captured_by_worker_id = w.id))))))))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "crm_client_followups",
+      "policyname": "crm_client_followups_update",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "UPDATE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND ((w.role = ANY (ARRAY['admin'::text, 'ceo'::text, 'supervisor'::text])) OR (w.id = crm_client_followups.worker_id)))))",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND ((w.role = ANY (ARRAY['admin'::text, 'ceo'::text, 'supervisor'::text])) OR (w.id = crm_client_followups.worker_id)))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "manual_invoices",
+      "policyname": "manual_invoices_admin_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (lower(COALESCE(w.role, ''::text)) = 'admin'::text) AND (COALESCE(w.is_active, true) = true))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "manual_invoice_lines",
+      "policyname": "manual_invoice_lines_admin_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "((EXISTS ( SELECT 1\n   FROM manual_invoices mi\n  WHERE (mi.id = manual_invoice_lines.invoice_id))) AND (EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (lower(COALESCE(w.role, ''::text)) = 'admin'::text) AND (COALESCE(w.is_active, true) = true)))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "manual_invoice_status_history",
+      "policyname": "manual_invoice_history_admin_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (lower(COALESCE(w.role, ''::text)) = 'admin'::text) AND (COALESCE(w.is_active, true) = true))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "central_notifications",
+      "policyname": "central_notifications_select_own",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "((recipient_worker_id IS NULL) OR (EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.id = central_notifications.recipient_worker_id) AND (w.user_id = auth.uid())))) OR (EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = ANY (ARRAY['admin'::text, 'ceo'::text, 'supervisor'::text]))))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "central_notifications",
+      "policyname": "central_notifications_update_own",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "UPDATE",
+      "qual": "((EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.id = central_notifications.recipient_worker_id) AND (w.user_id = auth.uid())))) OR (EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = ANY (ARRAY['admin'::text, 'ceo'::text, 'supervisor'::text]))))))",
+      "with_check": "true"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "captacion_leads",
+      "policyname": "captacion_leads_operational_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((COALESCE(w.user_id, w.auth_user_id) = ( SELECT auth.uid() AS uid)) AND (w.is_active = true) AND ((w.role = 'admin'::text) OR ((w.role = 'central'::text) AND ((captacion_leads.assigned_worker_id IS NULL) OR (captacion_leads.assigned_worker_id = w.id)))))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "chat_threads",
+      "policyname": "chat_threads_participant_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM current_worker() cw(worker_id, role)\n  WHERE ((cw.role = 'admin'::text) OR (cw.worker_id = chat_threads.central_worker_id) OR (cw.worker_id = chat_threads.tarotist_worker_id))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "chat_threads",
+      "policyname": "chat_threads_participant_insert",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "((central_worker_id IS NOT NULL) AND (EXISTS ( SELECT 1\n   FROM current_worker() cw(worker_id, role)\n  WHERE ((cw.role = 'admin'::text) OR (cw.worker_id = chat_threads.central_worker_id) OR (cw.worker_id = chat_threads.tarotist_worker_id)))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "chat_threads",
+      "policyname": "chat_threads_participant_update",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "UPDATE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM current_worker() cw(worker_id, role)\n  WHERE ((cw.role = 'admin'::text) OR (cw.worker_id = chat_threads.central_worker_id) OR (cw.worker_id = chat_threads.tarotist_worker_id))))",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM current_worker() cw(worker_id, role)\n  WHERE ((cw.role = 'admin'::text) OR (cw.worker_id = chat_threads.central_worker_id) OR (cw.worker_id = chat_threads.tarotist_worker_id))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "chat_messages",
+      "policyname": "chat_messages_participant_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM (chat_threads t\n     JOIN current_worker() cw(worker_id, role) ON (true))\n  WHERE ((t.id = chat_messages.thread_id) AND ((cw.role = 'admin'::text) OR (cw.worker_id = t.central_worker_id) OR (cw.worker_id = t.tarotist_worker_id)))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "chat_messages",
+      "policyname": "chat_messages_participant_insert",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "(EXISTS ( SELECT 1\n   FROM (chat_threads t\n     JOIN current_worker() cw(worker_id, role) ON (true))\n  WHERE ((t.id = chat_messages.thread_id) AND (cw.worker_id = chat_messages.sender_worker_id) AND ((cw.role = 'admin'::text) OR (cw.worker_id = t.central_worker_id) OR (cw.worker_id = t.tarotist_worker_id)))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "worker_store_claims",
+      "policyname": "admin reads store claims",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = ( SELECT auth.uid() AS uid)) AND (w.role = 'admin'::text) AND (w.is_active IS NOT FALSE))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "cliente_payment_attempts",
+      "policyname": "crm_link_staff_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "((provider = 'mollie'::text) AND (((provider_response -> 'metadata'::text) ->> 'source'::text) = 'crm_cobrador'::text) AND (EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = ( SELECT auth.uid() AS uid)) AND (w.is_active IS NOT FALSE) AND (w.role = ANY (ARRAY['admin'::text, 'central'::text])) AND ((w.role = 'admin'::text) OR ((w.id)::text = ((cliente_payment_attempts.provider_response -> 'metadata'::text) ->> 'initiated_by_worker_id'::text)))))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "welldone_tariffs",
+      "policyname": "welldone_tariffs_admin_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (lower(COALESCE(w.role, ''::text)) = 'admin'::text) AND (COALESCE(w.is_active, true) = true))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "welldone_tariffs",
+      "policyname": "welldone_tariffs_admin_insert",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (lower(COALESCE(w.role, ''::text)) = 'admin'::text) AND (COALESCE(w.is_active, true) = true))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "welldone_tariffs",
+      "policyname": "welldone_tariffs_admin_update",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "UPDATE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (lower(COALESCE(w.role, ''::text)) = 'admin'::text) AND (COALESCE(w.is_active, true) = true))))",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (lower(COALESCE(w.role, ''::text)) = 'admin'::text) AND (COALESCE(w.is_active, true) = true))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "tc_client_roulette_campaigns",
+      "policyname": "tc_roulette_campaigns_admin_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = 'admin'::text) AND (COALESCE(w.is_active, true) = true))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "tc_client_roulette_rewards",
+      "policyname": "tc_roulette_rewards_admin_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = 'admin'::text) AND (COALESCE(w.is_active, true) = true))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "tc_client_roulette_entitlements",
+      "policyname": "tc_roulette_entitlements_admin_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = 'admin'::text) AND (COALESCE(w.is_active, true) = true))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "cliente_ruleta_giros",
+      "policyname": "tc_roulette_spins_admin_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = 'admin'::text) AND (COALESCE(w.is_active, true) = true))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "accounting_entries",
+      "policyname": "finance_admin_all_accounting_entries",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "ALL",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = 'admin'::text) AND COALESCE(w.is_active, true))))",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = 'admin'::text) AND COALESCE(w.is_active, true))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "accounting_movement_options",
+      "policyname": "finance_admin_all_accounting_movement_options",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "ALL",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = 'admin'::text) AND COALESCE(w.is_active, true))))",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = 'admin'::text) AND COALESCE(w.is_active, true))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "accounting_receivables",
+      "policyname": "finance_admin_all_accounting_receivables",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "ALL",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = 'admin'::text) AND COALESCE(w.is_active, true))))",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = 'admin'::text) AND COALESCE(w.is_active, true))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "accounting_settlements",
+      "policyname": "finance_admin_all_accounting_settlements",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "ALL",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = 'admin'::text) AND COALESCE(w.is_active, true))))",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = 'admin'::text) AND COALESCE(w.is_active, true))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "accounting_audit_log",
+      "policyname": "finance_admin_all_accounting_audit_log",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "ALL",
+      "qual": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = 'admin'::text) AND COALESCE(w.is_active, true))))",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM workers w\n  WHERE ((w.user_id = auth.uid()) AND (w.role = 'admin'::text) AND COALESCE(w.is_active, true))))"
+    }
+  ],
+  "patches": [
+    {
+      "signature": "public.tc_admin_grant_oracle_draws(uuid,uuid,uuid,numeric,text)",
+      "old": "role = 'admin'",
+      "replacement": "(role = 'admin' or public.tc_has_admin_access(p_actor_user_id))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_assert_benefit_admin(uuid)",
+      "old": "w.role='admin'",
+      "replacement": "(w.role='admin' or public.tc_has_admin_access(p_actor))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_admin_adjust_spins(uuid,uuid,uuid,integer,integer,text)",
+      "old": "role='admin'",
+      "replacement": "(role='admin' or public.tc_has_admin_access(p_actor_user_id))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_recovery_mission_overview(uuid)",
+      "old": "role='admin'",
+      "replacement": "(role='admin' or public.tc_has_admin_access(p_user))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_atlas_admin(uuid)",
+      "old": "role='admin'",
+      "replacement": "(role='admin' or public.tc_has_admin_access(p_user))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_atlas_execute_action(uuid,uuid)",
+      "old": "role='admin'",
+      "replacement": "(role='admin' or public.tc_has_admin_access(p_user))",
+      "count": 1
+    },
+    {
+      "signature": "public.admin_gift_client_coins(uuid,uuid,integer,text,uuid)",
+      "old": "w.role = 'admin'",
+      "replacement": "(w.role = 'admin' or public.tc_worker_has_admin_access(p_admin_worker_id))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_rendimiento_update(uuid,uuid,bigint,numeric,numeric,jsonb)",
+      "old": "role::text='admin'",
+      "replacement": "(role::text='admin' or public.tc_worker_has_admin_access(p_worker))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_rendimiento_update_v2(uuid,uuid,bigint,numeric,numeric,text,jsonb)",
+      "old": "role::text='admin'",
+      "replacement": "(role::text='admin' or public.tc_worker_has_admin_access(p_worker))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_rendimiento_list(uuid,jsonb,integer,integer)",
+      "old": "role::text='admin'",
+      "replacement": "(role::text='admin' or public.tc_worker_has_admin_access(p_worker))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_captacion_whatsapp_claim(uuid,uuid,uuid,uuid,uuid,text,text,text,text,uuid,uuid,jsonb)",
+      "old": "v_worker.role <> 'admin'",
+      "replacement": "(v_worker.role <> 'admin' and not public.tc_worker_has_admin_access(v_worker.id))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_captacion_whatsapp_qr_claim(uuid,uuid,uuid,uuid,uuid,text,text,text,uuid,uuid,jsonb,text)",
+      "old": "v_worker.role <> 'admin'",
+      "replacement": "(v_worker.role <> 'admin' and not public.tc_worker_has_admin_access(v_worker.id))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_raffle_action(uuid,uuid,text,jsonb)",
+      "old": "w.role<>'admin'",
+      "replacement": "(w.role<>'admin' and not public.tc_worker_has_admin_access(w.id))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_raffle_state(uuid,uuid)",
+      "old": "w.role='admin'",
+      "replacement": "(w.role='admin' or public.tc_worker_has_admin_access(w.id))",
+      "count": 3
+    },
+    {
+      "signature": "public.tc_admin_adjust_coins(uuid,uuid,uuid,numeric,text)",
+      "old": "role='admin'",
+      "replacement": "(role='admin' or public.tc_has_admin_access(p_actor_user_id))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_admin_whatsapp_draft_get(uuid)",
+      "old": "lower(w.role)='admin'",
+      "replacement": "(lower(w.role)='admin' or public.tc_has_admin_access(p_actor_user_id))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_admin_whatsapp_draft_save(uuid,uuid,bigint,jsonb)",
+      "old": "lower(w.role)='admin'",
+      "replacement": "(lower(w.role)='admin' or public.tc_has_admin_access(p_actor_user_id))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_admin_whatsapp_draft_resolve(uuid,text[])",
+      "old": "lower(w.role)='admin'",
+      "replacement": "(lower(w.role)='admin' or public.tc_has_admin_access(p_actor_user_id))",
+      "count": 1
+    },
+    {
+      "signature": "public.invoice_edit_atomic(uuid,uuid,text,uuid,jsonb)",
+      "old": "role='admin'",
+      "replacement": "(role='admin' or public.tc_worker_has_admin_access(p_actor_id))",
+      "count": 1
+    },
+    {
+      "signature": "public.tarotista_bonus_save_rule(jsonb,uuid)",
+      "old": "role='admin'",
+      "replacement": "(role='admin' or public.tc_worker_has_admin_access(p_actor))",
+      "count": 1
+    },
+    {
+      "signature": "public.tarotista_bonus_void(uuid,uuid,text)",
+      "old": "role='admin'",
+      "replacement": "(role='admin' or public.tc_worker_has_admin_access(p_actor))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_central_statistics_update(uuid,uuid,text,jsonb,uuid)",
+      "old": "role='admin'",
+      "replacement": "(role='admin' or public.tc_worker_has_admin_access(p_actor))",
+      "count": 1
+    },
+    {
+      "signature": "public.invoice_regenerate_preserving_manual(uuid,text,jsonb,jsonb)",
+      "old": "role='admin'",
+      "replacement": "(role='admin' or public.tc_worker_has_admin_access((p_snapshot->>'actor_id')::uuid))",
+      "count": 1
+    },
+    {
+      "signature": "public.staff_chat_mark_read(uuid,uuid,uuid)",
+      "old": "v_role='admin'",
+      "replacement": "(v_role='admin' or public.tc_worker_has_admin_access(p_worker_id))",
+      "count": 1
+    },
+    {
+      "signature": "public.staff_chat_latest_incoming(uuid,uuid[])",
+      "old": "w.role='admin'",
+      "replacement": "(w.role='admin' or public.tc_worker_has_admin_access(w.id))",
+      "count": 1
+    },
+    {
+      "signature": "public.staff_chat_send_media_message(uuid,uuid,text,text,uuid)",
+      "old": "w.role<>'admin'",
+      "replacement": "(w.role<>'admin' and not public.tc_worker_has_admin_access(w.id))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_save_roulette_config(uuid,jsonb)",
+      "old": "role='admin'",
+      "replacement": "(role='admin' or public.tc_has_admin_access(p_actor))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_save_rank_benefit_config(uuid,text,jsonb)",
+      "old": "role='admin'",
+      "replacement": "(role='admin' or public.tc_has_admin_access(p_actor))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_save_benefit_rule(jsonb,uuid,integer)",
+      "old": "lower(role) in ('admin','ceo','supervisor')",
+      "replacement": "(lower(role) in ('admin','ceo','supervisor') or public.tc_worker_has_admin_access(p_actor))",
+      "count": 1
+    },
+    {
+      "signature": "public.tc_recovery_act(uuid,uuid,text,integer,uuid,text)",
+      "old": "actor.role<>'admin'",
+      "replacement": "(actor.role<>'admin' and not public.tc_worker_has_admin_access(actor.id))",
+      "count": 1
+    }
+  ]
+}

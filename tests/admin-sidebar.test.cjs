@@ -45,7 +45,7 @@ test('all existing Admin destinations survive grouping, without duplicate sectio
   const previousDestinations = [
     'atlas', 'dashboard', 'panel', 'facturas', 'client-balances', 'welldone', 'rank-benefits', 'finance-center', 'editor',
     'estadisticas', 'estadisticas-centrales', 'central-operativa', 'central-primera-tarotista', 'central-chat', 'central-sorteo', 'central-whatsapp', 'equipos-marcador', 'asistencia', 'incidencias', 'trabajadores', 'clientes', 'pagos-web', 'precios-hoy',
-    'rangos-clientes', 'clientes-web', 'ruletas-clientes', 'rituales-clientes', 'bonos-tarotistas', 'rangos-tarotistas',
+    'rangos-clientes', 'clientes-web', 'ruletas-clientes', 'rituales-clientes', 'runas-clientes', 'bonos-tarotistas', 'rangos-tarotistas',
     'sistema-xp', 'sistema-xp-niveles', 'crm', 'sorteo', 'chat', 'captacion', 'campanas-clientes', 'redes-sociales',
     'redes-sociales-instagram', 'redes-sociales-tiktok', 'rendimiento', 'reservas', 'diario',
   ];

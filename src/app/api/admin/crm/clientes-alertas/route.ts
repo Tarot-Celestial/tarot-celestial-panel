@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
@@ -68,7 +69,7 @@ export async function GET(req: Request) {
   try {
     const worker = await workerFromReq(req);
     if (!worker) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-    if (String(worker.role || "") !== "admin") {
+    if (!(await requestHasAdminAccess(req))) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 

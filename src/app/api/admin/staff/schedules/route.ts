@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
@@ -48,7 +49,7 @@ async function getAdminFromToken(req: Request) {
   }
 
   if (!me) return { ok: false as const, error: "NO_WORKER" as const };
-  if (me.role !== "admin") return { ok: false as const, error: "FORBIDDEN" as const };
+  if (!(await requestHasAdminAccess(req))) return { ok: false as const, error: "FORBIDDEN" as const };
 
   return { ok: true as const, admin, me };
 }

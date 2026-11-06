@@ -30,10 +30,14 @@ function gates(options = {}) {
   const campaign = load('src/lib/server/campaign-auth.ts', {
     'server-only': {}, '@/lib/supabase-admin': { supabaseAdmin: () => db },
     '@/lib/server/auth-failure': failure,
+    // Permission resolution has its own integration suite. These scenarios use
+    // the client branch, which must never request a staff capability.
+    '@/lib/server/admin-access': { hasAdminAccess: async () => { throw new Error('Unexpected staff capability check'); } },
     'next/server': { NextResponse: { json: (body, init) => ({ body, status: init.status }) } },
   });
   const roulette = load('src/lib/server/ruleta-access.ts', {
     '@supabase/supabase-js': { createClient: () => db }, '@/lib/server/auth-failure': failure,
+    '@/lib/server/admin-access': { hasAdminAccess: async () => { throw new Error('Unexpected staff capability check'); } },
   });
   return { campaign, roulette, calls: () => authCalls };
 }

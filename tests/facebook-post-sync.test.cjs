@@ -30,6 +30,7 @@ function fixture(graph, initial = {}) {
   }};
   const mod = load('src/lib/server/facebook-inbox.ts', {
     '@/lib/supabase-admin': {supabaseAdmin: () => db},
+    '@/lib/server/admin-access': {hasAdminAccess: async (_db, userId) => userId === 'admin-user' && admin},
     './facebook-graph': {FacebookError, facebookConnection: () => ({accountId:'123', username:'Page', token:'FIXTURE'}), verifyFacebookAccount: async () => 'Page',
       facebookId: value => typeof value === 'string' && /^[\w:.-]+$/.test(value),
       facebookDate: value => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null,
@@ -142,6 +143,7 @@ test('bounded tracked list rejects new posts and allows an existing post to cont
 test('HTTP sync-post denies Central role, uses verified actor for admin, and requires authentication', async () => {
   let role='central',actor='admin-user',invoked=[];
   const route=load('src/app/api/central/facebook/route.ts',{
+    '@/lib/server/admin-access':{requestHasAdminAccess:async()=>Boolean(actor)&&role==='admin'},
     'next/server':{NextResponse:{json:(body,options)=>({body,...options})}},'@vercel/functions':{waitUntil:()=>{}},
     '@/lib/server/facebook-graph':{FacebookError,facebookIdentity:async()=>{if(!actor)throw new FacebookError('NO_AUTH','Login',401);return{userId:actor,worker:{role}};}},
     '@/lib/server/facebook-inbox':{facebookSyncPost:async(user,input)=>{invoked.push({user,input});return{ok:true};}},'@/lib/server/facebook-diagnostics':{},

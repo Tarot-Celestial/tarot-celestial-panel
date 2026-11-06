@@ -10,7 +10,7 @@ function loadSource(file){
 function harness(options={}){
  const tables={
   workers:[
-   {id:id(1),user_id:id(201),role:'central',display_name:'Central fixture',is_active:true,state:'offline'},
+   {id:id(1),user_id:id(201),role:'central',display_name:'Central fixture',is_active:true,state:'offline',can_admin:options.delegated===true},
    {id:id(2),user_id:id(202),role:'tarotista',display_name:'Tarotista fixture',is_active:true,state:'offline'},
    {id:id(3),user_id:id(203),role:'admin',display_name:'Admin fixture',is_active:true,state:'offline'},
    {id:id(4),user_id:id(204),role:'central',display_name:'Other fixture',is_active:true,state:'offline'},
@@ -76,6 +76,7 @@ function harness(options={}){
  };
  const dependencies={
   '@/lib/supabase-admin':{supabaseAdmin:()=>db},
+  '@/lib/server/admin-access':{hasAdminAccess:async(_db,userId)=>tables.workers.some(w=>w.user_id===userId&&w.is_active===true&&(w.role==='admin'||w.can_admin===true))},
   '@/lib/server/panel-attendance':{requireActivePanelSession:async(_db,worker)=>{connectionCalls.push(worker);return options.connected===false?{ok:false,status:423,error:'PANEL_CONNECTION_REQUIRED'}:{ok:true};}},
   'next/server':{NextResponse:{json:(data,init={})=>new Response(JSON.stringify(data),{...init,headers:{'Content-Type':'application/json',...(init.headers||{})}})}},
  };
@@ -160,6 +161,20 @@ test('cross-thread participant access is denied and admin supervision remains av
  const tarotista=harness({actor:2});
  const body=await (await tarotista.threads.GET(req('/api/chat/threads'))).json();
  assert.equal(body.threads.length,2);assert.equal(body.threads.find(t=>t.id===id(12)).legacy,true);
+});
+
+test('delegated Central supervises chats with the same worker identity and loses that access when revoked',async()=>{
+ const h=harness({delegated:true});
+ const actor=(await h.helper.getStaffChatActor(req('/api/chat/threads'))).me;
+ assert.equal(actor.id,id(1));assert.equal(actor.role,'central');assert.equal(actor.can_admin,true);
+ const overview=await(await h.threads.GET(req('/api/chat/threads'))).json();
+ assert.equal(overview.mode,'admin');assert.ok(overview.contacts.some(c=>c.id===id(4)));
+ assert.equal((await h.messages.GET(req('/api/chat/messages?thread_id='+id(11)))).status,200);
+ assert.equal(h.writes.length,0);assert.equal(h.connectionCalls.length,0);
+ h.tables.workers[0].can_admin=false;
+ assert.equal((await h.messages.GET(req('/api/chat/messages?thread_id='+id(11)))).status,403);
+ assert.equal((await h.messages.GET(req('/api/chat/messages?thread_id='+id(10)))).status,200);
+ assert.equal(h.tables.workers[0].role,'central');
 });
 test('sending, opening a thread and ACK require a connected panel',async()=>{
  const h=harness({connected:false});

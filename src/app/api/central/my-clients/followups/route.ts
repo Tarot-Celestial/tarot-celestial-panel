@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { workerFromRequest } from "@/lib/server/auth-worker";
 
 export const runtime = "nodejs";
 
 type Worker = {
+  can_admin?: boolean;
   id: string;
   user_id: string | null;
   role: string | null;
@@ -51,17 +52,8 @@ function adminClient() {
 }
 
 async function currentWorker(req: Request): Promise<Worker | null> {
-  const { data, error } = getAuthUserFromRequest(req);
-  if (error || !data.user?.id) return null;
-  const admin = adminClient();
-  const { data: worker, error: workerError } = await admin
-    .from("workers")
-    .select("id, user_id, role, display_name")
-    .eq("user_id", data.user.id)
-    .maybeSingle();
-  if (workerError) throw workerError;
-  const role = String(worker?.role || "").trim().toLowerCase();
-  if (!worker || !["admin", "ceo", "supervisor", "central"].includes(role)) return null;
+  const worker = await workerFromRequest(req);
+  if (!worker || !["admin", "ceo", "supervisor", "central"].includes(String(worker.role || ""))) return null;
   return worker as Worker;
 }
 
@@ -75,7 +67,7 @@ async function clientAccess(admin: SupabaseClient, clientId: string, worker: Wor
   );
   const role = String(worker.role || "").trim().toLowerCase();
   const ownerMatchesWorker = ownerId === String(worker.id) || (!!worker.user_id && ownerId === String(worker.user_id));
-  const allowed = ["admin", "ceo", "supervisor"].includes(role) || !ownerId || ownerMatchesWorker;
+  const allowed = worker.can_admin === true || !ownerId || ownerMatchesWorker;
   return { client: typedClient, allowed };
 }
 

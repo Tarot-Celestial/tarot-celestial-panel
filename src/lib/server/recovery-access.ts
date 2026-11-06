@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/server/auth-worker';
+import { hasAdminAccess } from '@/lib/server/admin-access';
 
 export const recoveryJson = (value: object, status = 200) => NextResponse.json(value, {
   status, headers: { 'Cache-Control': 'private, no-store' },
@@ -17,8 +18,9 @@ export async function recoveryIdentity(req: Request, adminOnly = false) {
   if (error || !data.user) throw new RecoveryAccessError('La sesión no es válida. Vuelve a entrar.', 401);
   const workers = await db.from('workers').select('id,role,is_active').eq('user_id', data.user.id);
   if (workers.error) throw workers.error;
-  const roles = adminOnly ? ['admin'] : ['central', 'admin'];
-  if (!workers.data?.some(worker => worker.is_active !== false && roles.includes(worker.role))) {
+  const allowed = adminOnly ? await hasAdminAccess(db, data.user.id)
+    : workers.data?.some(worker => worker.is_active !== false && ['central', 'admin'].includes(worker.role));
+  if (!allowed) {
     throw new RecoveryAccessError('No tienes acceso a esta consulta de recuperación.', 403);
   }
   return { db, uid: data.user.id };

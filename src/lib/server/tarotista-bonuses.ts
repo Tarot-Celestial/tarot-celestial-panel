@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAdminClient } from "./auth-worker";
+import { hasAdminAccess } from "./admin-access";
 import {
   aggregateRendimientoByTarotista,
   listRendimientoRowsByIso,
@@ -43,9 +44,7 @@ export async function bonusAccess(req: Request, adminOnly = false) {
   if (
     !w.data ||
     w.data.is_active === false ||
-    !(adminOnly ? ["admin"] : ["admin", "central", "tarotista"]).includes(
-      w.data.role,
-    )
+    !(adminOnly ? await hasAdminAccess(db, data.user.id) : ["admin", "central", "tarotista"].includes(w.data.role))
   )
     return {
       response: Response.json({ error: "No tienes permiso." }, { status: 403 }),

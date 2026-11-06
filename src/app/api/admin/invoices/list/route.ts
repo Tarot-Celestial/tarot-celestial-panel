@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { NextResponse } from "next/server";
 import { normalizeMonthKey } from "@/lib/month-key";
 import { createClient } from "@supabase/supabase-js";
@@ -118,7 +119,7 @@ export async function GET(req: Request) {
       .eq("user_id", uid)
       .maybeSingle();
 
-    if (me?.role !== "admin") {
+    if (!(await requestHasAdminAccess(req))) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 

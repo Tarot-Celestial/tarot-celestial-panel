@@ -39,7 +39,7 @@ export default function CelestialBrainPage() {
         if (!active) return;
         const role = String(identity.role || "").toLowerCase();
 
-        if (role !== "admin") {
+        if (role !== "admin" && identity.can_admin !== true) {
           window.location.replace(panelPathForRole(role));
           return;
         }

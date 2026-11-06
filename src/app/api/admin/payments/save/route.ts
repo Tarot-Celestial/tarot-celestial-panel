@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
@@ -26,7 +27,7 @@ async function requireAdmin(req: Request) {
     .eq("user_id", uid)
     .maybeSingle();
 
-  if (!me || me.role !== "admin") throw new Error("FORBIDDEN");
+  if (!me || !(await requestHasAdminAccess(req))) throw new Error("FORBIDDEN");
 
   return { admin };
 }

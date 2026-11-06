@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { NextResponse } from "next/server";
 import { getAdminClient, workerFromRequest } from "@/lib/server/auth-worker";
 import { buildWelldoneReport, monthRange, type WelldoneRange } from "@/lib/server/welldone";
@@ -18,7 +19,7 @@ function validDate(value: string) {
 async function requireAdmin(req: Request) {
   const worker = await workerFromRequest(req);
   if (!worker) return { worker: null, response: NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 }) };
-  if (String(worker.role || "") !== "admin") return { worker: null, response: NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 }) };
+  if (!(await requestHasAdminAccess(req))) return { worker: null, response: NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 }) };
   return { worker, response: null };
 }
 

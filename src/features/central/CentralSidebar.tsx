@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState, type CSSProperties } from "react";
-import { ChevronDown, type LucideIcon } from "lucide-react";
+import { ChevronDown, ShieldCheck, ArrowUpRight, type LucideIcon } from "lucide-react";
 import NavigationVisibilityMenu, { useHiddenNavigation } from "@/components/navigation/NavigationVisibilityMenu";
 import { useStaffChat } from "@/providers/StaffChatProvider";
 import styles from "./CentralSidebar.module.css";
@@ -24,6 +24,7 @@ type CentralSidebarProps<T extends string = string> = {
   items: CentralNavItem<T>[];
   activeTab: T;
   onTabChange: (tab: T) => void;
+  canWorkAsAdmin?: boolean;
 };
 
 type NavTone = { rgb: string; className?: string };
@@ -63,7 +64,7 @@ function navTone(key: string, notificationAlert: boolean) {
   return NAV_TONES[key] || { rgb: "215, 181, 109" };
 }
 
-export default function CentralSidebar<T extends string = string>({ items, activeTab, onTabChange }: CentralSidebarProps<T>) {
+export default function CentralSidebar<T extends string = string>({ items, activeTab, onTabChange, canWorkAsAdmin = false }: CentralSidebarProps<T>) {
   const sidebarId = useId().replace(/:/g, "");
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const { unreadTotal: chatUnread } = useStaffChat();
@@ -98,6 +99,16 @@ export default function CentralSidebar<T extends string = string>({ items, activ
           />
         </div>
         <nav className={styles.navigation} aria-label="Navegación de Central">
+          {canWorkAsAdmin && <section className={styles.section} aria-label="Administración">
+            <h2 className={styles.sectionTitle}>ADMINISTRACIÓN</h2>
+            <a href="/admin" className={styles.navButton} style={{ "--nav-rgb": "232, 199, 118", textDecoration: "none" } as CSSProperties}>
+              <div className={styles.navContent}>
+                <div className={styles.iconHud} aria-hidden="true"><ShieldCheck size={21} strokeWidth={1.7} /></div>
+                <div className={styles.labelWrap}><span className={styles.label}>Trabajar como Admin</span><span className={styles.kicker}>Tu acceso a administración</span></div>
+              </div>
+              <ArrowUpRight size={17} aria-hidden="true" />
+            </a>
+          </section>}
           {visibleSections.map(section => <section className={styles.section} key={section.key} aria-labelledby={`${sidebarId}-${section.key}`}>
           <h2 id={`${sidebarId}-${section.key}`} className={styles.sectionTitle}>{section.title}</h2>
           <div className={styles.sectionItems}>{section.items.map((item) => {

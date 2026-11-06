@@ -1,4 +1,5 @@
 import { getAdminClient } from "./auth-worker";
+import { hasAdminAccess } from "./admin-access";
 
 // This boundary verifies the JWT with Auth, not by decoding its claims.
 export async function rendimientoActor(req: Request) {
@@ -10,5 +11,6 @@ export async function rendimientoActor(req: Request) {
   const result = await admin.from("workers").select("id,role,is_active").eq("user_id", auth.data.user.id).maybeSingle();
   if (result.error) throw result.error;
   const worker = result.data;
-  return { admin, worker: worker && worker.is_active !== false && ["central", "admin"].includes(worker.role) ? worker : null };
+  return { admin, worker: worker && worker.is_active !== false && ["central", "admin"].includes(worker.role)
+    ? { ...worker, can_admin: await hasAdminAccess(admin, auth.data.user.id) } : null };
 }

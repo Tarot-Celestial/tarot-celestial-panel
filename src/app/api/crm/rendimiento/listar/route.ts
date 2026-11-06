@@ -27,7 +27,7 @@ export async function GET(req: Request) {
     const size = Math.min(100, Math.max(20, Math.floor(Number(params.get("page_size")) || 50)));
     const { data, error } = await admin.rpc("tc_rendimiento_list", { p_worker: worker.id, p_filters: filters, p_page: page, p_size: size });
     if (error) throw error;
-    const totals = worker.role === "admin" ? data.totals : { records: data.totals.records, captured: data.totals.captured };
+    const totals = worker.can_admin ? data.totals : { records: data.totals.records, captured: data.totals.captured };
     return NextResponse.json({ ...data, totals, ok: true, brand: "celestial", viewer: { role: worker.role, worker_id: worker.id, read_scope: "all_centrals" } },
       { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
   } catch {

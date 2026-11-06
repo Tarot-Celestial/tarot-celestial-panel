@@ -37,6 +37,7 @@ function pathLabel(pathname: string) {
 type AppHeaderIdentity = {
   display_name?: string | null;
   role?: string | null;
+  can_admin?: boolean;
   team?: string | null;
   worker?: Record<string, unknown> | null;
   user?: Record<string, unknown> | null;
@@ -53,6 +54,7 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
 
   const [name, setName] = useState("Cargando…");
   const [role, setRole] = useState("");
+  const [canAdmin, setCanAdmin] = useState(false);
   const [team, setTeam] = useState("");
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState<HeaderNotif[]>([]);
@@ -86,6 +88,7 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
 
       setName(me.display_name || "Usuario");
       setRole(me.role || "");
+      setCanAdmin(me.can_admin === true);
       setTeam(me.team || "");
       setNotifUserId(String(me?.user?.id || me?.id || ""));
       onIdentityLoaded?.(me);
@@ -413,7 +416,7 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
                 </div>
               </div>
 
-              {role === "admin" ? (
+              {canAdmin ? (
                 <button
                   type="button"
                   className={styles.brainButton}

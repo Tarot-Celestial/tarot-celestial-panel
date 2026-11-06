@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { NextResponse } from "next/server";
 import { randomInt } from "node:crypto";
 import { getAdminClient } from "@/lib/server/auth-worker";
@@ -47,7 +48,7 @@ export async function POST(req:Request){
   if(!body||typeof body!=="object"||Array.isArray(body)||!uuid(body.raffle_id)) throw new RequestError("Solicitud inválida.");
   const action=body.action;
   if(!["save","draw","manual","confirm","cancel","rule"].includes(action)) throw new RequestError("Acción inválida.");
-  if(action==="rule"&&worker.role!=="admin") throw new RequestError("Solo un administrador puede cambiar la regla del sorteo.",403);
+  if(action==="rule"&&!(await requestHasAdminAccess(req))) throw new RequestError("Solo un administrador puede cambiar la regla del sorteo.",403);
   const values:Record<string,unknown>={};
   let spinEntries:RaffleCenterState["entries"]|undefined;
   if(action==="save"){

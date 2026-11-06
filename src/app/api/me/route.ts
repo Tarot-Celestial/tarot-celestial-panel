@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getWorkerByUserIdCached } from "@/lib/server/worker-cache";
+import { hasAdminAccess } from "@/lib/server/admin-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -84,6 +85,7 @@ export async function GET(req: Request) {
       ok: true,
       id: worker.id,
       role: worker.role || "",
+      can_admin: await hasAdminAccess(admin, uid),
       display_name: worker.display_name || "Usuario",
       team: worker.team || "",
       email: worker.email || email || "",

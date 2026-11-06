@@ -69,6 +69,12 @@ function fixture(options = {}) {
     '@/lib/server/brand-filter': brand,
     '@/lib/server/captacion-attention': load('src/lib/server/captacion-attention.ts', {}),
     '@/lib/server/auth-fast': { getBearerToken: req => req.headers.get('authorization')?.replace(/^Bearer /, '') },
+    '@/lib/server/admin-access': { hasAdminAccess: async (client, uid) => {
+      assert.equal(client, db);
+      assert.equal(uid, id(2));
+      return worker.user_id === uid && worker.is_active === true
+        && (worker.role === 'admin' || worker.role === 'central' && options.delegated === true);
+    } },
   }, { process: { env } });
   return { reads, worker, get: (query = 'scope=todos', token = 'fixture') => api.GET(new Request('http://localhost/api/captacion/list?' + query, { headers: token ? { authorization: 'Bearer ' + token } : {} })) };
 }
@@ -97,6 +103,19 @@ test('central ownership and scope exclude newer foreign and closed rows before p
   assert.ok(response.items.every(item => !item.assigned_worker_id || item.assigned_worker_id === id(1)));
   const read = f.reads.find(read => read.table === 'captacion_leads');
   assert.ok(read.ops.indexOf('range') > read.ops.findIndex(op => op.startsWith('or:')));
+});
+
+test('delegated Central can manage other assignments until revoked while preserving the brand boundary', async () => {
+  const options = { delegated: true, rows: [row(1), row(2, { assigned_worker_id: id(99) }), row(3, { assigned_worker_id: id(99), cliente: { origen: 'Orion Facebook' } })] };
+  const f = fixture(options);
+  const delegated = await (await f.get()).json();
+  assert.deepEqual(delegated.items.map(item => item.id).sort(), [row(1).id, row(2).id]);
+  assert.ok(delegated.meta_diagnostics);
+  assert.equal(f.worker.role, 'central');
+  options.delegated = false;
+  const revoked = await (await f.get()).json();
+  assert.deepEqual(revoked.items.map(item => item.id), [row(1).id]);
+  assert.equal(revoked.meta_diagnostics, undefined);
 });
 
 test('closed timestamps and captured clients map to the right workflow and pending null states remain visible', async () => {

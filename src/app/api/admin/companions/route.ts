@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { NextResponse } from 'next/server';
 import { assistantAuth, checked } from '@/lib/server/central-assistant';
 import { normalizePetId, validUuid } from '@/lib/central-assistant';
@@ -5,14 +6,14 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export async function GET(req: Request) {
   try {
-    const ctx = await assistantAuth(req); if (ctx.worker.role !== 'admin') return NextResponse.json({ ok: false }, { status: 403 });
+    const ctx = await assistantAuth(req); if (!(await requestHasAdminAccess(req))) return NextResponse.json({ ok: false }, { status: 403 });
     const [workers, profiles, knowledge] = await Promise.all([checked(ctx.db.from('workers').select('id,display_name').eq('role', 'central').order('display_name')), checked(ctx.db.from('central_assistant_profiles').select('worker_id,pet')),checked(ctx.db.from('central_assistant_knowledge').select('topic,content,version,created_at').order('created_at',{ascending:false}).limit(100))]);
     return NextResponse.json({ ok: true, workers, profiles: profiles.map((p: any) => ({ ...p, pet: normalizePetId(p.pet) })), knowledge }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch { return NextResponse.json({ ok: false, error: 'No se pudieron cargar las asignaciones.' }, { status: 503 }); }
 }
 export async function POST(req: Request) {
   try {
-    const ctx = await assistantAuth(req); if (ctx.worker.role !== 'admin') return NextResponse.json({ ok: false }, { status: 403 });
+    const ctx = await assistantAuth(req); if (!(await requestHasAdminAccess(req))) return NextResponse.json({ ok: false }, { status: 403 });
     const body = await req.json();
     if(body.action==='knowledge'){
       if(typeof body.topic!=='string'||!body.topic.trim()||body.topic.length>80||typeof body.content!=='string'||!body.content.trim()||body.content.length>4000)return NextResponse.json({ok:false},{status:400});

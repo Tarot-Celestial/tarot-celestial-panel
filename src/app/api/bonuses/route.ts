@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { bonusAccess, loadBonusReport } from "@/lib/server/tarotista-bonuses";
 import { validateRule } from "@/lib/bonuses/engine";
 import { madridTodayKey } from "@/lib/server/madrid-reporting-period";
@@ -22,7 +23,7 @@ export async function GET(req: Request) {
       madridTodayKey().slice(0, 7);
     const report = await loadBonusReport(gate.db, month);
 
-    if (gate.worker.role === "admin") {
+    if (await requestHasAdminAccess(req)) {
       return Response.json(
         { ok: true, ...report, source: "tarotista_bonus_rules" },
         { headers: noStoreHeaders },

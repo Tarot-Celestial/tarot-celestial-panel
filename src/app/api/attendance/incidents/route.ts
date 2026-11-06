@@ -119,6 +119,7 @@ export async function GET(req: Request) {
       ok: true,
       month,
       role: gate.me.role,
+      can_admin: gate.me.can_admin === true,
       workers: workersResult.data || [],
       schedules: schedulesResult.data || [],
       settings: settingsResult.data || null,
@@ -141,7 +142,7 @@ export async function POST(req: Request) {
     const action = String(body.action || "");
 
     if (action === "settings") {
-      if (gate.me.role !== "admin") return json({ ok: false, error: "ADMIN_ONLY" }, 403);
+      if (!gate.me.can_admin) return json({ ok: false, error: "ADMIN_ONLY" }, 403);
       const patch = {
         allow_central_justify: Boolean(body.allow_central_justify),
         require_notes: Boolean(body.require_notes),
@@ -243,7 +244,7 @@ export async function POST(req: Request) {
       const reason = String(body.reason || "").trim();
       const settings = await gate.admin.from("attendance_incident_settings").select("allow_central_justify").eq("id", 1).maybeSingle();
       if (settings.error) throw settings.error;
-      if (gate.me.role === "central" && settings.data?.allow_central_justify === false) {
+      if (gate.me.role === "central" && !gate.me.can_admin && settings.data?.allow_central_justify === false) {
         return json({ ok: false, error: "Solo Administración puede justificar horas." }, 403);
       }
       if (!incidentId || !Number.isInteger(minutes) || minutes <= 0 || !reason) {

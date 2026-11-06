@@ -46,7 +46,7 @@ test('audited corrections are separate and preserve their stored rate',()=>{
 test('stats endpoint verifies Supabase user and requires active admin and connection',async()=>{
  let authenticated=true,role='central',active=true,connected=false,reads=0,lookups=0;
  const db={auth:{getUser:async()=>{lookups++;return {data:{user:authenticated?{id:'auth'}:null},error:authenticated?null:{message:'invalid'}};}},from:()=>({select(){return this;},eq(){return this;},maybeSingle:async()=>({data:{id:'admin',role,is_active:active},error:null})})};
- const route=load('app/api/admin/central-statistics/route.ts',{'@/lib/server/auth-worker':{getAdminClient:()=>db},'@/lib/server/panel-attendance':{requireActivePanelSession:async()=>connected?{ok:true}:{ok:false,status:423,error:'PANEL_CONNECTION_REQUIRED'}},'@/lib/server/central-statistics':{loadCentralStatistics:async()=>{reads++;return {ok:true};}},'@/lib/central-statistics':core});
+ const route=load('app/api/admin/central-statistics/route.ts',{'@/lib/server/admin-access':{requestHasAdminAccess:async()=>authenticated&&active&&role==='admin'},'@/lib/server/auth-worker':{getAdminClient:()=>db},'@/lib/server/panel-attendance':{requireActivePanelSession:async()=>connected?{ok:true}:{ok:false,status:423,error:'PANEL_CONNECTION_REQUIRED'}},'@/lib/server/central-statistics':{loadCentralStatistics:async()=>{reads++;return {ok:true};}},'@/lib/central-statistics':core});
  const req=()=>new Request('https://test/api/admin/central-statistics?month=2026-10',{headers:{authorization:'Bearer test'}});
  assert.equal((await route.GET(new Request('https://test/api/admin/central-statistics'))).status,401);
  assert.equal((await route.GET(req())).status,403);role='admin';active=false;assert.equal((await route.GET(req())).status,403);

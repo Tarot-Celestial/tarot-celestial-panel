@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
@@ -60,7 +61,7 @@ export async function POST(req: Request) {
     if (invErr) throw invErr;
     if (!invoice?.id) return NextResponse.json({ ok: false, error: "INVOICE_NOT_FOUND" }, { status: 404 });
 
-    if (me.role !== "admin" && String(invoice.worker_id || "") !== String(me.id)) {
+    if (!(await requestHasAdminAccess(req)) && String(invoice.worker_id || "") !== String(me.id)) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 

@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { hasAdminAccess } from "@/lib/server/admin-access";
+import { authFailureStatus } from "@/lib/server/auth-failure";
 
 export function getEnv(name: string) {
   const value = process.env[name];
@@ -23,8 +24,11 @@ export async function authFromBearer(req: Request) {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
 
-  const { data, error } = getAuthUserFromRequest(req);
-  if (error) throw error;
+  const { data, error } = await userClient.auth.getUser(token);
+  if (error) {
+    if (authFailureStatus(error) === 401) return { uid: null, email: null };
+    throw error;
+  }
   return {
     uid: data.user?.id || null,
     email: data.user?.email || null,
@@ -60,7 +64,7 @@ export async function workerFromRequest(req: Request) {
 
   if (!me) return null;
   if (me.is_active === false) return null;
-  return { ...me, resolved_uid: uid || null, resolved_email: email || null };
+  return { ...me, can_admin: me.user_id === uid && await hasAdminAccess(admin, uid), resolved_uid: uid || null, resolved_email: email || null };
 }
 
 export { normalizeMonthKey } from "@/lib/month-key";

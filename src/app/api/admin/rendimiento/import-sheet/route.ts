@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { NextResponse } from 'next/server';
 import { getAdminClient, monthRange, normalizeMonthKey, workerFromRequest, normalizeText } from '@/lib/server/auth-worker';
 
@@ -104,7 +105,7 @@ export async function POST(req: Request) {
   try {
     const me = await workerFromRequest(req);
     if (!me) return NextResponse.json({ ok: false, error: 'NO_AUTH' }, { status: 401 });
-    if (me.role !== 'admin') return NextResponse.json({ ok: false, error: 'FORBIDDEN' }, { status: 403 });
+    if (!(await requestHasAdminAccess(req))) return NextResponse.json({ ok: false, error: 'FORBIDDEN' }, { status: 403 });
 
     const body = await req.json().catch(() => ({}));
     const month = normalizeMonthKey(body?.month || new Date().toISOString().slice(0, 7));

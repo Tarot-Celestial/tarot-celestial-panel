@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { getAdminClient } from '@/lib/server/auth-worker';
 import { requireActivePanelSession } from '@/lib/server/panel-attendance';
 import { loadCentralStatistics } from '@/lib/server/central-statistics';
@@ -18,7 +19,7 @@ async function access(req:Request) {
  if(auth.error||!auth.data.user)return {response:json({ok:false,error:'Sesión no válida.'},401)};
  const result=await db.from('workers').select('id,role,is_active,display_name').eq('user_id',auth.data.user.id).maybeSingle();
  if(result.error)throw result.error;
- if(!result.data||result.data.role!=='admin'||result.data.is_active!==true)return {response:json({ok:false,error:'Acceso reservado a administración.'},403)};
+ if(!result.data||!(await requestHasAdminAccess(req))||result.data.is_active!==true)return {response:json({ok:false,error:'Acceso reservado a administración.'},403)};
  const active=await requireActivePanelSession(db,result.data);
  if(!active.ok)return {response:json({ok:false,error:'Conéctate para desbloquear el panel.',code:active.error},active.status)};
  return {db,worker:result.data};

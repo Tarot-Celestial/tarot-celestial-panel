@@ -265,6 +265,7 @@ function toRecentNotification(item: CentralNotification): RecentNotification {
 
 function CentralPage({ expectedRole }: { expectedRole: "central" | "admin" }) {
   const [ok, setOk] = useState(false);
+  const [canAdmin, setCanAdmin] = useState(false);
   const [accessError, setAccessError] = useState<string | null>(null);
   const [accessAttempt, setAccessAttempt] = useState(0);
   const [tab, setTab] = useState<TabKey>("panel");
@@ -673,10 +674,11 @@ function CentralPage({ expectedRole }: { expectedRole: "central" | "admin" }) {
       try {
         const me = await loadPanelIdentity(sb);
         if (!active) return;
-        if (String(me.role).toLowerCase() !== expectedRole) {
+        if (String(me.role).toLowerCase() !== expectedRole && !(expectedRole === "admin" && me.can_admin === true)) {
           window.location.replace(panelPathForRole(me.role));
           return;
         }
+        setCanAdmin(me.can_admin === true);
         setOk(true);
       } catch (error) {
         if (!active) return;
@@ -1251,7 +1253,7 @@ function CentralPage({ expectedRole }: { expectedRole: "central" | "admin" }) {
       <ReservasGlobalWatcher enabled={true} onGoToReserva={openReservaFromPopup} />
       <PaymentMotivationWatcher mode="central" xpData={xpData} onStateRefresh={xpFeed.load} />
       <div className="tc-shell tc-shell-premium">
-        <CentralSidebar items={centralNavItems} activeTab={tab} onTabChange={handleSidebarTabChange} />
+        <CentralSidebar items={centralNavItems} activeTab={tab} onTabChange={handleSidebarTabChange} canWorkAsAdmin={canAdmin && expectedRole === "central"} />
 
         <main className="tc-main" data-companion-section={tab}>
           {expectedRole === "admin" && <section className={workspaceStyles.adminBanner} aria-label="Operativa Central en administración">

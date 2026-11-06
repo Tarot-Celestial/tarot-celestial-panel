@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
@@ -26,7 +27,7 @@ async function uidFromBearer(req: Request) {
   return { uid: data.user?.id || null };
 }
 
-async function requireAdmin(admin: any, uid: string) {
+async function requireAdmin(admin: any, uid: string, req: Request) {
   const { data: me, error } = await admin
     .from("workers")
     .select("id, role")
@@ -35,7 +36,7 @@ async function requireAdmin(admin: any, uid: string) {
 
   if (error) throw error;
   if (!me) return { ok: false, error: "NO_WORKER" } as const;
-  if (me.role !== "admin") return { ok: false, error: "FORBIDDEN" } as const;
+  if (!(await requestHasAdminAccess(req))) return { ok: false, error: "FORBIDDEN" } as const;
   return { ok: true } as const;
 }
 
@@ -48,7 +49,7 @@ export async function POST(req: Request) {
     const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
     const admin = createClient(url, service, { auth: { persistSession: false } });
 
-    const check = await requireAdmin(admin, uid);
+    const check = await requireAdmin(admin, uid, req);
     if (!check.ok) return NextResponse.json(check, { status: check.error === "FORBIDDEN" ? 403 : 403 });
 
     const body = await req.json().catch(() => ({}));
