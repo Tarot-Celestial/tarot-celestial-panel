@@ -43,6 +43,8 @@ function harness(fetch) {
         if (name.endsWith('.css')) return { __esModule: true, default: new Proxy({}, { get: (_, key) => key }) };
         if (name === '@/lib/countries') return { getCountryByLabelOrCode: () => ({}), buildInternationalPhone: (_, phone) => phone };
         if (name === '@/lib/purchase-presentation') return h.load('src/lib/purchase-presentation.ts');
+        if (name === '@/components/crm/PurchaseBenefitReceipt') return h.load('src/components/crm/PurchaseBenefitReceipt.tsx');
+        if (name === '@/lib/purchase-benefit-summary') return h.load('src/lib/purchase-benefit-summary.ts');
         throw Error(`Unexpected import ${name}`);
       },
     });
