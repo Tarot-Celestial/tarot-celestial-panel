@@ -146,7 +146,7 @@ export default function CardPayment() {
       const sdk = sdkWindow[sdkNamespace];
       if (!sdk?.CardFields) throw new Error("El formulario de tarjeta no está disponible. Contacta con tu central.");
       const card = sdk.CardFields({
-        style: { input: { "font-size": "16px", "font-family": "Arial, sans-serif", color: "#211b30" }, ".invalid": { color: "#a32138" } },
+        style: { input: { "font-size": "16px", "font-family": "Arial, sans-serif", color: "#20242b", border: "none", "border-radius": "0", padding: "0 12px", height: "50px", "line-height": "24px", background: "#ffffff" }, ".invalid": { color: "#b42335" } },
         createOrder: async () => {
           const result = await api("order");
           if (!result.order_id) { showResult(result); throw new Error("El pago ya está en proceso."); }
@@ -182,53 +182,89 @@ export default function CardPayment() {
     } finally { busy.current = false; }
   }
   const money = session ? new Intl.NumberFormat("es-ES", { style: "currency", currency: session.currency }).format(session.amount) : "";
-  const leonaris = session?.paypal_account === "client_business_v1";
   const clientPurchase = session?.checkout_kind === "client_purchase";
   const oraclePurchase = clientPurchase && isOraclePurchase(session);
   const oracleCredits = Number(session?.purchase_summary?.oracleCredits || 0);
   const oracleQuestions = Number(session?.purchase_summary?.oracleQuestions || 0);
   const showForm = ["loading", "ready", "paying"].includes(phase) || (phase === "cancelling" && Boolean(fields.current));
-  return <main className={`${styles.page} ${leonaris ? styles.leonaris : ""}`}>
-    <div className={styles.brand}><span aria-hidden="true">✦</span> {leonaris ? "TAROT LEONARIS" : "TAROT CELESTIAL"}</div>
-    <section className={styles.card} aria-labelledby="payment-title">
-      <div className={styles.topline}><span>PAGO SEGURO</span><span>Tarjeta de crédito o débito</span></div>
-      <h1 id="payment-title">{phase === "completed" ? "Pago confirmado" : phase === "cancelled" ? session?.remote_status === "CANCELLED_BY_STAFF" ? "Enlace cancelado" : session?.remote_status === "CANCELLED_BY_CLIENT" ? "Compra cancelada" : "Pago no completado" : "Tu consulta, a un paso"}</h1>
-      <p className={styles.intro}>{phase === "completed" ? `Gracias por confiar en ${leonaris ? "Tarot Leonaris" : "Tarot Celestial"}.` : "Paga con tu tarjeta. No necesitas una cuenta PayPal."}</p>
-      {leonaris && <p className={styles.recipient}>Cobro Leonaris · leonarisignis@gmail.com</p>}
-      {session && <div className={styles.summary}><span>{session.description}<small>Importe total</small></span><strong>{money}</strong></div>}
-      {clientPurchase && session.purchase_summary ? oraclePurchase ? <div className={styles.purchaseSummary} aria-label="Oráculo de tu compra">
-        {oracleCredits > 0 ? <strong>{oracleCredits} <span>{oracleCredits === 1 ? "tirada del Oráculo" : "tiradas del Oráculo"}</span></strong> : null}
-        {oracleQuestions > 0 ? <strong>{oracleQuestions} <span>{oracleQuestions === 1 ? "pregunta adicional" : "preguntas adicionales"}</span></strong> : null}
-        <p>{session.purchase_summary.packName}</p><small>{phase === "completed" ? "Ya está disponible en tu Oráculo." : "Se añadirá a tu Oráculo cuando el pago quede confirmado."}</small>
-      </div> : <div className={styles.purchaseSummary} aria-label="Minutos de tu compra"><strong>{session.purchase_summary.totalMinutes} <span>minutos de consulta</span></strong><p>{session.purchase_summary.normalMinutes} minutos normales{session.purchase_summary.freeMinutes > 0 ? ` + ${session.purchase_summary.freeMinutes} minutos gratis` : ""}</p><small>{phase === "completed" ? "Ya están disponibles en tu cuenta." : "Se añadirán cuando el pago quede confirmado."}</small></div> : null}
-      {session?.environment === "sandbox" && <p className={styles.notice}>Modo de pruebas · No se cobra dinero real.</p>}
-      <form onSubmit={pay} hidden={!showForm} className={styles.form}>
-        <fieldset disabled={phase !== "ready"}>
-          <label>Nombre del titular<div id="tc-card-name" className={styles.hosted} /></label>
-          <label>Número de tarjeta<div id="tc-card-number" className={styles.hosted} /></label>
-          <div className={styles.row}>
-            <label>Caducidad<div id="tc-card-expiry" className={styles.hosted} /></label>
-            <label>Código de seguridad<div id="tc-card-cvv" className={styles.hosted} /></label>
-          </div>
-          <details open={billingOpen} onToggle={event => setBillingOpen(event.currentTarget.open)} className={styles.billing}>
-            <summary>Añadir dirección de facturación</summary>
-            <p>Puede ayudar a tu banco a verificar la tarjeta.</p>
-            <label>Dirección<input autoComplete="billing address-line1" maxLength={150} required={billingOpen} value={billing.addressLine1} onChange={e => setBilling({ ...billing, addressLine1: e.target.value })} /></label>
-            <div className={styles.row}><label>Ciudad<input autoComplete="billing address-level2" required={billingOpen} maxLength={100} value={billing.adminArea2} onChange={e => setBilling({ ...billing, adminArea2: e.target.value })} /></label>
-              <label>Código postal<input autoComplete="billing postal-code" required={billingOpen} maxLength={20} value={billing.postalCode} onChange={e => setBilling({ ...billing, postalCode: e.target.value })} /></label></div>
-            <label>País (código de 2 letras)<input autoComplete="billing country" required={billingOpen} pattern="[A-Za-z]{2}" maxLength={2} placeholder="ES" value={billing.countryCode} onChange={e => setBilling({ ...billing, countryCode: e.target.value.toUpperCase() })} /></label>
-          </details>
-          <button className={styles.pay} disabled={phase !== "ready"} type="submit">{phase === "paying" ? "Confirmando con tu banco…" : phase === "loading" ? "Cargando formulario…" : phase === "cancelling" ? "Cancelando…" : `Pagar ${money}`}</button>
-        </fieldset>
-      </form>
-      {message && <p role="status" aria-live="polite" className={styles.notice}>{message}</p>}
-      {["pending", "checking"].includes(phase) && <><button className={styles.pay} onClick={() => void check()} disabled={phase === "checking"}>{phase === "checking" ? "Comprobando…" : "Comprobar estado del pago"}</button>
-        {phase === "pending" && session?.remote_status === "CREATED" && <button className={styles.secondary} onClick={() => window.location.reload()}>Volver a cargar el formulario</button>}</>}
-      {clientPurchase && session.can_cancel === true && ["ready", "pending", "unavailable", "cancelling"].includes(phase) ? <button type="button" className={styles.secondary} disabled={phase === "cancelling"} onClick={() => void cancel()}>{phase === "cancelling" ? "Comprobando cancelación…" : "Cancelar esta compra"}</button> : null}
-      {phase === "completed" ? clientPurchase ? <div className={styles.resultLinks}><a className={styles.pay} href={oraclePurchase ? "/cliente/oraculo" : "/cliente/dashboard"}>{oraclePurchase ? "Volver a mi Oráculo" : "Ver mis minutos y beneficios"}</a><a className={styles.back} href="/cliente/precios-ofertas">Volver a precios y ofertas</a></div> : <a className={styles.back} href="/cliente">Volver al panel →</a> : null}
-      {clientPurchase && phase === "cancelled" ? <a className={styles.back} href="/cliente/precios-ofertas">Volver a precios y elegir otro paquete →</a> : null}
-      <footer className={styles.footer}>Procesado de forma segura por <b>PayPal</b>.<br />Tu banco puede pedirte una confirmación adicional.</footer>
-    </section>
-    <p className={styles.help}>¿Necesitas ayuda? Responde al WhatsApp de tu central.</p>
+  const inProgress = ["paying", "checking", "cancelling"].includes(phase);
+  const title = phase === "completed" ? "Pago confirmado"
+    : phase === "refunded" ? "Detalle del reembolso"
+    : phase === "cancelled" ? session?.remote_status === "CANCELLED_BY_STAFF" ? "Enlace cancelado" : session?.remote_status === "CANCELLED_BY_CLIENT" ? "Compra cancelada" : "Pago no completado"
+    : ["pending", "checking"].includes(phase) ? "Estado de tu pago"
+    : phase === "unavailable" ? "Revisa tu enlace de pago" : "Pagar con tarjeta";
+  return <main className={styles.page}>
+    <div className={styles.checkout}>
+      <section className={styles.order} aria-labelledby="order-title">
+        <div className={styles.orderTop}>
+          {!inProgress && <a className={styles.back} href={clientPurchase ? "/cliente/precios-ofertas" : "/cliente"}><span aria-hidden="true">←</span> Volver al panel</a>}
+          <span className={styles.secure}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg> Pago con tarjeta</span>
+        </div>
+        <h2 id="order-title" className={styles.eyebrow}>Resumen de compra</h2>
+        {session ? <>
+          <h3 className={styles.productTitle}>{session.purchase_summary?.packName || session.description}</h3>
+          <p className={styles.amount}>{money}</p>
+          <p className={styles.paymentType}>Pago único <span aria-hidden="true">·</span> {session.currency}</p>
+          <div className={styles.summary}><span>Importe total</span><strong>{money}</strong></div>
+          {clientPurchase && session.purchase_summary ? oraclePurchase ? <div className={styles.purchaseSummary} aria-label="Oráculo de tu compra">
+            <p className={styles.summaryLabel}>Tu compra incluye</p>
+            {oracleCredits > 0 ? <p><strong>{oracleCredits}</strong> {oracleCredits === 1 ? "tirada del Oráculo" : "tiradas del Oráculo"}</p> : null}
+            {oracleQuestions > 0 ? <p><strong>{oracleQuestions}</strong> {oracleQuestions === 1 ? "pregunta adicional" : "preguntas adicionales"}</p> : null}
+            <p className={styles.fulfillment}>{phase === "completed" ? "Ya está disponible en tu Oráculo." : phase === "cancelled" || phase === "refunded" ? "Consulta el estado de este pago para más información." : "Se añadirá a tu Oráculo cuando el pago quede confirmado."}</p>
+          </div> : <div className={styles.purchaseSummary} aria-label="Minutos de tu compra">
+            <p className={styles.summaryLabel}>Tu compra incluye</p>
+            <p><strong>{session.purchase_summary.totalMinutes}</strong> minutos de consulta</p>
+            <p className={styles.minuteDetail}>{session.purchase_summary.normalMinutes} minutos normales{session.purchase_summary.freeMinutes > 0 ? ` + ${session.purchase_summary.freeMinutes} minutos gratis` : ""}</p>
+            <p className={styles.fulfillment}>{phase === "completed" ? "Ya están disponibles en tu cuenta." : phase === "cancelled" || phase === "refunded" ? "Consulta el estado de este pago para más información." : "Se añadirán cuando el pago quede confirmado."}</p>
+          </div> : <p className={styles.fulfillment}>Conserva la confirmación de tu pago. Tu central te ayudará con los detalles de la consulta.</p>}
+        </> : <p className={styles.emptySummary}>{phase === "loading" ? "Cargando el resumen de tu compra…" : "Abre el enlace de tu compra para consultar el importe y sus detalles."}</p>}
+        <div className={styles.orderHelp}>
+          <p>¿Necesitas ayuda con tu compra?</p>
+          <span>Responde al WhatsApp de tu central.</span>
+        </div>
+      </section>
+      <section className={styles.card} aria-labelledby="payment-title">
+        {phase === "completed" && <div className={styles.successIcon} aria-hidden="true">✓</div>}
+        <h1 id="payment-title">{title}</h1>
+        <p className={styles.intro}>{phase === "completed" ? "Gracias. Aquí tienes la confirmación de tu pago." : showForm ? "Introduce los datos de tu tarjeta. No necesitas una cuenta PayPal." : "Consulta la información de tu operación a continuación."}</p>
+        {session?.environment === "sandbox" && <p className={styles.notice}>Modo de pruebas · No se cobra dinero real.</p>}
+        <form onSubmit={pay} hidden={!showForm} className={styles.form}>
+          <fieldset disabled={phase !== "ready"}>
+            <div className={styles.paymentMethod}>
+              <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2.5" /><path d="M3 10h18M6 15h4" /></svg>Tarjeta de crédito o débito</span>
+              <div className={styles.cardBrands} aria-label="Visa y Mastercard">
+                <span className={styles.visa} aria-label="Visa">VISA</span>
+                <svg className={styles.mastercard} viewBox="0 0 40 26" role="img" aria-label="Mastercard"><rect x=".5" y=".5" width="39" height="25" rx="4" fill="white" stroke="#e0e3e8" /><circle cx="16" cy="13" r="8" fill="#eb001b" /><circle cx="25" cy="13" r="8" fill="#f79e1b" /><path d="M20.5 6.39a8 8 0 0 1 0 13.22 8 8 0 0 1 0-13.22Z" fill="#ff5f00" /></svg>
+              </div>
+            </div>
+            <div className={styles.fieldGroup}>
+              <label>Número de tarjeta<div id="tc-card-number" className={styles.hosted} /></label>
+              <div className={styles.row}>
+                <label>Caducidad<div id="tc-card-expiry" className={styles.hosted} /></label>
+                <label>Código de seguridad<div id="tc-card-cvv" className={styles.hosted} /></label>
+              </div>
+            </div>
+            <label>Nombre del titular<div id="tc-card-name" className={styles.hosted} /></label>
+            <details open={billingOpen} onToggle={event => setBillingOpen(event.currentTarget.open)} className={styles.billing}>
+              <summary>Añadir dirección de facturación</summary>
+              <p>Puede ayudar a tu banco a verificar la tarjeta.</p>
+              <label>Dirección<input autoComplete="billing address-line1" maxLength={150} required={billingOpen} value={billing.addressLine1} onChange={e => setBilling({ ...billing, addressLine1: e.target.value })} /></label>
+              <div className={styles.row}><label>Ciudad<input autoComplete="billing address-level2" required={billingOpen} maxLength={100} value={billing.adminArea2} onChange={e => setBilling({ ...billing, adminArea2: e.target.value })} /></label>
+                <label>Código postal<input autoComplete="billing postal-code" required={billingOpen} maxLength={20} value={billing.postalCode} onChange={e => setBilling({ ...billing, postalCode: e.target.value })} /></label></div>
+              <label>País (código de 2 letras)<input autoComplete="billing country" required={billingOpen} pattern="[A-Za-z]{2}" maxLength={2} placeholder="ES" value={billing.countryCode} onChange={e => setBilling({ ...billing, countryCode: e.target.value.toUpperCase() })} /></label>
+            </details>
+            <button className={styles.pay} disabled={phase !== "ready"} type="submit">{phase === "paying" ? "Confirmando con tu banco…" : phase === "loading" ? "Cargando formulario…" : phase === "cancelling" ? "Cancelando…" : `Pagar ${money}`}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg></button>
+          </fieldset>
+        </form>
+        {message && <p role="status" aria-live="polite" className={`${styles.notice} ${phase === "completed" ? styles.success : ""}`}>{message}</p>}
+        {["pending", "checking"].includes(phase) && <><button className={styles.pay} onClick={() => void check()} disabled={phase === "checking"}>{phase === "checking" ? "Comprobando…" : "Comprobar estado del pago"}</button>
+          {phase === "pending" && session?.remote_status === "CREATED" && <button className={styles.secondary} onClick={() => window.location.reload()}>Volver a cargar el formulario</button>}</>}
+        {clientPurchase && session.can_cancel === true && ["ready", "pending", "unavailable", "cancelling"].includes(phase) ? <button type="button" className={styles.secondary} disabled={phase === "cancelling"} onClick={() => void cancel()}>{phase === "cancelling" ? "Comprobando cancelación…" : "Cancelar esta compra"}</button> : null}
+        {phase === "completed" ? clientPurchase ? <div className={styles.resultLinks}><a className={styles.pay} href={oraclePurchase ? "/cliente/oraculo" : "/cliente/dashboard"}>{oraclePurchase ? "Volver a mi Oráculo" : "Ver mis minutos y beneficios"}</a><a className={styles.back} href="/cliente/precios-ofertas">Volver a precios y ofertas</a></div> : <a className={styles.back} href="/cliente">Volver al panel →</a> : null}
+        {clientPurchase && phase === "cancelled" ? <a className={styles.back} href="/cliente/precios-ofertas">Volver a precios y elegir otro paquete →</a> : null}
+        <footer className={styles.footer}><p>Pago procesado por <strong>PayPal</strong></p><span>Tu banco puede pedirte una confirmación adicional.</span></footer>
+      </section>
+    </div>
+    <nav className={styles.legal} aria-label="Información legal del pago"><a href="/aviso-legal" target="_blank" rel="noopener noreferrer">Información del comercio</a><a href="/privacidad" target="_blank" rel="noopener noreferrer">Privacidad</a><a href="/terminos" target="_blank" rel="noopener noreferrer">Condiciones</a></nav>
   </main>;
 }
