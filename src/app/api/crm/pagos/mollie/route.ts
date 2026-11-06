@@ -17,7 +17,7 @@ function publicPack(pack: (typeof CLIENTE_MINUTE_PACKS)[number]) {
 }
 function allowed(attempt: any, worker: any) {
   const meta = attempt.provider_response?.metadata;
-  return meta?.source === "crm_cobrador" && (worker.role === "admin" || meta.initiated_by_worker_id === worker.id);
+  return meta?.source === "crm_cobrador" && (worker.can_admin === true || meta.initiated_by_worker_id === worker.id);
 }
 function publicAttempt(a: any) {
   const paymentLinkId = String(a.provider_response?.payment_link_id || (String(a.order_id || "").startsWith("pl_") ? a.order_id : "") || "").trim();
@@ -38,7 +38,7 @@ export async function GET(req: Request) {
       if (params.get("cliente_id")) {
         const { data, error } = await admin.from("cliente_payment_attempts").select("*")
           .eq("cliente_id", params.get("cliente_id")!).eq("provider", "mollie")
-          .contains("provider_response", { metadata: { source: "crm_cobrador", ...(worker.role === "admin" ? {} : { initiated_by_worker_id: worker.id }) } })
+          .contains("provider_response", { metadata: { source: "crm_cobrador", ...(worker.can_admin === true ? {} : { initiated_by_worker_id: worker.id }) } })
           .order("created_at", { ascending: false }).limit(1);
         if (error) throw error;
         latest = data?.[0] ? publicAttempt(data[0]) : null;

@@ -5,6 +5,7 @@ export type PanelRole = "admin" | "central" | "tarotista";
 type PanelIdentity = {
   ok: boolean;
   role?: string | null;
+  can_admin?: boolean;
   [key: string]: unknown;
 };
 

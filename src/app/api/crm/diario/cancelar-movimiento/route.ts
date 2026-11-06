@@ -10,7 +10,7 @@ export async function POST(req: Request) {
   try {
     const me = await workerFromRequest(req);
     if (!me) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-    if (String(me.role || "").toLowerCase() !== "admin") {
+    if (!me.can_admin) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 

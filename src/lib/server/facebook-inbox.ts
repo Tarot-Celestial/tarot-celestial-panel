@@ -1,5 +1,6 @@
 import 'server-only';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { hasAdminAccess } from '@/lib/server/admin-access';
 import { facebookConnection, facebookGraph, FacebookError, facebookId, facebookDate, facebookReplyWindow, verifyFacebookAccount, type FacebookAccount } from './facebook-graph';
 import { recordSocialActivity, removeSocialActivity, socialThreadUnread, markSocialThreadRead, acquireSocialSync, finishSocialSync, socialSyncState } from './social-inbox-activity';
 import { facebookCommentId, facebookWebhookEvents } from './facebook-webhook';
@@ -158,9 +159,7 @@ export async function facebookSyncPost(userId: string, input: any) {
   const postId = typeof input?.postId === 'string' ? input.postId.trim() : '';
   if (!/^\d{1,40}(?:_\d{1,40})?$/.test(postId)) throw new FacebookError('INVALID_POST', 'Introduce el ID de la publicación de Facebook, no el identificador de la bandeja de anuncios.', 400);
   const db = supabaseAdmin();
-  const worker = await db.from('workers').select('id').eq('user_id', userId).eq('role', 'admin').eq('is_active', true).limit(1);
-  if (worker.error) throw worker.error;
-  if (!worker.data?.length) throw new FacebookError('FORBIDDEN', 'Solo administración puede importar una publicación.', 403);
+  if (!(await hasAdminAccess(db, userId))) throw new FacebookError('FORBIDDEN', 'Solo administración puede importar una publicación.', 403);
   const account = facebookConnection();
   await verifyFacebookAccount(account);
   const source = await facebookGraph(account, postId, { fields: 'id,from,permalink_url' });

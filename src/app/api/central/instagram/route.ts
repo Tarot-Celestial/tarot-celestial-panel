@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 import { InstagramError, instagramIdentity } from '@/lib/server/instagram-graph';
@@ -19,7 +20,7 @@ export async function GET(req: Request) {
     const identity = await instagramIdentity(req);
     const params = new URL(req.url).searchParams;
     if (params.get('action') === 'diagnostics') {
-      if (identity.worker.role !== 'admin') throw new InstagramError('FORBIDDEN', 'Solo administración puede comprobar la conexión.', 403);
+      if (!(await requestHasAdminAccess(req))) throw new InstagramError('FORBIDDEN', 'Solo administración puede comprobar la conexión.', 403);
       return json(await instagramDiagnostics());
     }
     if (params.get('action') === 'messages') return json(await instagramMessages(params.get('threadId') || '', params.get('requestId')));
@@ -33,7 +34,7 @@ export async function POST(req: Request) {
     const identity = await instagramIdentity(req);
     const action = new URL(req.url).searchParams.get('action');
     if(action==='subscribe') {
-      if(identity.worker.role!=='admin')throw new InstagramError('FORBIDDEN','Solo administración puede configurar la conexión.',403);
+      if(!(await requestHasAdminAccess(req)))throw new InstagramError('FORBIDDEN','Solo administración puede configurar la conexión.',403);
       return json(await subscribeInstagram());
     }
     if (action !== 'send' && action !== 'resolve' && action !== 'read') return json({ ok: false, error: 'Acción no válida.' }, 400);

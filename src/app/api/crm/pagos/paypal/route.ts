@@ -37,20 +37,20 @@ export async function GET(req: Request) {
       if (!clientId || !uuid.test(clientId)) throw new PayPalError("Clienta no válida.", 400);
       let pendingQuery = admin.from(PAYPAL_TABLE).select("*").eq("environment", config.environment)
         .eq("checkout_kind", "crm_collection").eq("cliente_id", clientId).eq("status", "pending");
-      if (worker.role !== "admin") pendingQuery = pendingQuery.eq("worker_id", worker.id);
+      if (!worker.can_admin) pendingQuery = pendingQuery.eq("worker_id", worker.id);
       const { data, error } = await pendingQuery.order("created_at", { ascending: false }).limit(50);
       if (error) throw error;
       return NextResponse.json({ ok: true, pending: (data || []).map(publicAttempt) }, { headers });
     }
     let query = accountQuery(admin.from(PAYPAL_TABLE).select("*").eq("environment", config.environment).eq("checkout_kind", "crm_collection"), account);
-    if (worker.role !== "admin") query = query.eq("worker_id", worker.id);
+    if (!worker.can_admin) query = query.eq("worker_id", worker.id);
     const id = params.get("attempt_id");
     if (!id) {
       const clientId = params.get("cliente_id");
       if (!clientId || !uuid.test(clientId)) throw new PayPalError("Clienta no válida.", 400);
       const { data, error } = await query.eq("cliente_id", clientId).order("created_at", { ascending: false }).limit(50);
       let pendingQuery = accountQuery(admin.from(PAYPAL_TABLE).select("*").eq("environment", config.environment).eq("checkout_kind", "crm_collection"), account).eq("cliente_id", clientId).eq("status", "pending");
-      if (worker.role !== "admin") pendingQuery = pendingQuery.eq("worker_id", worker.id);
+      if (!worker.can_admin) pendingQuery = pendingQuery.eq("worker_id", worker.id);
       const pending = await pendingQuery.order("created_at", { ascending: false }).limit(1);
       if (pending.error) throw pending.error;
       const latest = pending.data?.[0] || data?.[0];
@@ -83,7 +83,7 @@ export async function POST(req: Request) {
     if (body.action === "cancel" || body.action === "inspect") {
       if (!uuid.test(body.attempt_id || "")) throw new PayPalError("Cobro no válido.", 400);
       let query = accountQuery(admin.from(PAYPAL_TABLE).select("*").eq("id", body.attempt_id).eq("environment", config.environment).eq("checkout_kind", "crm_collection"), account);
-      if (worker.role !== "admin") query = query.eq("worker_id", worker.id);
+      if (!worker.can_admin) query = query.eq("worker_id", worker.id);
       const { data, error } = await query.maybeSingle();
       if (error) throw error;
       if (!data) throw new PayPalError("Cobro no encontrado.", 404);
@@ -119,8 +119,8 @@ export async function POST(req: Request) {
         shipping_preference: "NO_SHIPPING",
         return_url: `${config.origin}/pago-paypal?ref=${token}`, cancel_url: `${config.origin}/pago-paypal?ref=${token}&cancel=1`,
       } } } };
-      const previous = await preparePayPalCrmReplacement(admin, { clientId: client.id, environment: config.environment, workerId: worker.id, isAdmin: worker.role === "admin" });
-      const inserted = await admin.rpc("tc_replace_paypal_crm_attempt", { p_previous: previous, p_is_admin: worker.role === "admin", p_attempt: {
+      const previous = await preparePayPalCrmReplacement(admin, { clientId: client.id, environment: config.environment, workerId: worker.id, isAdmin: worker.can_admin === true });
+      const inserted = await admin.rpc("tc_replace_paypal_crm_attempt", { p_previous: previous, p_is_admin: worker.can_admin === true, p_attempt: {
         id, cliente_id: client.id, worker_id: worker.id, environment: config.environment,
         public_token: token, amount, currency: "EUR", pack_id: body.pack_id,
         pack_name: pack?.nombre || "Importe personalizado", purchase_payload: payload, create_payload: createPayload,

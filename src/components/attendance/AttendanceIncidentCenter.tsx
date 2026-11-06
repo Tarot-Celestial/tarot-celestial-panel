@@ -51,6 +51,7 @@ type Payload = {
   ok: boolean;
   month: string;
   role: string;
+  can_admin?: boolean;
   workers: Worker[];
   schedules: Schedule[];
   incidents: Incident[];
@@ -251,7 +252,7 @@ export default function AttendanceIncidentCenter({
         {!readonly && <div className={styles.actions}>
           {incident.pending_minutes > 0 && <button onClick={() => { setSelectedIncident(incident); setDialog("recovery"); }}><Clock3 size={15}/> Registrar recuperación</button>}
           <button onClick={() => { setSelectedIncident(incident); setDialog("edit"); }}><Wrench size={15}/> Editar</button>
-          {incident.pending_minutes > 0 && (data?.role === "admin" || data?.settings?.allow_central_justify) && <button onClick={() => { setSelectedIncident(incident); setDialog("justify"); }}><ShieldCheck size={15}/> Justificar horas</button>}
+          {incident.pending_minutes > 0 && (data?.can_admin === true || data?.role === "admin" || data?.settings?.allow_central_justify) && <button onClick={() => { setSelectedIncident(incident); setDialog("justify"); }}><ShieldCheck size={15}/> Justificar horas</button>}
           <button onClick={() => { setSelectedIncident(incident); setDialog("history"); }}><History size={15}/> Ver historial</button>
           {incident.pending_minutes === 0 && incident.status !== "closed" && <button onClick={() => void act({ action: "close", incident_id: incident.id }, "Incidencia cerrada.")}><CheckCircle2 size={15}/> Cerrar</button>}
         </div>}

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export type AtlasOperationsContext = { db: SupabaseClient; worker: { id: string; user_id: string; role: string; display_name: string } };
+export type AtlasOperationsContext = { db: SupabaseClient; worker: { id: string; user_id: string; role: string; display_name: string; can_admin?: boolean } };
 export type AtlasDispatchKind = 'capture' | 'recovery' | 'task';
 export type AtlasDispatchPayload = {
   kind: AtlasDispatchKind; title: string; description: string; due_at: string | null;
@@ -15,7 +15,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const OPEN = ['pending', 'in_progress', 'blocked'];
 
 function admin(ctx: AtlasOperationsContext) {
-  if (ctx.worker.role !== 'admin' || !UUID.test(ctx.worker.id) || !UUID.test(ctx.worker.user_id)) throw new AtlasOperationsError('Solo administración puede consultar Atlas.', 403);
+  if ((ctx.worker.role !== 'admin' && ctx.worker.can_admin !== true) || !UUID.test(ctx.worker.id) || !UUID.test(ctx.worker.user_id)) throw new AtlasOperationsError('Solo administración puede consultar Atlas.', 403);
 }
 async function checked(query: PromiseLike<any>) {
   const { data, error } = await query;

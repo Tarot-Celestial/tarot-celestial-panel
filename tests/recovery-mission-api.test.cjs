@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm'), ts = require('typescript');
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 function harness() {
-  const h = { role: 'central', active: true, calls: [], error: null };
+  const h = { role: 'central', active: true, canAdmin: false, calls: [], error: null };
   const db = {
     auth: { getUser: async token => ({ data: { user: token === 'valid' ? { id: id(1) } : null }, error: null }) },
     from: () => ({ select: () => ({ eq: async () => ({ data: [{ role: h.role, is_active: h.active }], error: null }) }) }),
@@ -17,6 +17,7 @@ function harness() {
     vm.runInNewContext(code, { exports, URL, console: { error() {} }, require: name => {
       if (name === 'next/server') return { NextResponse: { json: (body, options) => new Response(JSON.stringify(body), options) } };
       if (name === '@/lib/server/auth-worker') return { getAdminClient: () => db };
+      if (name === '@/lib/server/admin-access') return { hasAdminAccess: async (_db, userId) => userId === id(1) && h.active && (h.role === 'admin' || h.canAdmin) };
       if (name === '@/lib/server/recovery-access') return load('src/lib/server/recovery-access.ts');
       throw Error(name);
     } }); return exports;
@@ -53,6 +54,16 @@ test('mission filtering is delegated before pagination and errors never pretend 
   assert.equal(h.calls[0].name, 'tc_recovery_mission_list'); assert.equal(h.calls[0].args.p_page, 2);
   h.error = { code: '42883' }; const response = await h.mission.GET(h.req());
   assert.equal(response.status, 503); assert.equal((await response.json()).mission, undefined);
+});
+
+test('delegated Central can read admin recovery overview without changing role or assigning work', async () => {
+  const h = harness(); h.canAdmin = true;
+  assert.equal((await h.mission.GET(h.req('?overview=1'))).status, 200);
+  assert.equal(h.role, 'central'); assert.equal(h.calls[0].name, 'tc_recovery_mission_overview');
+  assert.equal(h.calls[0].args.p_user, id(1));
+  h.canAdmin = false;
+  assert.equal((await h.mission.GET(h.req('?overview=1'))).status, 403);
+  assert.equal(h.calls.length, 1);
 });
 test('audited management requires channel and stable request ID; forwards authenticated user only', async () => {
   const h = harness(), body = { client_id: id(2), action: 'contacted', version: 0 };

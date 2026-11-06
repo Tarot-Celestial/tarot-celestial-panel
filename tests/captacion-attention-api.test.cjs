@@ -61,6 +61,7 @@ function fixture(options = {}) {
     'next/server': { NextResponse: class extends Response { static json(body, init) { return new Response(JSON.stringify(body), init); } } },
     '@supabase/supabase-js': { createClient: () => db },
     '@/lib/server/brand-filter': brand,
+    '@/lib/server/admin-access': {hasAdminAccess: async (_db, userId) => userId === worker.user_id && worker.is_active === true && (worker.role === 'admin' || options.delegated === true)},
     '@/lib/server/captacion-attention': load('src/lib/server/captacion-attention.ts', {}),
   }, { process: { env: { NEXT_PUBLIC_SUPABASE_URL: 'https://fixture.invalid', SUPABASE_SERVICE_ROLE_KEY: 'fixture-only' } } });
   return { reads, authTokens, get: (query = '', token = 'verified') => api.GET(new Request(`http://localhost/api/captacion/attention?${query}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })) };
@@ -103,6 +104,13 @@ test('orion selection is explicit, CRM origin has priority, and fallback origin 
 test('admin can see other assignments while preserving brand filtering', async () => {
   const f = fixture({ worker: { role: 'admin' }, events: [event(1), event(2)], leads: [lead(1, { assigned_worker_id: id(99) }), lead(2)], clients: [client(1), client(2, { origen: 'Orion Facebook' })] });
   const body = await (await f.get()).json(); assert.deepEqual(body.items.map(item => item.id), [lead(1).id]);
+});
+
+test('delegated central sees admin assignments without changing original worker identity', async () => {
+  const f = fixture({ delegated: true, events: [event(1)], leads: [lead(1, { assigned_worker_id: id(99) })], clients: [client(1)] });
+  const response = await f.get(), body = await response.json();
+  assert.equal(response.status, 200); assert.deepEqual(body.items.map(item => item.id), [lead(1).id]);
+  assert.equal(body.worker_id, id(1)); assert.equal(body.user_id, id(2));
 });
 
 test('only processed original Meta dates in the last 24h qualify, including repeat submissions', async () => {

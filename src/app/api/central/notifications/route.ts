@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { workerFromRequest } from "@/lib/server/auth-worker";
 import { filterRowsByBrand, normalizeBrand, originMatchesBrand, type BrandKey } from "@/lib/server/brand-filter";
 
 export const runtime = "nodejs";
@@ -10,7 +10,7 @@ const MADRID_TIME_ZONE = "Europe/Madrid";
 
 type NotificationState = "pending" | "read" | "resolved";
 type NotificationPriority = "urgent" | "attention" | "info" | "success" | "reward";
-type Worker = { id: string; role: string | null; user_id: string | null; display_name: string | null };
+type Worker = { can_admin?: boolean; id: string; role: string | null; user_id: string | null; display_name: string | null };
 type ClientRef = { id?: string | null; nombre?: string | null; apellido?: string | null; telefono?: string | null; origen?: string | null };
 type FollowUpRow = {
   id: string;
@@ -81,19 +81,9 @@ function adminClient() {
 }
 
 async function getWorker(req: Request) {
-  const { data, error } = getAuthUserFromRequest(req);
-  if (error || !data.user?.id) throw new Error("NO_AUTH");
-  const admin = adminClient();
-  const { data: worker, error: workerError } = await admin
-    .from("workers")
-    .select("id, role, user_id, display_name")
-    .eq("user_id", data.user.id)
-    .maybeSingle();
-  if (workerError) throw workerError;
-  if (!worker?.id || !["central", "admin", "ceo", "supervisor"].includes(String(worker.role || ""))) {
-    throw new Error("FORBIDDEN");
-  }
-  return { admin, worker: worker as Worker, authUserId: data.user.id };
+  const worker = await workerFromRequest(req);
+  if (!worker?.id || !["central", "admin", "ceo", "supervisor"].includes(String(worker.role || ""))) throw new Error("FORBIDDEN");
+  return { admin: adminClient(), worker: worker as Worker, authUserId: String(worker.resolved_uid) };
 }
 
 function normalizeState(value: string | null): NotificationState | "all" {
@@ -296,7 +286,7 @@ async function loadFollowUps(admin: SupabaseClient, worker: Worker, brand: Brand
     .order("reminder_at", { ascending: true, nullsFirst: false })
     .limit(1000);
 
-  if (!["admin", "ceo", "supervisor"].includes(String(worker.role || ""))) {
+  if (!worker.can_admin) {
     query = query.eq("worker_id", worker.id);
   }
 
@@ -471,7 +461,7 @@ export async function PATCH(req: Request) {
         .maybeSingle();
       if (followUpError) throw followUpError;
       if (!followUp) return NextResponse.json({ ok: false, error: "FOLLOWUP_NOT_FOUND" }, { status: 404 });
-      if (!["admin", "ceo", "supervisor"].includes(String(worker.role || "")) && String(followUp.worker_id) !== worker.id) {
+      if (!worker.can_admin && String(followUp.worker_id) !== worker.id) {
         return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
       }
 

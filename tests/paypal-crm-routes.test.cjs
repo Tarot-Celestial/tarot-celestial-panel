@@ -26,7 +26,7 @@ function harness(){
  const packs={CLIENTE_MINUTE_PACKS:[{id:'pack_20',nombre:'20 minutos',priceUsd:22,totalMinutes:20,rouletteLevel:1,rouletteSpins:1}],getConfiguredMinutePack:k=>packs.CLIENTE_MINUTE_PACKS.find(p=>p.id===k)};
  const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src/app/api/crm/pagos/paypal/route.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,URL,Date,console,require:n=>({
  'crypto':require('node:crypto'),'next/server':{NextResponse:{json:(x,o)=>new Response(JSON.stringify(x),o)}},
- '@/lib/server/ruleta-access':{rouletteStaff:async req=>{if(req.headers.get('authorization')!=='Bearer good')throw new PayPalError('Forbidden',401);return {admin,worker};}},
+ '@/lib/server/ruleta-access':{rouletteStaff:async req=>{if(req.headers.get('authorization')!=='Bearer good')throw new PayPalError('Forbidden',401);return {admin,worker:{...worker,can_admin:worker.role==='admin'||worker.can_admin===true}};}},
  '@/lib/server/cliente-minute-packs':packs,'@/lib/server/cliente-platform':{pointsFromAmount:n=>n*10,splitMinutes:n=>({free:Math.floor(n/2),normal:n-Math.floor(n/2)})},
  '@/lib/ruleta':{rouletteLevelForPurchaseAmount:()=>1},'@/lib/server/paypal-crm':paypal})[n]});api=exports;
  const post=(overrides={},token='good')=>api.POST(new Request('https://panel.test/api/crm/pagos/paypal',{method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify({request_id:id(10),cliente_id:id(2),pack_id:'pack_20',...overrides})}));

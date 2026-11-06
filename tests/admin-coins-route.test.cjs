@@ -30,6 +30,7 @@ function harness() {
    }};return q;
   },
   async rpc(name,payload) {
+   if(name==='tc_has_admin_access') return {data:h.authenticated && h.active && h.workerUserId===payload.p_user_id && h.role==='admin',error:null};
    h.rpcCalls.push({name,payload});
    if(name==='tc_client_state_snapshot') return {data:{coins:h.balance,minutes_free:7,minutes_normal:12,minutes_total:19,effective_rank:'oro'},error:null};
    if(name==='cliente_ruleta_resumen_ultra_v1') return {data:{level_1_spins:1,level_2_spins:2,level_3_spins:3,level_4_spins:4,level_5_spins:0},error:null};
@@ -79,7 +80,7 @@ test('Coins actor comes from the verified Auth user; request substitution is ign
 });
 test('Email fallback never attributes a gift to an old worker Auth link',async()=>{
  const h=harness();h.workerUserId=id(8);const r=await h.post();
- assert.equal(r.status,403);assert.equal(h.rpcCalls[0].payload.p_actor_user_id,h.userId);assert.notEqual(h.rpcCalls[0].payload.p_actor_user_id,h.workerUserId);
+ assert.equal(r.status,403);assert.equal(h.rpcCalls.length,0);
  assert.equal(h.ledger.size,0);assert.equal(h.balance,17);
 });
 test('Lost response retains operation identity: retry returns the original before/after without a second sum',async()=>{

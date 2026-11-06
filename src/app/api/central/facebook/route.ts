@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 import { FacebookError, facebookIdentity } from '@/lib/server/facebook-graph';
@@ -17,7 +18,7 @@ export async function GET(req: Request) {
     const identity = await facebookIdentity(req);
     const params = new URL(req.url).searchParams;
     if (params.get('action') === 'diagnostics') {
-      if (identity.worker.role !== 'admin') throw new FacebookError('FORBIDDEN', 'Solo administración puede comprobar la conexión.', 403);
+      if (!(await requestHasAdminAccess(req))) throw new FacebookError('FORBIDDEN', 'Solo administración puede comprobar la conexión.', 403);
       return json(await facebookDiagnostics());
     }
     if (params.get('action') === 'messages') return json(await facebookMessages(params.get('threadId') || '', params.get('requestId')));
@@ -31,11 +32,11 @@ export async function POST(req: Request) {
     const action = new URL(req.url).searchParams.get('action');
     const body = await req.json().catch(() => null);
     if (action === 'subscribe') {
-      if (identity.worker.role !== 'admin') throw new FacebookError('FORBIDDEN', 'Solo administración puede configurar la conexión.', 403);
+      if (!(await requestHasAdminAccess(req))) throw new FacebookError('FORBIDDEN', 'Solo administración puede configurar la conexión.', 403);
       return json(await facebookSubscribe(body));
     }
     if (action === 'sync-post') {
-      if (identity.worker.role !== 'admin') throw new FacebookError('FORBIDDEN', 'Solo administración puede importar una publicación.', 403);
+      if (!(await requestHasAdminAccess(req))) throw new FacebookError('FORBIDDEN', 'Solo administración puede importar una publicación.', 403);
       return json(await facebookSyncPost(identity.userId, body));
     }
     if (action === 'read') return json(await facebookRead(identity.userId, body));

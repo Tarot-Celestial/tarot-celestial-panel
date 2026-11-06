@@ -1,3 +1,4 @@
+import { hasAdminAccess } from "@/lib/server/admin-access";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { reservaDate } from "@/lib/reservas";
@@ -110,7 +111,7 @@ export async function GET(req: Request) {
       }
     }
 
-    if (worker?.role === "admin") {
+    if (worker && await hasAdminAccess(admin, uid)) {
       const d = new Date();
       const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       const nextMonthIso = new Date(Date.UTC(d.getFullYear(), d.getMonth() + 1, 1)).toISOString();

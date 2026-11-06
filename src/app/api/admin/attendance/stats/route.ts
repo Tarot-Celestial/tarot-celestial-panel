@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { attendanceAccess, attendanceReport } from '@/lib/server/attendance-hours';
 import { addDay, dateKey, validDay } from '@/lib/attendance/hours';
 export const runtime = 'nodejs';
@@ -15,7 +16,7 @@ export async function GET(req: Request) {
   try {
     const gate = await attendanceAccess(req);
     if (gate.response) return gate.response;
-    if (gate.worker.role !== 'admin') return Response.json({ ok: false, error: 'FORBIDDEN' }, { status: 403 });
+    if (!(await requestHasAdminAccess(req))) return Response.json({ ok: false, error: 'FORBIDDEN' }, { status: 403 });
     const params = new URL(req.url).searchParams;
     const fromYMD = params.get('from') || addDay(dateKey(), -6), toYMD = params.get('to') || dateKey();
     const group = params.get('group') || 'day';

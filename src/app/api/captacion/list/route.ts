@@ -1,3 +1,4 @@
+import { hasAdminAccess } from "@/lib/server/admin-access";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const revalidate = 0;
@@ -39,7 +40,7 @@ function scopedPage(query: any, worker: AnyRow, scope: string, page: number, lea
   if (leadId) query = query.eq("id", leadId);
   if (options.includeIds?.length) query = query.in("id", options.includeIds);
   if (options.excludeIds?.length) query = query.not("id", "in", `(${options.excludeIds.join(",")})`);
-  if (worker.role === "central") alternatives.push(`assigned_worker_id.is.null,assigned_worker_id.eq.${worker.id}`);
+  if (worker.role === "central" && !worker.can_admin) alternatives.push(`assigned_worker_id.is.null,assigned_worker_id.eq.${worker.id}`);
   if (scope === "pendientes") {
     query = query.is("closed_at", null);
     alternatives.push(`estado.is.null,estado.not.in.(${CLOSED_STATES.join(",")})`);
@@ -64,7 +65,7 @@ async function currentWorker(req: NextRequest) {
     .in("role", ["admin", "central"])
     .limit(1)
     .maybeSingle();
-  return data || null;
+  return data ? { ...data, can_admin: await hasAdminAccess(supabase, authData.user.id) } : null;
 }
 
 function norm(value: unknown) {
@@ -169,7 +170,7 @@ async function fetchRows(worker: AnyRow, scope: string, page: number, leadId?: s
 
 function permittedRows(rows: AnyRow[], worker: AnyRow, brand: BrandKey) {
   return rows.filter(row => originMatchesBrand(row?.cliente?.origen || row?.origen, brand)
-    && (worker.role === "admin" || !row.assigned_worker_id || String(row.assigned_worker_id) === String(worker.id)));
+    && (worker.can_admin === true || !row.assigned_worker_id || String(row.assigned_worker_id) === String(worker.id)));
 }
 
 async function priorityRows(worker: AnyRow, brand: BrandKey, latest: Map<string, string>, now: number, leadId?: string) {
@@ -404,7 +405,7 @@ export async function GET(req: NextRequest) {
     });
 
     let metaDiagnostics: AnyRow | undefined;
-    if (worker.role === "admin") {
+    if (worker.can_admin === true) {
       let lastEvent: AnyRow | null = null;
       let eventReadAvailable = true;
       try {

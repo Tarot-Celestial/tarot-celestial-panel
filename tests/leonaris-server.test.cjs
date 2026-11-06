@@ -270,7 +270,12 @@ function endpoint(options = {}) {
     ...options.context?.tables,
   } });
   f.admin.auth = { getUser: async token => ({ data: { user: token === 'valid' ? { id: userId } : null }, error: token === 'valid' ? null : { status: 401 } }) };
-  const access = load('src/lib/server/ruleta-access.ts', { '@supabase/supabase-js': { createClient: () => f.admin } }, { process: { env: {} } });
+  const access = load('src/lib/server/ruleta-access.ts', {
+    '@supabase/supabase-js': { createClient: () => f.admin },
+    // Client requests must remain on the authenticated-client path and never
+    // request staff capabilities. That helper has a separate integration suite.
+    '@/lib/server/admin-access': { hasAdminAccess: async () => { throw new Error('Unexpected staff capability check'); } },
+  }, { process: { env: {} } });
   class LeonarisMemoryError extends Error { constructor(code) { super(code); this.code = code; } }
   const operations = {
     LeonarisMemoryError,
@@ -389,4 +394,3 @@ test('unavailable live facts fail the claimed chat safely without logging questi
   assert.ok(!f.calls.some(call => call.operation === 'answer' || call.operation === 'complete'));
   assert.doesNotMatch(JSON.stringify(f.logs), /private-sensitive-question|DOWN/);
 });
-

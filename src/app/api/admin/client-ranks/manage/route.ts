@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
@@ -24,7 +25,7 @@ export async function GET(req: Request) {
   try {
     const worker = await currentWorker(req);
     if (!worker) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-    if (!allowed(worker.role)) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    if (!(await requestHasAdminAccess(req))) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
     const url = new URL(req.url);
     const page = Math.max(1, Number(url.searchParams.get("page") || 1));
@@ -90,7 +91,7 @@ export async function POST(req: Request) {
   try {
     const worker = await currentWorker(req);
     if (!worker) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-    if (!allowed(worker.role)) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    if (!(await requestHasAdminAccess(req))) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     const body = await req.json();
     const clientId = String(body.client_id || "").trim();
     const action = String(body.action || "");

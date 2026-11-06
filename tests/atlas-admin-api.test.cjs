@@ -8,12 +8,18 @@ function fixture(options = {}) {
     workers:[{id:id(101),user_id:id(1),role:'admin',display_name:'Admin',is_active:true}],
     crm_clientes:[{id:id(201),auth_user_id:id(301)}],
     atlas_admin_proposals:[],atlas_admin_messages:[],atlas_admin_memories:[],atlas_admin_jobs:[],
-  },queries:[],rpcCalls:[],passwordWrites:[],answerCalls:[],authCalls:[],toolCalls:[],modelCalls:[],claim:true,authExists:true,answerError:null };
+  },queries:[],rpcCalls:[],permissionCalls:[],passwordWrites:[],answerCalls:[],authCalls:[],toolCalls:[],modelCalls:[],claim:true,authExists:true,answerError:null };
   const answer=async(_ctx,question,history)=>{h.answerCalls.push({question,history});if(h.answerError)throw h.answerError;return {text:'Datos consultados',cards:[]};};
   const db = { auth:{getUser:async token=>{h.authCalls.push(token);return {data:{user:token==='valid'?{id:id(1)}:null},error:null};},admin:{
     getUserById:async authId=>({data:{user:h.authExists?{id:authId}:null},error:null}),
     updateUserById:async(authId,body)=>{h.passwordWrites.push({authId,body});return {data:{user:{id:authId}},error:null};},
   }},rpc:async(name,args)=>{
+    // Keep read-only authorization separate from the business-operation audit
+    // asserted below. The production helper is exercised against this RPC.
+    if(name==='tc_has_admin_access'){
+      h.permissionCalls.push({name,args});
+      return {data:h.tables.workers.some(row=>row.user_id===args.p_user_id&&row.is_active===true&&(row.role==='admin'||row.can_admin===true)),error:null};
+    }
     h.rpcCalls.push({name,args});const proposal=h.tables.atlas_admin_proposals.find(row=>row.id===args.p_proposal);
     if(name==='tc_atlas_claim')return {data:{claimed:h.claim},error:null};
     if(name==='tc_atlas_finish'){if(proposal){proposal.status=args.p_error?'failed':'completed';proposal.result=args.p_result;}return {data:{completed:true},error:null};}
@@ -68,6 +74,18 @@ test('Atlas verifies the bearer session and authorizes only active admins, never
   h.tables.workers[0].is_active=true;const response=await h.route.GET(h.req());assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'private, no-store');
   const result=await response.json();assert.equal(result.overview.revenue.goal,300);assert.equal(result.overview.acquisition.goal,10);
   assert.ok(h.queries.filter(q=>q.table==='atlas_admin_memories').every(q=>q.filters.some(f=>f.key==='worker_id'&&f.value===id(101))));
+  assert.ok(h.permissionCalls.every(call=>call.args.p_user_id===id(1)));
+});
+
+test('delegated Central uses its own Atlas workspace and loses administrative access when revoked',async()=>{
+  const h=fixture();Object.assign(h.tables.workers[0],{role:'central',can_admin:true});
+  assert.equal((await h.route.GET(h.req())).status,200);
+  const ctx=await h.access.atlasContext(h.req());
+  assert.equal(ctx.worker.id,id(101));assert.equal(ctx.worker.role,'central');assert.equal(ctx.worker.can_admin,true);
+  assert.ok(h.queries.filter(q=>q.table==='atlas_admin_memories').every(q=>q.filters.some(f=>f.key==='worker_id'&&f.value===id(101))));
+  h.tables.workers[0].can_admin=false;
+  assert.equal((await h.route.GET(h.req())).status,403);
+  assert.equal(h.rpcCalls.length,0);assert.equal(h.passwordWrites.length,0);
 });
 test('another admin cannot execute or cancel a proposal or delete a private memory by supplying its ID',async()=>{
   const h=fixture();h.proposal({worker_id:id(999)});

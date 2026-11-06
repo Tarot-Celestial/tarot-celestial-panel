@@ -1,3 +1,4 @@
+import { hasAdminAccess } from "@/lib/server/admin-access";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const revalidate = 0;
@@ -30,13 +31,13 @@ async function attentionItems(worker: Row, brand: BrandKey, latest: Map<string, 
     let query = supabase.from("captacion_leads")
       .select("id,cliente_id,origen,assigned_worker_id,last_contact_at,contacted_at,closed_at")
       .in("id", ids.slice(offset, offset + LEAD_BATCH_SIZE));
-    if (worker.role === "central") {
+    if (worker.role === "central" && !worker.can_admin) {
       query = query.or(`assigned_worker_id.is.null,assigned_worker_id.eq.${worker.id}`);
     }
     const leads = rowsOrThrow(await query);
     // Filter again before fetching names; service-role access must not expose
     // another central's records even when assembling data across several tables.
-    const allowed = leads.filter(lead => worker.role === "admin" || !lead.assigned_worker_id || String(lead.assigned_worker_id) === String(worker.id));
+    const allowed = leads.filter(lead => worker.can_admin === true || !lead.assigned_worker_id || String(lead.assigned_worker_id) === String(worker.id));
     const clientIds = [...new Set(allowed.map(lead => String(lead.cliente_id || "")).filter(Boolean))];
     const clients = clientIds.length
       ? rowsOrThrow(await supabase.from("crm_clientes").select("id,nombre,apellido,origen").in("id", clientIds))
@@ -83,7 +84,7 @@ export async function GET(req: Request) {
     const brand = new URL(req.url).searchParams.get("brand") || "celestial";
     if (brand !== "celestial" && brand !== "orion") return reply({ ok: false, error: "INVALID_BRAND" }, 400);
     const now = Date.now();
-    const items = await attentionItems(worker, brand, await recentMetaSubmissions(supabase, now), now);
+    const items = await attentionItems({ ...worker, can_admin: await hasAdminAccess(supabase, auth.user.id) }, brand, await recentMetaSubmissions(supabase, now), now);
     return reply({ ok: true, items, server_time: new Date(now).toISOString(), worker_id: String(worker.id), user_id: auth.user.id, brand });
   } catch {
     // The caller must retain its last good state on a read failure. An empty

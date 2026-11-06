@@ -1,3 +1,4 @@
+import { requestHasAdminAccess } from "@/lib/server/admin-access";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
@@ -42,7 +43,7 @@ export async function GET(req: Request) {
       .maybeSingle();
 
     if (em) throw em;
-    if (!me || me.role !== "admin") return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    if (!me || !(await requestHasAdminAccess(req))) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
     const { data: templates, error: et } = await admin
       .from("checklist_templates")

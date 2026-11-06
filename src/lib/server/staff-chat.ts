@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireActivePanelSession } from "@/lib/server/panel-attendance";
+import { hasAdminAccess } from "@/lib/server/admin-access";
 
 export type StaffChatActor = {
   id: string;
@@ -7,6 +8,7 @@ export type StaffChatActor = {
   display_name: string;
   team: string | null;
   state: string;
+  can_admin?: boolean;
 };
 
 export type StaffChatPresence = { state: 'online' | 'break' | 'offline'; presence_expires_at: string | null };
@@ -62,6 +64,7 @@ export async function getStaffChatActor(req: Request) {
       display_name: String(worker.display_name || (worker.role === "tarotista" ? "Tarotista" : "Central")),
       team: worker.team ? String(worker.team) : null,
       state: String(worker.state || "offline"),
+      can_admin: await hasAdminAccess(db, data.user.id),
     } satisfies StaffChatActor,
   };
 }
@@ -88,7 +91,7 @@ export async function requireStaffChatThread(db: ReturnType<typeof supabaseAdmin
   if (error) throw error;
   if (!thread?.id) throw new Error("THREAD_NOT_FOUND");
 
-  const participant = me.role === "admin" || String(thread.central_worker_id || "") === me.id || String(thread.tarotist_worker_id || "") === me.id;
+  const participant = me.can_admin === true || String(thread.central_worker_id || "") === me.id || String(thread.tarotist_worker_id || "") === me.id;
   if (!participant) throw new Error("FORBIDDEN");
   return thread;
 }

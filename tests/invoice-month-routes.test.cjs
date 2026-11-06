@@ -31,11 +31,13 @@ const monthKey = load('src/lib/month-key.ts');
 const noNetwork = { createClient() { throw new Error('Unexpected database client'); } };
 const authWorker = load('src/lib/server/auth-worker.ts', {
   '@supabase/supabase-js': noNetwork,
-  '@/lib/server/auth-fast': {},
+  '@/lib/server/admin-access': {},
+  '@/lib/server/auth-failure': {},
   '@/lib/month-key': monthKey,
 });
 const requireAdmin = load('src/lib/admin/require-admin.ts', {
   '@supabase/supabase-js': noNetwork,
+  '@/lib/server/admin-access': {},
   '@/lib/month-key': monthKey,
 });
 const bonusEngine = load('src/lib/bonuses/engine.ts');
@@ -155,6 +157,7 @@ function listHarness() {
     throw new Error(`Unexpected table ${table}`);
   });
   const route = load('src/app/api/admin/invoices/list/route.ts', {
+    '@/lib/server/admin-access': { requestHasAdminAccess: async () => true },
     '@/lib/month-key': monthKey,
     '@supabase/supabase-js': { createClient: () => db },
     '@/lib/server/auth-fast': { getAuthUserFromRequest: () => ({ data: { user: { id: 'admin-1' } } }) },
