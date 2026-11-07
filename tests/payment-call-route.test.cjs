@@ -7,16 +7,18 @@ function harness(){
  const tables={crm_clientes:[{id:id(2),nombre:'Prueba',minutos_free_pendientes:0,minutos_normales_pendientes:0}],
   crm_paypal_orders:[{cliente_id:id(2),status:'completed',payment_id:id(3),pack_name:'20 minutos',completed_at:'2026-10-07T12:00:00Z'},
    {cliente_id:id(4),status:'completed',payment_id:id(5)}],
-  crm_cliente_pagos:[{id:id(3),cliente_id:id(2),estado:'completed',source_rendimiento_id:null,importe:22},
+  crm_cliente_pagos:[{id:id(3),cliente_id:id(2),estado:'completed',source_rendimiento_id:null,importe:22,moneda:'EUR'},
    {id:id(5),cliente_id:id(4),estado:'completed',source_rendimiento_id:null,importe:22}]};
  const admin={auth:{getUser:async token=>({data:{user:token==='good'?{id:id(1)}:null}})},from:table=>{
-  let filters=[],one=false,value,mode='read';const q={select:()=>q,order:()=>q,limit:()=>q,gte:()=>q,gt:()=>q,
+  let filters=[],one=false,value,mode='read',range=null;const q={select:()=>q,order:()=>q,limit:()=>q,gte:()=>q,gt:()=>q,
+   range:(from,to)=>{range=[from,to];return q;},
    eq:(k,v)=>{filters.push(r=>(k==='meta->>payment_id'?r.meta?.payment_id:r[k])===v);return q;},is:(k,v)=>{filters.push(r=>(r[k]??null)===v);return q;},
    not:(k,op,v)=>{filters.push(r=>(r[k]??null)!==v);return q;},in:(k,v)=>{filters.push(r=>v.includes(r[k]));return q;},
    insert:v=>{mode='insert';value=v;return q;},upsert:v=>{mode='insert';value=v;return q;},delete:()=>q,
    maybeSingle:()=>{one=true;return q;},single:()=>{one=true;return q;},
    then:resolve=>{const rows=table==='workers'?[{id:id(1),user_id:id(1),role:h.role,is_active:h.active}]:tables[table]||[];
-    const selected=mode==='insert'?[{...value,id:id(9)}]:rows.filter(r=>filters.every(f=>f(r)));
+    let selected=mode==='insert'?[{...value,id:id(9)}]:rows.filter(r=>filters.every(f=>f(r)));
+    if(range)selected=selected.slice(range[0],range[1]+1);
     return Promise.resolve({data:one?selected[0]||null:selected,error:h.failedTable===table?{message:'Temporary read failure'}:null}).then(resolve);}};return q;
  },rpc:async(name,{p_payload,p_user})=>{h.rpcCalls.push({name,payload:p_payload,user:p_user});
   if(name==='tc_register_call_recovery')return {data:h.rpcError?null:{rendimiento:{id:id(6)},payment:{id:id(3)},recovery:{xp_event:{id:id(10),worker_id:id(1),xp_amount:75},mission:{recovered:1}},duplicate_prevented:true},error:h.rpcError};
@@ -119,9 +121,51 @@ test('Selection conflicts are reported without hiding a database refusal',async(
  const response=await h.post({...h.body,existing_payment_id:null,cliente_compra_minutos:true,minute_accounting_version:3,importe:22,forma_pago:'PAYPAL'});
  assert.equal(response.status,409);assert.equal((await response.json()).error,'PAYPAL_COLLECTION_SELECTION_REQUIRED');
 });
-test('Explicit external PayPal selection derives the separate-payment confirmation without a hidden browser field',async()=>{
- const h=harness();const response=await h.post({...h.body,existing_payment_id:null,cliente_compra_minutos:true,minute_accounting_version:3,importe:22,forma_pago:'PAYPAL',paypal_collection_source:'external'});
- assert.equal(response.status,200);assert.equal(h.rpcCalls[0].payload.separate_payment_confirmed,true);assert.equal(h.rpcCalls[0].payload.paypal_collection_order_id,null);
+test('External selection and a generic browser boolean cannot bypass the exact web-payment confirmation',async()=>{
+ const h=harness();const response=await h.post({...h.body,existing_payment_id:null,cliente_compra_minutos:true,minute_accounting_version:3,importe:22,forma_pago:'PAYPAL',paypal_collection_source:'external',separate_payment_confirmed:true});
+ assert.equal(response.status,200);assert.equal(h.rpcCalls[0].payload.separate_payment_confirmed,undefined);assert.equal(h.rpcCalls[0].payload.paypal_collection_order_id,null);
+ assert.deepEqual(Array.from(h.rpcCalls[0].payload.confirmed_web_payment_ids),[]);
+});
+
+test('Web-payment acknowledgement validates UUIDs, requires external PayPal, and forwards the canonical exact set',async()=>{
+ const h=harness(),body={...h.body,existing_payment_id:null,cliente_compra_minutos:true,minute_accounting_version:3,importe:22,forma_pago:'PAYPAL',paypal_collection_source:'external'};
+ for(const fields of [{confirmed_web_payment_ids:true},{confirmed_web_payment_ids:['invalid']},{confirmed_web_payment_ids:[id(3)],paypal_collection_source:''},{confirmed_web_payment_ids:[id(3)],cliente_compra_minutos:false},{confirmed_web_payment_ids:[id(3)],forma_pago:'TPV'}]){
+  assert.equal((await h.post({...body,...fields})).status,400);
+ }
+ assert.equal(h.rpcCalls.length,0);
+ assert.equal((await h.post({...body,confirmed_web_payment_ids:[id(5),id(3),id(5)]})).status,200);
+ assert.deepEqual(Array.from(h.rpcCalls[0].payload.confirmed_web_payment_ids),[id(3),id(5)]);
+});
+
+test('Missing or changed web-payment evidence is a conflict with no retry or secondary mutation',async()=>{
+ for(const message of ['PAYPAL_WEB_PURCHASE_CONFIRMATION_REQUIRED','PAYPAL_WEB_PURCHASE_CONFIRMATION_CHANGED','PAYPAL_WEB_PURCHASE_CONFIRMATION_INVALID']){
+  const h=harness();h.rpcError={code:'P0001',message};
+  const response=await h.post({...h.body,existing_payment_id:null,cliente_compra_minutos:true,minute_accounting_version:3,importe:22,forma_pago:'PAYPAL',paypal_collection_source:'external',confirmed_web_payment_ids:[id(3)]});
+  assert.equal(response.status,409);assert.equal((await response.json()).error,message);assert.equal(h.rpcCalls.length,1);
+ }
+});
+
+test('Credited web evidence is scoped to exact client, amount, environment and unlinked completed purchases',async()=>{
+ const h=harness(),order={id:id(90),cliente_id:id(2),status:'completed',payment_id:id(3),pack_name:'20 minutos',amount:22,currency:'EUR',environment:'sandbox',checkout_kind:'client_purchase',order_id:'WEB90'};
+ h.tables.crm_paypal_orders=[order,{...order,id:id(91),cliente_id:id(4)},{...order,id:id(92),amount:35},{...order,id:id(93),environment:'live'},{...order,id:id(94),checkout_kind:'crm_collection'},{...order,id:id(95),status:'pending'},{...order,id:id(96),currency:'USD'},
+  {...order,id:id(97),payment_id:id(6)},{...order,id:id(98),payment_id:id(7)},{...order,id:id(99),payment_id:id(8)},{...order,id:id(100),payment_id:null},{...order,id:id(101),payment_id:id(9)},{...order,id:id(102),payment_id:id(10)}];
+ h.tables.crm_cliente_pagos.push({id:id(6),cliente_id:id(2),importe:22,moneda:'EUR',estado:'completed',source_rendimiento_id:id(50)},{id:id(7),cliente_id:id(2),importe:22,moneda:'EUR',estado:'pending'},
+  {id:id(8),cliente_id:id(2),importe:35,moneda:'EUR',estado:'completed'},{id:id(9),cliente_id:id(4),importe:22,moneda:'EUR',estado:'completed'},{id:id(10),cliente_id:id(2),importe:22,moneda:'USD',estado:'completed'});
+ const get=amount=>h.api.GET(new Request('https://panel.test/api?mode=credited_web_purchases&cliente_id='+id(2)+'&amount='+amount,{headers:{authorization:'Bearer good'}}));
+ const response=await get(22);assert.equal(response.status,200);assert.match(response.headers.get('cache-control'),/no-store/);
+ const purchases=(await response.json()).credited_web_purchases;assert.equal(purchases.length,1);assert.equal(purchases[0].payment_id,id(3));assert.equal(purchases[0].order_id,'WEB90');assert.equal(h.rpcCalls.length,0);
+ for(const amount of ['NaN',0,-1,'22.001'])assert.equal((await get(amount)).status,400);
+ h.failedTable='crm_cliente_pagos';assert.equal((await get(22)).status,500,'a failed read must not look like no matching web purchases');
+});
+
+test('Credited web evidence includes matches beyond the first page',async()=>{
+ const h=harness();h.tables.crm_paypal_orders=[];h.tables.crm_cliente_pagos=[];
+ for(let n=0;n<101;n++){
+  h.tables.crm_paypal_orders.push({id:id(1000+n),cliente_id:id(2),status:'completed',payment_id:id(2000+n),amount:22,currency:'EUR',environment:'sandbox',checkout_kind:'client_purchase'});
+  h.tables.crm_cliente_pagos.push({id:id(2000+n),cliente_id:id(2),estado:'completed',source_rendimiento_id:null,importe:22,moneda:'EUR'});
+ }
+ const response=await h.api.GET(new Request('https://panel.test/api?mode=credited_web_purchases&cliente_id='+id(2)+'&amount=22',{headers:{authorization:'Bearer good'}}));
+ assert.equal(response.status,200);assert.equal((await response.json()).credited_web_purchases.length,101);
 });
 test('Exact normal package prices preserve native Oracle before the database adds rank benefits',async()=>{
  for(const [amount,oracle] of [[49,1],[69,2],[99,3]]) {
