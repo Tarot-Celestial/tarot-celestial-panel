@@ -124,6 +124,32 @@ function isUuid(value: unknown): value is string {
   return UUID_PATTERN.test(String(value ?? "").trim());
 }
 
+async function creditedWebPurchases(admin: any, clienteId: string, amount: number) {
+  const purchases: any[] = [];
+  // Read every match, not just the latest page: the transaction checks this exact set again.
+  for (let offset = 0; ; offset += 100) {
+    const { data: orders, error } = await admin.from("crm_paypal_orders")
+      .select("id,payment_id,amount,currency,pack_name,completed_at,order_id")
+      .eq("cliente_id", clienteId).eq("environment", paypalConfig("legacy").environment)
+      .eq("checkout_kind", "client_purchase").eq("status", "completed").eq("currency", "EUR")
+      .eq("amount", amount).not("payment_id", "is", null)
+      .order("id", { ascending: true }).range(offset, offset + 99);
+    if (error) throw error;
+    if (!orders?.length) break;
+    const { data: payments, error: paymentError } = await admin.from("crm_cliente_pagos")
+      .select("id").eq("cliente_id", clienteId).eq("estado", "completed")
+      .eq("importe", amount).eq("moneda", "EUR").is("source_rendimiento_id", null)
+      .in("id", orders.map((order: any) => order.payment_id));
+    if (paymentError) throw paymentError;
+    const paymentIds = new Set((payments || []).map((payment: any) => payment.id));
+    purchases.push(...orders.filter((order: any) => paymentIds.has(order.payment_id)).map((order: any) => ({
+      ...order, amount: Number(order.amount),
+    })));
+    if (orders.length < 100) break;
+  }
+  return purchases.sort((a, b) => String(b.completed_at || "").localeCompare(String(a.completed_at || "")));
+}
+
 async function registerCallAtomic(admin: any, payload: any, userId: string) {
   // El adaptador vincula pagos existentes y delega el registro operativo en v8.
   // tc_confirm_rank_purchase es un adaptador de compras de la nueva Fase 1
@@ -246,6 +272,15 @@ export async function GET(req: Request) {
     if (!isUuid(clienteId)) return clientIdentificationError();
 
     const admin = adminClient();
+    if (new URL(req.url).searchParams.get("mode") === "credited_web_purchases") {
+      const amount = Number(new URL(req.url).searchParams.get("amount"));
+      if (!Number.isFinite(amount) || amount <= 0 || Math.abs(amount * 100 - Math.round(amount * 100)) > 0.000001) {
+        return NextResponse.json({ ok: false, error: "PAYMENT_AMOUNT_INVALID" }, { status: 400 });
+      }
+      return NextResponse.json({ ok: true, credited_web_purchases: await creditedWebPurchases(admin, clienteId, amount) }, {
+        headers: { "Cache-Control": "private, no-store", "Vary": "Authorization" },
+      });
+    }
     if (new URL(req.url).searchParams.get("mode") === "collections") {
       const { data, error } = await admin.from("crm_paypal_orders")
         .select("id,amount,currency,pack_id,pack_name,completed_at,order_id")
@@ -255,7 +290,7 @@ export async function GET(req: Request) {
         .order("completed_at", { ascending: false }).limit(100);
       if (error) throw error;
       return NextResponse.json({ ok: true, collections: (data || []).map((row: any) => ({
-        ...row, amount: Number(row.amount), pricing_mode: row.pack_id === "crm_manual_amount" ? "manual_amount" : "regular",
+        ...row, amount: Number(row.amount), pricing_mode: row.pack_id === "crm_manual_amount" ? "manual_amount" : String(row.pack_id || "").startsWith("promo:") ? "promotion" : "regular",
       })) }, { headers: { "Cache-Control": "private, no-store", "Vary": "Authorization" } });
     }
     if (new URL(req.url).searchParams.get("mode") === "balance") {
@@ -381,6 +416,12 @@ export async function POST(req: Request) {
     if (paypalCollectionSource && (!clienteCompra || String(formaPago || "").toUpperCase() !== "PAYPAL")) {
       return NextResponse.json({ ok: false, error: "PAYPAL_COLLECTION_SELECTION_INVALID" }, { status: 400 });
     }
+    const rawConfirmedWebPaymentIds = body?.confirmed_web_payment_ids ?? [];
+    if (!Array.isArray(rawConfirmedWebPaymentIds) || rawConfirmedWebPaymentIds.some((value: unknown) => typeof value !== "string" || !UUID_PATTERN.test(value)) ||
+        (rawConfirmedWebPaymentIds.length > 0 && (!clienteCompra || paypalCollectionSource !== "external" || String(formaPago || "").toUpperCase() !== "PAYPAL"))) {
+      return NextResponse.json({ ok: false, error: "PAYPAL_WEB_PURCHASE_CONFIRMATION_INVALID" }, { status: 400 });
+    }
+    const confirmedWebPaymentIds = Array.from(new Set<string>(rawConfirmedWebPaymentIds.map((value: string) => value.toLowerCase()))).sort();
     const importe = toNum(body?.importe);
     const clasificacion = String(body?.clasificacion || "nada").trim();
     const clasificacionesValidas = new Set(["nada", "promo", "captado", "recuperado", "super_promo_ruleta", "ruleta_diamante"]);
@@ -558,7 +599,8 @@ export async function POST(req: Request) {
       paypal_collection_order_id: paypalCollectionOrderId || null,
       paypal_collection_source: paypalCollectionSource || null,
       expected_paypal_environment: normalizedPaymentMethod === "paypal_manual" ? paypalConfig("legacy").environment : null,
-      separate_payment_confirmed: paypalCollectionSource === "external" || body?.separate_payment_confirmed === true,
+      // SQL compares these IDs with fresh matching web purchases under the client lock.
+      confirmed_web_payment_ids: confirmedWebPaymentIds,
       operation_id: operationId || null,
       cliente_id: clienteId,
       cliente_nombre: clienteNombre,
@@ -660,6 +702,9 @@ export async function POST(req: Request) {
         "PAYMENT_REQUIRED",
         "NOT_ELIGIBLE",
         "PAYPAL_PAYMENT_ALREADY_CONFIRMED",
+        "PAYPAL_WEB_PURCHASE_CONFIRMATION_REQUIRED",
+        "PAYPAL_WEB_PURCHASE_CONFIRMATION_CHANGED",
+        "PAYPAL_WEB_PURCHASE_CONFIRMATION_INVALID",
         "PAYPAL_COLLECTION_SELECTION_REQUIRED",
         "PAYPAL_COLLECTION_SELECTION_INVALID",
         "PAYPAL_COLLECTION_ALREADY_USED",

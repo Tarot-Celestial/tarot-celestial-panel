@@ -40,7 +40,9 @@ type PayPalCollection = {
   order_id: string;
 };
 
-function collectionLabel(collection: PayPalCollection) {
+type CreditedWebPurchase = Pick<PayPalCollection, "id" | "amount" | "currency" | "pack_name" | "completed_at" | "order_id"> & { payment_id: string };
+
+function collectionLabel(collection: Pick<PayPalCollection, "id" | "amount" | "currency" | "pack_name" | "completed_at" | "order_id">) {
   const date = new Date(collection.completed_at);
   const when = Number.isFinite(date.getTime()) ? date.toLocaleString("es-ES", { timeZone: "Europe/Madrid", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "Fecha por confirmar";
   const amount = Number(collection.amount).toLocaleString("es-ES", { style: "currency", currency: collection.currency || "EUR" });
@@ -315,7 +317,8 @@ function friendlySubmitError(error: unknown) {
   if (message === "OTHER_OWNER") return "Este cliente está asignado a otra central. Actualiza la ficha para comprobar su responsable.";
   if (message === "NOT_ELIGIBLE" || message === "RECOVERY_NOT_ELIGIBLE") return "Este cliente no cumple las condiciones de recuperación. Actualiza su ficha antes de registrar la compra.";
   if (message === "INVALID_CALL_MINUTES") return "Revisa los minutos: deben ser positivos, con su código. Si guarda toda la compra para después, los utilizados pueden ser 0.";
-  if (message === "PAYPAL_PAYMENT_ALREADY_CONFIRMED") return "Existe una compra histórica de PayPal de este importe pendiente de revisión. Administración debe comprobarla antes de registrar otra compra.";
+  if (["PAYPAL_PAYMENT_ALREADY_CONFIRMED", "PAYPAL_WEB_PURCHASE_CONFIRMATION_REQUIRED"].includes(message)) return "Hay una compra web de este importe ya registrada. Usa su saldo para la llamada; si has recibido otro pago distinto, revísalo y confírmalo en Importe cobrado.";
+  if (["PAYPAL_WEB_PURCHASE_CONFIRMATION_CHANGED", "PAYPAL_WEB_PURCHASE_CONFIRMATION_INVALID"].includes(message)) return "Las compras web han cambiado desde la comprobación. Revisa la lista actualizada antes de confirmar que recibiste un pago distinto. No se ha registrado esta compra.";
   if (message === "PAYMENT_ALREADY_LINKED") return "Ese pago ya tiene una llamada vinculada. Vuelve a abrir la ficha; para otra llamada utiliza los minutos pendientes.";
   if (message === "EXISTING_PAYMENT_INVALID") return "El pago ya no está disponible o no pertenece a esta clienta. Vuelve a abrir el formulario.";
   if (message === "PAYMENT_OPERATION_CONFLICT") return "Esta operación ya se utilizó con otro pago. Cierra y vuelve a abrir el formulario.";
@@ -425,10 +428,20 @@ export default function RegistrarLlamadaModal({
   const [collectionsStatus, setCollectionsStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [collectionChoice, setCollectionChoice] = useState("");
   const [collectionsRetry, setCollectionsRetry] = useState(0);
+  const [webPurchasesLookup, setWebPurchasesLookup] = useState<{ key: string; status: "loading" | "ready" | "error"; purchases: CreditedWebPurchase[] } | null>(null);
+  const [webPurchasesRetry, setWebPurchasesRetry] = useState(0);
+  const [confirmedWebPurchasesKey, setConfirmedWebPurchasesKey] = useState("");
   const needsPayPalSource = clienteCompra === "si" && formaPago === "PAYPAL";
   const selectedCollection = needsPayPalSource ? collections.find(collection => collection.id === collectionChoice) || null : null;
   const isManualCollection = selectedCollection?.pricing_mode === "manual_amount" || selectedCollection?.pack_id === "crm_manual_amount";
-  const paypalSourceValid = !needsPayPalSource || (collectionsStatus === "ready" && (collectionChoice === "external" || Boolean(selectedCollection)));
+  const webPurchasesKey = needsPayPalSource && collectionChoice === "external" && toNum(importe) > 0
+    ? `${cliente?.id}|${toNum(importe)}` : "";
+  const matchingWebPurchases = webPurchasesLookup?.key === webPurchasesKey && webPurchasesLookup.status === "ready" ? webPurchasesLookup.purchases : [];
+  const matchingWebPaymentIds = Array.from(new Set(matchingWebPurchases.map(purchase => purchase.payment_id))).sort();
+  const webConfirmationKey = `${webPurchasesKey}|${matchingWebPaymentIds.join(",")}`;
+  const externalPaymentReviewed = Boolean(webPurchasesKey) && webPurchasesLookup?.key === webPurchasesKey && webPurchasesLookup.status === "ready"
+    && (!matchingWebPaymentIds.length || confirmedWebPurchasesKey === webConfirmationKey);
+  const paypalSourceValid = !needsPayPalSource || (collectionsStatus === "ready" && (Boolean(selectedCollection) || (collectionChoice === "external" && externalPaymentReviewed)));
   const rankFree = useMemo(() => rankFreeUsage(rankFreeSnapshot && rankFreeSnapshot.clienteId === cliente?.id ? rankFreeSnapshot.preview : null), [rankFreeSnapshot, cliente?.id]);
   const selectedRankFree = rankFree.offers.find(offer => offer.workerId === rankFreeWorkerId) || null;
   const diamondChoiceAllowed = rankFree.rank === "diamante" && !isManualCollection && !balanceError && !benefitsRefreshing;
@@ -471,6 +484,8 @@ export default function RegistrarLlamadaModal({
     setCollectionChoice("");
     setCollections([]);
     setCollectionsStatus("idle");
+    setWebPurchasesLookup(null);
+    setConfirmedWebPurchasesKey("");
     let cancelled = false;
     void (async () => {
       try {
@@ -534,6 +549,32 @@ export default function RegistrarLlamadaModal({
     })();
     return () => { cancelled = true; };
   }, [open, cliente?.id, needsPayPalSource, collectionsRetry]);
+
+  useEffect(() => {
+    setConfirmedWebPurchasesKey("");
+    if (!open || !webPurchasesKey || !isUuid(cliente?.id)) {
+      setWebPurchasesLookup(null);
+      return;
+    }
+    let cancelled = false;
+    const key = webPurchasesKey;
+    setWebPurchasesLookup({ key, status: "loading", purchases: [] });
+    void (async () => {
+      try {
+        const token = await getTokenRef.current();
+        if (!token) throw new Error("Sin sesión");
+        const response = await fetch(`/api/crm/rendimiento/registrar?mode=credited_web_purchases&cliente_id=${encodeURIComponent(String(cliente?.id))}&amount=${encodeURIComponent(String(toNum(importe)))}`, {
+          headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
+        });
+        const json = await response.json();
+        if (!response.ok || !json.ok || !Array.isArray(json.credited_web_purchases)) throw new Error("Sin comprobación de compras web");
+        if (!cancelled) setWebPurchasesLookup({ key, status: "ready", purchases: json.credited_web_purchases });
+      } catch {
+        if (!cancelled) setWebPurchasesLookup({ key, status: "error", purchases: [] });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, cliente?.id, webPurchasesKey, webPurchasesRetry]);
 
   const steps = useMemo(() => {
     const list: { key: string; title: string; subtitle: string }[] = [
@@ -677,6 +718,21 @@ export default function RegistrarLlamadaModal({
     setMsg("");
   }
 
+  function useCreditedWebBalance() {
+    setClienteCompra("no");
+    setUsoSinCompra("minutos");
+    setCompraDestino("");
+    setGuardarFree("0");
+    setGuardarNormales("0");
+    setFormaPago("");
+    setImporte("");
+    setCollectionChoice("");
+    setClasificacion("nada");
+    setConfirmedWebPurchasesKey("");
+    setStep(1);
+    setMsg("");
+  }
+
   function currentStepIsValid() {
     switch (current?.key) {
       case "compra":
@@ -754,7 +810,7 @@ export default function RegistrarLlamadaModal({
       return;
     }
     if (!paypalSourceValid) {
-      setMsg("Selecciona el cobro PayPal confirmado o indica que es un pago externo en el paso Importe cobrado.");
+      setMsg("Revisa el origen del cobro y las compras web en Importe cobrado antes de registrar una compra nueva.");
       return;
     }
     try {
@@ -792,6 +848,7 @@ export default function RegistrarLlamadaModal({
         forma_pago: clienteCompra === "si" ? formaPago || null : null,
         paypal_collection_order_id: selectedCollection?.id || null,
         paypal_collection_source: needsPayPalSource ? selectedCollection ? "crm_collection" : collectionChoice === "external" ? "external" : null : null,
+        confirmed_web_payment_ids: needsPayPalSource && collectionChoice === "external" && externalPaymentReviewed ? matchingWebPaymentIds : [],
         importe: clienteCompra === "si" ? toNum(importe) : 0,
         clasificacion: isFreeGift ? "nada" : clasificacion,
       };
@@ -808,6 +865,13 @@ export default function RegistrarLlamadaModal({
       const j = await safeJson(r);
       if (modalGeneration !== modalGenerationRef.current) return;
       if (!j?._ok || !j?.ok) {
+        if (["PAYPAL_PAYMENT_ALREADY_CONFIRMED", "PAYPAL_WEB_PURCHASE_CONFIRMATION_REQUIRED", "PAYPAL_WEB_PURCHASE_CONFIRMATION_CHANGED", "PAYPAL_WEB_PURCHASE_CONFIRMATION_INVALID"].includes(j?.error)) {
+          setConfirmedWebPurchasesKey("");
+          setWebPurchasesRetry(value => value + 1);
+          const amountStep = steps.findIndex(item => item.key === "importe");
+          if (amountStep >= 0) setStep(amountStep);
+          throw new Error(j.error);
+        }
         if (isFreeGift) {
           if (j?.balance) setLiveBalance(j.balance);
           if (isInitialFree) {
@@ -952,6 +1016,7 @@ export default function RegistrarLlamadaModal({
               <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
                 <button type="button" className={`${styles.choiceButton} ${clienteCompra === "si" ? styles.choiceSelected : ""}`} onClick={() => { setClienteCompra("si"); }} style={{ padding: 16, border: clienteCompra === "si" ? "1px solid rgba(215,181,109,.55)" : undefined, background: clienteCompra === "si" ? "rgba(215,181,109,.14)" : undefined }}>Registrar una compra nueva</button>
                 <button type="button" className={`${styles.choiceButton} ${clienteCompra === "no" ? styles.choiceSelected : ""}`} onClick={() => { setClienteCompra("no"); }} style={{ padding: 16, border: clienteCompra === "no" ? "1px solid rgba(215,181,109,.55)" : undefined, background: clienteCompra === "no" ? "rgba(215,181,109,.14)" : undefined }}>Usar saldo o regalo · sin nueva compra</button>
+                <p>Si compró desde su panel cliente, sus minutos y los beneficios que correspondan ya se registraron automáticamente: elige «Usar saldo». Los enlaces de Realizar pago y Leonaris solo confirman el cobro; registra esa compra aquí una vez.</p>
               </div>
             )}
 
@@ -1118,17 +1183,34 @@ export default function RegistrarLlamadaModal({
                       const collection = collections.find(item => item.id === choice);
                       setCollectionChoice(choice);
                       setImporte(collection ? String(collection.amount) : "");
+                      setConfirmedWebPurchasesKey("");
                     }}>
                       <option value="">Selecciona el origen del pago</option>
                       {collections.map(collection => <option key={collection.id} value={collection.id}>{collectionLabel(collection)}</option>)}
                       <option value="external">Pago PayPal externo · no creado desde Realizar pago</option>
                     </select>
                     {!collections.length ? <small>No hay cobros de Realizar pago confirmados y pendientes de registrar para esta clienta.</small> : null}
-                    {selectedCollection ? <small>{isManualCollection ? "Importe manual: sin Coins ni giros, sea cual sea la clasificación." : "Paquete de tarifa normal. La clasificación Promo no concede Coins ni giros."}</small> : collectionChoice === "external" ? <small>Registra únicamente un pago recibido fuera del cobrador del panel.</small> : null}
+                    {selectedCollection ? <small>{isManualCollection ? "Importe manual: sin Coins ni giros, sea cual sea la clasificación." : selectedCollection.pricing_mode === "promotion" || selectedCollection.pack_id?.startsWith("promo:") ? "Cobro de promoción: conserva su tarifa Promo, sin minutos extra por rango, Coins ni giros." : "Paquete de tarifa normal. La clasificación Promo no concede beneficios por rango, Coins ni giros."}</small> : collectionChoice === "external" ? <small>Solo para otro pago recibido fuera del cobrador. Las compras del panel cliente ya están registradas automáticamente.</small> : null}
                   </> : null}
                 </div> : null}
                 <label className="tc-sub" htmlFor="registered-call-amount">Importe (€)</label>
-                <input id="registered-call-amount" inputMode="decimal" readOnly={Boolean(selectedCollection)} className={`${styles.gameInput} tc-input`} value={importe} onChange={(e) => { setImporte(e.target.value); }} placeholder="22" style={{ width: "100%", marginTop: 6 }} />
+                <input id="registered-call-amount" inputMode="decimal" readOnly={Boolean(selectedCollection)} className={`${styles.gameInput} tc-input`} value={importe} onChange={(e) => { setImporte(e.target.value); setConfirmedWebPurchasesKey(""); }} placeholder="22" style={{ width: "100%", marginTop: 6 }} />
+                {webPurchasesKey ? <section className={styles.confirmedPayments} aria-label="Compras web ya registradas" style={{ marginTop: 16 }}>
+                  {webPurchasesLookup?.key !== webPurchasesKey || webPurchasesLookup.status === "loading" ? <p role="status">Comprobando si ya hay una compra web de este importe…</p>
+                    : webPurchasesLookup.status === "error" ? <>
+                      <p role="alert">No se pudieron comprobar las compras web. Reintenta antes de registrar otro pago.</p>
+                      <button type="button" onClick={() => setWebPurchasesRetry(value => value + 1)}>Reintentar compras web</button>
+                    </> : matchingWebPurchases.length ? <>
+                      <strong>Este importe coincide con compras web ya registradas</strong>
+                      <p>Estas compras ya aplicaron sus minutos y los beneficios correspondientes. Si la llamada corresponde a una de ellas, utiliza el saldo disponible.</p>
+                      <ul style={{ maxHeight: 180, overflowY: "auto" }}>{matchingWebPurchases.map(purchase => <li key={purchase.id}>{collectionLabel(purchase)}</li>)}</ul>
+                      <button type="button" className={styles.choiceButton} onClick={useCreditedWebBalance}>Usar saldo de la compra web</button>
+                      <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 16 }}>
+                        <input type="checkbox" checked={confirmedWebPurchasesKey === webConfirmationKey} onChange={event => setConfirmedWebPurchasesKey(event.target.checked ? webConfirmationKey : "")} />
+                        He comprobado que he recibido otro pago PayPal distinto de estas compras web. Quiero registrar esa compra nueva.
+                      </label>
+                    </> : <p>No hay compras web ya registradas de este importe. Continúa únicamente si has recibido este pago externo.</p>}
+                </section> : null}
               </div>
             )}
 

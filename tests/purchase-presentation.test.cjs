@@ -83,12 +83,13 @@ test('PayPal modal renders level sections and selecting another level retains th
 
 async function callFixture(options = {}) {
   const requests = [], posts = [];
-  const collection = { id: '00000000-0000-4000-8000-000000000071', amount: 22, currency: 'EUR', pack_id: 'crm_manual_amount', pack_name: 'Importe personalizado', pricing_mode: 'manual_amount', completed_at: '2026-10-25T12:00:00Z', order_id: 'ORDER-71' };
+  const collection = { id: '00000000-0000-4000-8000-000000000071', amount: 22, currency: 'EUR', pack_id: 'crm_manual_amount', pack_name: 'Importe personalizado', pricing_mode: 'manual_amount', completed_at: '2026-10-25T12:00:00Z', order_id: 'ORDER-71', ...options.collection };
   const Component = loadComponent('src/components/crm/RegistrarLlamadaModal.tsx', async (url, init) => {
     requests.push(url);
     if (init?.method === 'POST') { posts.push(JSON.parse(init.body)); return options.postError ? { ...reply({ ok: false, error: options.postError }), ok: false, status: 409 } : reply({ ok: true }); }
     if (url.includes('mode=collections')) return options.collectionsError ? { ok: false, json: async () => ({ ok: false }) } : reply({ ok: true, collections: [collection] });
-    return reply({ ok: true, balance: { minutos_free_pendientes: 0, minutos_normales_pendientes: 0 }, capture_xp: null, rank_free: options.rank ? {effective_rank: options.rank,policy_key:'new_tarotista_once_v1',minutes:12,offers:[]} : null });
+    if (url.includes('mode=credited_web_purchases')) return options.webPurchasesError ? { ok: false, json: async () => ({ ok: false }) } : reply({ ok: true, credited_web_purchases: (options.webPurchases || []).filter(purchase => purchase.amount === Number(new URL(url,'https://panel.test').searchParams.get('amount'))) });
+    return reply({ ok: true, balance: options.balance || { minutos_free_pendientes: 0, minutos_normales_pendientes: 0 }, capture_xp: null, rank_free: options.rank ? {effective_rank: options.rank,policy_key:'new_tarotista_once_v1',minutes:12,offers:[]} : null });
   });
   let tree;
   await act(async () => { tree = renderer.create(React.createElement(Component, { open: true, cliente: client, tarotistas: [{ id: '00000000-0000-4000-8000-000000000003', display_name: 'Luna' }], getToken: async () => 'fixture', onClose() {} })); });
@@ -134,6 +135,71 @@ test('external PayPal is explicitly marked and never borrows a matching panel or
   await f.click('Siguiente'); await f.click('Siguiente'); await f.click('Registrar llamada');
   assert.equal(f.posts[0].paypal_collection_order_id, null);
   assert.equal(f.posts[0].paypal_collection_source, 'external');
+  assert.deepEqual(f.posts[0].confirmed_web_payment_ids, []);
+  await act(async () => f.tree.unmount());
+});
+
+const webPurchase = { id: '00000000-0000-4000-8000-000000000081', payment_id: '00000000-0000-4000-8000-000000000082', amount: 22, currency: 'EUR', pack_name: '20 minutos', completed_at: '2026-11-07T12:00:00Z', order_id: 'WEB-81' };
+
+test('a promotion collection never claims to be a normal package', async () => {
+  const f = await callFixture({ collection: { pack_id: 'promo:fixture', pricing_mode: 'promotion' } });
+  await f.change(f.tree.root.findByProps({ id: 'registered-paypal-collection' }), f.collection.id);
+  assert.match(text(f.tree.toJSON()), /Cobro de promoción.*sin minutos extra por rango, Coins ni giros/);
+  assert.doesNotMatch(text(f.tree.toJSON()), /Paquete de tarifa normal/);
+  await act(async () => f.tree.unmount());
+});
+
+test('web purchase evidence blocks accidental second purchase and switches to existing balance without creating a payment', async () => {
+  const f = await callFixture({ webPurchases: [webPurchase], balance: { minutos_free_pendientes: 3, minutos_normales_pendientes: 20 } });
+  await f.change(f.tree.root.findByProps({ id: 'registered-paypal-collection' }), 'external');
+  await f.change(f.tree.root.findByProps({ id: 'registered-call-amount' }), '22');
+  assert.match(text(f.tree.toJSON()), /compras web ya registradas.*WEB-81/s);
+  await f.click('Siguiente');
+  assert.ok(f.tree.root.findByProps({ id: 'registered-call-amount' }));
+  assert.equal(f.tree.root.findByProps({ type: 'checkbox' }).props.checked, false);
+  await f.click('Usar saldo de la compra web');
+  assert.match(text(f.tree.toJSON()), /Usar saldo pendiente/);
+  assert.equal(f.posts.length, 0);
+  await act(async () => f.tree.unmount());
+});
+
+test('another real external payment with the same amount requires an explicit exact-set acknowledgement', async () => {
+  const f = await callFixture({ webPurchases: [webPurchase] });
+  await f.change(f.tree.root.findByProps({ id: 'registered-paypal-collection' }), 'external');
+  await f.change(f.tree.root.findByProps({ id: 'registered-call-amount' }), '22');
+  await act(async () => f.tree.root.findByProps({ type: 'checkbox' }).props.onChange({ target: { checked: true } }));
+  await f.change(f.tree.root.findByProps({ id: 'registered-call-amount' }), '35');
+  await f.change(f.tree.root.findByProps({ id: 'registered-call-amount' }), '22');
+  assert.equal(f.tree.root.findByProps({ type: 'checkbox' }).props.checked, false, 'changing the amount invalidates prior acknowledgement even after returning');
+  await act(async () => f.tree.root.findByProps({ type: 'checkbox' }).props.onChange({ target: { checked: true } }));
+  await f.click('Siguiente'); await f.click('Siguiente'); await f.click('Registrar llamada');
+  assert.equal(f.posts.length, 1);assert.equal(f.posts[0].paypal_collection_source, 'external');
+  assert.equal(f.posts[0].paypal_collection_order_id, null);
+  assert.deepEqual(f.posts[0].confirmed_web_payment_ids, [webPurchase.payment_id]);
+  assert.equal(f.posts[0].separate_payment_confirmed, undefined);
+  await act(async () => f.tree.unmount());
+});
+
+test('web purchase lookup failure blocks external registration and offers retry', async () => {
+  const f = await callFixture({ webPurchasesError: true });
+  await f.change(f.tree.root.findByProps({ id: 'registered-paypal-collection' }), 'external');
+  await f.change(f.tree.root.findByProps({ id: 'registered-call-amount' }), '22');
+  assert.match(text(f.tree.toJSON()), /No se pudieron comprobar las compras web/);
+  await f.click('Siguiente');assert.ok(f.tree.root.findByProps({ id: 'registered-call-amount' }));
+  const before = f.requests.length;await f.click('Reintentar compras web');assert.ok(f.requests.length > before);
+  assert.equal(f.posts.length, 0);await act(async () => f.tree.unmount());
+});
+
+test('a web payment arriving before submit clears acknowledgement, refreshes evidence and returns to the amount step', async () => {
+  const f = await callFixture({ webPurchases: [webPurchase], postError: 'PAYPAL_WEB_PURCHASE_CONFIRMATION_CHANGED' });
+  await f.change(f.tree.root.findByProps({ id: 'registered-paypal-collection' }), 'external');
+  await f.change(f.tree.root.findByProps({ id: 'registered-call-amount' }), '22');
+  await act(async () => f.tree.root.findByProps({ type: 'checkbox' }).props.onChange({ target: { checked: true } }));
+  await f.click('Siguiente');await f.click('Siguiente');await f.click('Registrar llamada');
+  assert.equal(f.posts.length, 1);assert.ok(f.tree.root.findByProps({ id: 'registered-call-amount' }));
+  assert.equal(f.tree.root.findByProps({ type: 'checkbox' }).props.checked, false);
+  assert.match(text(f.tree.toJSON()), /compras web han cambiado/);
+  assert.equal(f.requests.filter(url => url.includes('mode=credited_web_purchases')).length, 2);
   await act(async () => f.tree.unmount());
 });
 
