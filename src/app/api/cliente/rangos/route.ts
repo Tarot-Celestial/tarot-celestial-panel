@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withoutPurchaseRankSpins, PURCHASE_RANK_SPIN_NOTICE } from "@/lib/rank-benefit-config";
 import { customerBenefitPolicy } from "@/lib/server/customer-benefits";
 import { rouletteClient, RouletteAccessError } from "@/lib/server/ruleta-access";
 import { currentRankBenefits } from "@/lib/server/cliente-platform";
@@ -53,11 +54,11 @@ export async function GET(req: Request) {
         const benefits = active ? currentRankBenefits(key, policy).filter(label => !label.includes("Mi Ritual")) : [];
         if (active && row.ritual_access) benefits.unshift("Acceso a Mi ritual y seguimiento de tus rituales");
         if (key !== "diamante" && active && row.coins_enabled && Number(row.purchase_coins) > 0) benefits.push("+" + row.purchase_coins + " Coins adicionales por compra válida");
-        if (active && row.roulette_enabled && Number(row.roulette_spins) > 0) benefits.push("+" + row.roulette_spins + " giro(s) de ruleta nivel " + row.roulette_level + " por compra válida");
-        if (key === "diamante" && !policy?.activated_at) benefits.push("1 giro de Ruleta Diamante por cada compra válida confirmada con rango Diamante");
+        benefits.push(PURCHASE_RANK_SPIN_NOTICE);
+        if (key === "diamante" && !policy?.activated_at) benefits.push("En una compra normal de nivel 1, 2 o 3 puedes elegir 1 giro Diamante en lugar de los giros del paquete.");
         return {
           key, label: String(row.label || key), min_spend: Number(row.min_spend), active, benefits,
-          package_benefits: policy?.activated_at ? policy.package_benefits.filter(item => item.rank_key === key) : matrix.error ? null : (matrix.data || []).filter(item => item.rank_key === key),
+          package_benefits: policy?.activated_at ? policy.package_benefits.filter(item => item.rank_key === key).map(withoutPurchaseRankSpins) : matrix.error ? null : (matrix.data || []).filter(item => item.rank_key === key).map(withoutPurchaseRankSpins),
         };
       }),
       // Only public programme fields are returned; no notes, audits or staff ids.
@@ -76,3 +77,4 @@ export async function GET(req: Request) {
       "No hemos podido consultar tus rangos. Vuelve a intentarlo." }, { status, headers });
   }
 }
+

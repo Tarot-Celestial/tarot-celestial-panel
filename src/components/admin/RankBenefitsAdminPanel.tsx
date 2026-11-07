@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Check, ChevronLeft, ChevronRight, Plus, RefreshCw, Save, X } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { PURCHASE_RANK_SPIN_NOTICE } from "@/lib/rank-benefit-config";
 import CrystalEmblem from "@/components/benefits/CrystalEmblem";
 import styles from "./RankBenefitsAdminPanel.module.css";
 const sb = supabaseBrowser();
@@ -56,7 +57,7 @@ export default function RankBenefitsAdminPanel({ mode = "config" }: {mode?:"conf
       {mode==="config"&&tab==="ranks"&&<>
         <div className={styles.rankGrid}>{data.ranks.map(row=><RankCard key={`${row.rank_key}:${row.revision}`} row={row} save={save}/>)}</div>
         {newRank?<RankCard row={newRank} save={async(a,r)=>{const ok=await save(a,r);if(ok)setNewRank(null);return ok}} isNew/>:<button className={styles.secondary} onClick={()=>setNewRank({rank_key:"",label:"",min_spend:1,sort_order:data.ranks.length+1,is_active:true,coins_enabled:false,purchase_coins:0,roulette_enabled:false,roulette_level:5,roulette_spins:1,daily_bonus_enabled:false})}><Plus size={16}/> Añadir rango</button>}
-        <div className={styles.note}>Los extras del rango se suman a los beneficios del pack y al giro del tramo de compra. Desactivar un beneficio detiene futuras entregas; el historial se conserva.</div>
+        <div className={styles.note}>{PURCHASE_RANK_SPIN_NOTICE} Los demás beneficios del rango conservan sus condiciones. Desactivar un beneficio detiene futuras entregas; el historial se conserva.</div>
       </>}
       {mode==="config"&&tab==="bands"&&<section className={styles.card}>
         <div className={styles.sectionHead}><div><h2>Importe confirmado → tirada</h2><p>Límites incluidos y con céntimos. Cada moneda tiene sus propios tramos.</p></div><button className={styles.primary} onClick={()=>setNewBand(true)}><Plus size={16}/> Añadir tramo</button></div>
@@ -84,14 +85,14 @@ export function BenefitLine({benefit}:{benefit:Row}) {
   return <div className={styles.benefitLine}>{Number(benefit?.coins)>0&&<span><b className={styles.coin}>✦</b> +{benefit.coins} Coins</span>}{Number(benefit?.minutes)>0&&<span>+{benefit.minutes} minutos FREE</span>}{Number(benefit?.oracle_credits)>0&&<span>+{benefit.oracle_credits} tiradas Oráculo</span>}</div>;
 }
 function RankCard({row,save,isNew=false}:{row:Row;save:SaveRow;isNew?:boolean}) {
-  const [form,setForm]=useState(row),[busy,setBusy]=useState(false),[dirty,setDirty]=useState(false);
+  const [form,setForm]=useState<Row>({...row,roulette_enabled:false}),[busy,setBusy]=useState(false),[dirty,setDirty]=useState(false);
   const set=(key:string,v:any)=>{setForm(f=>({...f,[key]:v}));setDirty(true)};
   return <form className={styles.rankCard} data-rank={form.rank_key} onSubmit={async e=>{e.preventDefault();setBusy(true);const ok=await save("rank",form);if(ok)setDirty(false);setBusy(false)}}>
     <div className={styles.rankHeader}><CrystalEmblem tone={form.rank_key}/><div><span className={styles.eyebrow}>BENEFICIOS DE RANGO</span><h2>{form.label||"Nuevo rango"}</h2><span className={styles.pill} data-on={form.is_active}>{form.is_active?"Activo":"Pausado"}</span></div></div>
     {isNew&&<div className={styles.fields}><label>Clave<input required pattern="[a-z][a-z0-9_]{1,39}" value={form.rank_key} onChange={e=>set("rank_key",e.target.value)} placeholder="Ej. platino"/></label><label>Nombre<input required value={form.label} onChange={e=>set("label",e.target.value)}/></label></div>}
     <Toggle label="Beneficios activos" value={form.is_active} onChange={v=>set("is_active",v)}/>
     <div className={styles.benefitGroup}><Toggle label="Coins extra por compra" value={form.coins_enabled} onChange={v=>set("coins_enabled",v)}/><label className={styles.numberField}><b className={styles.coin}>✦</b><input aria-label={`Coins por compra ${form.label}`} type="number" required min="0" max="1000000" step="1" value={form.purchase_coins} onChange={e=>set("purchase_coins",Number(e.target.value))}/><span>Coins</span></label></div>
-    <div className={styles.benefitGroup}><Toggle label="Ruleta extra por compra" value={form.roulette_enabled} onChange={v=>set("roulette_enabled",v)}/><div className={styles.fields}><label>Ruleta<select value={form.roulette_level} onChange={e=>set("roulette_level",Number(e.target.value))}>{[1,2,3,4,5].map(n=><option key={n} value={n}>{levelName(n)}</option>)}</select></label><label>Tiradas<input type="number" required min="1" max="20" value={form.roulette_spins} onChange={e=>set("roulette_spins",Number(e.target.value))}/></label></div></div>
+    <p className={styles.note}>{PURCHASE_RANK_SPIN_NOTICE}</p>
     <Toggle label="Acceso al bono diario" value={form.daily_bonus_enabled} onChange={v=>set("daily_bonus_enabled",v)}/>
     <details className={styles.advanced}><summary>Umbral y orden del rango</summary><label>Gasto mínimo en 30 días<input type="number" required min="0.01" step="0.01" value={form.min_spend} onChange={e=>set("min_spend",Number(e.target.value))}/></label><label>Orden<input type="number" value={form.sort_order} onChange={e=>set("sort_order",Number(e.target.value))}/></label></details>
     <button className={styles.primary} disabled={busy||(!dirty&&!isNew)} type="submit"><Save size={16}/>{busy?"Guardando…":dirty||isNew?"Guardar cambios":"Guardado"}</button>
@@ -123,3 +124,4 @@ function BonusEditor({row,ranks,save,close}:{row:Row;ranks:Row[];save:SaveRow;cl
     <button className={styles.primary} type="submit" disabled={busy}><Save size={16}/>{busy?"Guardando…":"Guardar bono"}</button>
   </form></div>;
 }
+

@@ -3,6 +3,7 @@ import { customerBenefitPolicy } from "@/lib/server/customer-benefits";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import { CLIENTE_MINUTE_PACKS } from "@/lib/server/cliente-minute-packs";
 import {
+  PURCHASE_RANK_SPIN_NOTICE,
   validateDiamondDailyBonus,
   validatePackageLevelAssignment,
   validateRankPackageBenefitEdit,
@@ -16,6 +17,7 @@ const reply = (body: unknown, status = 200) => NextResponse.json(body, { status,
 
 function failure(error: any) {
   const raw = String(error?.message || error?.details || "No se pudo completar la operación.");
+  if (/PURCHASE_RANK_SPINS_DISABLED|RANK_PURCHASE_ROULETTE_DISABLED/i.test(raw)) return reply({ ok: false, error: PURCHASE_RANK_SPIN_NOTICE + " Actualiza el panel antes de guardar." }, 409);
   if (/CONFIG_CONFLICT/i.test(raw)) return reply({ ok: false, error: "Otra sesión modificó esta configuración. Recarga y revisa los cambios antes de guardar." }, 409);
   if (/42P01|PGRST205|does not exist|schema cache/i.test(raw)) return reply({ ok: false, error: "Faltan migraciones de Beneficios de rangos en Supabase. Aplica las migraciones pendientes en orden." }, 409);
   if (/INVALID_|BONUS_REWARD_REQUIRED/i.test(raw)) return reply({ ok: false, error: raw }, 400);

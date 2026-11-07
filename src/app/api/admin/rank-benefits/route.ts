@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertNoPurchaseRankSpins, PURCHASE_RANK_SPIN_NOTICE } from "@/lib/rank-benefit-config";
 import { requireAdmin } from "@/lib/admin/require-admin";
 
 export const runtime = "nodejs";
@@ -8,6 +9,8 @@ const headers = { "Cache-Control": "private, no-store" };
 function failure(error: any) {
   const message = String(error?.message || "No se pudo completar la operación.");
   const messages: Record<string, string> = {
+    PURCHASE_RANK_SPINS_DISABLED: PURCHASE_RANK_SPIN_NOTICE + " Actualiza el panel antes de guardar.",
+    RANK_PURCHASE_ROULETTE_DISABLED: PURCHASE_RANK_SPIN_NOTICE + " Actualiza el panel antes de guardar.",
     CONFIG_CONFLICT: "Otra sesión ha guardado cambios. Actualiza antes de editar de nuevo.",
     TRAMOS_SOLAPADOS: "Este tramo se solapa con otro tramo activo de la misma moneda.",
     BONUS_INVALID: "Introduce un beneficio positivo y cantidades enteras.",
@@ -60,6 +63,7 @@ export async function POST(req: Request) {
     if (!["rank", "band", "bonus"].includes(body?.action) || !body?.data || typeof body.data !== "object") {
       return NextResponse.json({ ok: false, error: "Configuración no válida." }, { status: 400, headers });
     }
+    if (body.action === "rank") assertNoPurchaseRankSpins(body.data);
     if (body.action === "bonus") {
       const d = body.data;
       if (!String(d.name || "").trim() || String(d.name).length > 160 || String(d.description || "").length > 2000) throw new Error("Título o descripción no válidos.");
@@ -77,3 +81,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, saved: data }, { headers });
   } catch (error) { return failure(error); }
 }
+

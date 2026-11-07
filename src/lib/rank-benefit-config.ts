@@ -75,12 +75,32 @@ function revision(value: unknown) {
   return number;
 }
 
+export const PURCHASE_RANK_SPIN_NOTICE = "Los giros corresponden al paquete comprado; el rango no añade giros.";
+
+const purchaseRankSpinFields = ["roulette_level_1_spins", "roulette_level_2_spins", "roulette_level_3_spins", "roulette_special_spins", "roulette_diamond_spins"] as const;
+
+/** Only automatic purchase extras; manual grants and daily bonuses keep their own rules. */
+export function withoutPurchaseRankSpins<T extends object>(value: T): T {
+  return { ...value, ...Object.fromEntries(purchaseRankSpinFields.map(key => [key, 0])) };
+}
+
+export function assertNoPurchaseRankSpins(value: Record<string, unknown>) {
+  if (value.roulette_enabled === true || purchaseRankSpinFields.some(key => Number(value[key] ?? 0) !== 0)) {
+    throw new Error("PURCHASE_RANK_SPINS_DISABLED");
+  }
+}
+
+export function purchaseRankBenefitLabels(value: Partial<RankPackageBenefitConfig> | null | undefined) {
+  return matrixBenefitLabels(value ? withoutPurchaseRankSpins(value) : value);
+}
+
 export function validateRankPackageBenefitEdit(value: unknown) {
   const row = value as Partial<RankPackageBenefitConfig> | null;
   const level = Number(row?.package_level);
   if (!row || typeof row.rank_key !== "string" || !RANK_RE.test(row.rank_key) || ![1, 2, 3].includes(level)) {
     throw new Error("Rango o nivel de paquete no válido.");
   }
+  assertNoPurchaseRankSpins(row as Record<string, unknown>);
   return {
     rank_key: row.rank_key,
     package_level: level as 1 | 2 | 3,

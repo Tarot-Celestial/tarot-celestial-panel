@@ -6,6 +6,9 @@ import { CheckCircle2, Coins, Diamond, Eye, Gift, PlusCircle, RefreshCw, RotateC
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import {
   matrixBenefitLabels,
+  purchaseRankBenefitLabels,
+  withoutPurchaseRankSpins,
+  PURCHASE_RANK_SPIN_NOTICE,
   type DiamondDailyBonusConfig,
   type PackageLevelAssignment,
   type RankBenefitConfig,
@@ -109,11 +112,11 @@ export default function RankBenefitsPhaseOne() {
       <section className={styles.rankAdminGrid}>
         <div className={styles.rankAdminMain}>
           {section === "purchase" ? <div className={styles.rankCard} data-rank={selectedRank}>
-            <div className={styles.rankHeader}><CrystalEmblem tone={selectedRank}/><div><h2>{rank?.label || selectedRank}</h2><p className={styles.note}>La matriz requiere un nivel de paquete asignado y la entrega activada. Diamante tiene una regla total de 300 Coins y un giro Diamante, también en promociones con nivel. Los demás rangos mantienen su matriz. Las tiradas adicionales de Oráculo pueden aplicarse también a promociones con nivel asignado. Los beneficios propios del paquete se calculan por separado según su tarifa; el nivel del paquete y el de ruleta son independientes.</p></div></div>
+            <div className={styles.rankHeader}><CrystalEmblem tone={selectedRank}/><div><h2>{rank?.label || selectedRank}</h2><p className={styles.note}>La matriz requiere un nivel de paquete asignado y la entrega activada. Diamante recibe 300 Coins por compra normal de nivel 1, 2 o 3 y puede elegir un giro Diamante en lugar de los giros del paquete. Los demás rangos mantienen sus Coins y Oráculo configurados para compras normales. El rango no añade giros. Promo no concede beneficios adicionales; conserva los minutos propios de su tarifa. El nivel del paquete y el de ruleta son independientes.</p></div></div>
             <div className={styles.rankSectionTitle}><span><Gift size={17}/> Beneficios por compra</span><small>Nivel del paquete ≠ nivel de ruleta</small></div>
             <div className={styles.levelTabs}>{([1,2,3] as const).map((value) => <button key={value} type="button" aria-pressed={level === value} onClick={() => setLevel(value)}>Nivel {value}</button>)}</div>
             <PackagesUsingLevel packages={packagesForLevel} />
-            {data.benefit_policy?.activated_at && selectedRank === "diamante" ? <div className={styles.rankPreview}><strong>300 Coins totales + 1 giro Diamante</strong><span>Regla vigente para cualquier compra con nivel 1, 2 o 3. Sustituye Coins y giros de nivel del paquete. Se mantienen las tiradas de Oráculo configuradas.</span></div> : <MatrixEditor key={`${selectedRank}-${level}-${matrix.revision}`} row={matrix} packages={packagesForLevel} onSaved={load} notify={saveResult}/>}
+            {data.benefit_policy?.activated_at && selectedRank === "diamante" ? <div className={styles.rankPreview}><strong>300 Coins totales · elección de ruleta</strong><span>En compras normales de nivel 1, 2 o 3: giros del paquete o, si se elige, 1 giro Diamante en su lugar, y las tiradas de Oráculo configuradas. Promo no concede beneficios adicionales; conserva los minutos propios de su tarifa.</span></div> : <MatrixEditor key={`${selectedRank}-${level}-${matrix.revision}`} row={matrix} packages={packagesForLevel} onSaved={load} notify={saveResult}/>}
           </div> : <>
             {rank && (data.benefit_policy?.activated_at ? <div className={styles.rankCard}><h2>{rank.label}</h2>{customerBenefitLabels(data.benefit_policy, rank.rank_key).map(label => <p key={label}>{label}</p>)}</div> : <GeneralRankSummary row={rank}/>)}
             {rank && <RitualEditor key={`${rank.rank_key}-${rank.revision}`} row={rank} onSaved={load} notify={saveResult}/>}
@@ -130,7 +133,7 @@ export default function RankBenefitsPhaseOne() {
               <div><span>Mi ritual</span><strong>{rank?.ritual_access ? "Permitido" : "Oculto"}</strong></div>
               <div><span>Última edición</span><strong>{fmt(section === "purchase" ? matrix.updated_at || rank?.updated_at : rank?.updated_at)}</strong></div><div><span>Responsable</span><strong>{section === "purchase" ? (matrix as any).updated_by_name || rank?.updated_by_name || "Sistema / migración" : rank?.updated_by_name || "Sistema / migración"}</strong></div>
             </div>
-            {section === "purchase" ? <div className={styles.rankBenefitPills}>{matrixBenefitLabels(matrix).map((label) => <span key={label}>{label}</span>)}</div> : null}
+            {section === "purchase" ? <div className={styles.rankBenefitPills}>{purchaseRankBenefitLabels(matrix).map((label) => <span key={label}>{label}</span>)}</div> : null}
           </section>
           {section === "purchase" ? <PackageMappings data={data} onSaved={load} notify={saveResult}/> : null}
         </aside>
@@ -151,19 +154,18 @@ export function RankBenefitsComparison({ data }: { data: AdminData }) {
   const packageCell = (rank: string, level: number) => {
     const row = data.matrix?.find(item => item.rank_key === rank && Number(item.package_level) === level);
     if (!row) return "Sin configuración";
-    return matrixBenefitLabels(row).join(" · ") || "Sin extras configurados";
+    return purchaseRankBenefitLabels(row).join(" · ") || "Sin extras configurados";
   };
   const generalCell = (row: RankBenefitConfig) => {
     if (row.is_active === false) return "Entrega general desactivada";
     return [
       row.coins_enabled && Number(row.purchase_coins) > 0 ? `+${Number(row.purchase_coins).toLocaleString("es-ES")} Coins` : null,
-      row.roulette_enabled && Number(row.roulette_spins) > 0 ? `+${row.roulette_spins} giro(s) N${row.roulette_level}` : null,
     ].filter(Boolean).join(" · ") || "Sin extras generales";
   };
   const bonus = data.diamond_bonus;
   return <section className={styles.rankCard} aria-label="Comparación de beneficios por rango">
     <div className={styles.rankSectionTitle}><span><Gift size={18}/> Qué incluye cada rango</span><small>Configuración guardada</small></div>
-    <p className={styles.note}>Los pases FREE empiezan en Plata y requieren alguna compra confirmada. No se acumulan; una compra nueva no añade pases ni reinicia su ciclo. Los extras de la matriz requieren un nivel asignado y entrega activada: sus Coins y giros solo se entregan a tarifa regular; las tiradas adicionales de Oráculo pueden aplicarse también a promociones con nivel asignado.</p>
+    <p className={styles.note}>Los pases FREE empiezan en Plata y requieren alguna compra confirmada. No se acumulan; una compra nueva no añade pases ni reinicia su ciclo. Los extras de la matriz requieren una compra normal, un nivel asignado y entrega activada. Los giros corresponden al paquete, sin extras de rango. Promo no concede beneficios adicionales; conserva los minutos propios de su tarifa.</p>
     <div className={`${styles.tableWrap} ${styles.rankComparison}`} tabIndex={0} role="region" aria-label="Tabla de beneficios de Bronce, Plata, Oro y Diamante">
       <table><thead><tr><th scope="col">Beneficio</th>{ranks.map(rank => <th key={rank.rank_key} scope="col">{rank.label}</th>)}</tr></thead>
         <tbody>
@@ -179,9 +181,9 @@ export function RankBenefitsComparison({ data }: { data: AdminData }) {
     <p className={styles.comparisonFootnote}>Mi ritual permite consultar los rituales asignados; no regala uno. La matriz por nivel sustituye los extras generales cuando el paquete tiene un nivel asignado. El saldo y los pases utilizados de cada cliente siguen en su ficha.</p>
     <div className={styles.rankPreview} aria-label="Estado de aplicación de los minutos por rango">
       <strong>Minutos por rango: configuración y entrega</strong>
-      <span>Plata +10 y Oro +12 en compras a precio regular: configurados, pendientes de aplicación automática. No se presentan como minutos ya acreditados.</span>
-      <span>Diamante +15: entrega automática en compras de minutos confirmadas, incluidas promociones. No se aplica a Oráculo ni a registros manuales de llamada.</span>
-      <span>Nueva tarotista: una consulta de regalo por cliente y por cada nueva tarotista disponible; 7 minutos sin rango o en Bronce, 10 en Plata, 12 en Oro y 15 en Diamante. Central la confirma al registrar la consulta. El regalo tiene sus propios minutos y mantiene el saldo pendiente del cliente, aunque sea 0. No consume los pases periódicos de 7 minutos.</span>
+      <span>Las cuantías se consultan en la configuración vigente de beneficios.</span>
+      <span>Los minutos extra por rango se aplican una vez a compras normales. Promo no añade extras por rango. Un cobro de Central solo acredita al registrar la compra; una compra web acredita automáticamente.</span>
+      <span>Nueva tarotista: la consulta de regalo es un beneficio independiente. Central la confirma al registrar la consulta, con sus propios minutos y conservando el saldo pendiente del cliente.</span>
       <span>La participación en sorteos activos se asigna desde Central según las condiciones de cada sorteo. El seguimiento energético es atención asistida coordinada por Central; ninguno se activa automáticamente por cambiar de rango.</span>
     </div>
   </section>;
@@ -317,17 +319,16 @@ function PackagesUsingLevel({ packages }: { packages: AdminData["packages"] }) {
 function GeneralRankSummary({ row }: { row: RankBenefitConfig }) {
   const legacy = [
     row.coins_enabled && Number(row.purchase_coins || 0) > 0 ? `+${Number(row.purchase_coins).toLocaleString("es-ES")} Coins por compra` : null,
-    row.roulette_enabled && Number(row.roulette_spins || 0) > 0 ? `+${Number(row.roulette_spins)} giro(s) de ruleta N${row.roulette_level}` : null,
   ].filter(Boolean);
-  return <section className={styles.rankCard}><div className={styles.rankSectionTitle}><span><ShieldCheck size={17}/> Beneficios y accesos generales</span></div><p className={styles.note}>La matriz rango × nivel sustituye estos beneficios generales de compra cuando el paquete tiene un nivel administrado. Si un paquete queda sin asignar, conserva la lógica general histórica.</p><div className={styles.rankBenefitPills}>{legacy.length ? legacy.map((label) => <span key={label}>{label}</span>) : <span>Sin beneficios generales de compra activos</span>}</div></section>;
+  return <section className={styles.rankCard}><div className={styles.rankSectionTitle}><span><ShieldCheck size={17}/> Beneficios y accesos generales</span></div><p className={styles.note}>La matriz rango × nivel sustituye estos beneficios generales de compra cuando el paquete tiene un nivel administrado. Si un paquete queda sin asignar, conserva los demás beneficios generales. {PURCHASE_RANK_SPIN_NOTICE}</p><div className={styles.rankBenefitPills}>{legacy.length ? legacy.map((label) => <span key={label}>{label}</span>) : <span>Sin beneficios generales de compra activos</span>}</div></section>;
 }
 
 function MatrixEditor({ row, packages, onSaved, notify }: { row: RankPackageBenefitConfig; packages: AdminData["packages"]; onSaved: () => Promise<void>; notify: (text: string) => void }) {
-  const [form, setForm] = useState({ ...row });
+  const [form, setForm] = useState(() => withoutPurchaseRankSpins(row));
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<any>(null);
   const [error, setError] = useState("");
-  const dirty = JSON.stringify(form) !== JSON.stringify(row);
+  const dirty = JSON.stringify(form) !== JSON.stringify(withoutPurchaseRankSpins(row));
   const number = (key: keyof RankPackageBenefitConfig, value: string) => setForm((old) => ({ ...old, [key]: Math.max(0, Number(value || 0)) }));
   async function save() {
     setBusy(true); setError("");
@@ -350,12 +351,9 @@ function MatrixEditor({ row, packages, onSaved, notify }: { row: RankPackageBene
     <div className={styles.matrixFields}>
       <label>Coins<input type="number" min="0" step="1" value={form.coins} onChange={(e) => number("coins", e.target.value)}/></label>
       <label>Tiradas Oráculo<input type="number" min="0" step="1" value={form.oracle_credits} onChange={(e) => number("oracle_credits", e.target.value)}/></label>
-      <label>Ruleta nivel 1<input type="number" min="0" step="1" value={form.roulette_level_1_spins} onChange={(e) => number("roulette_level_1_spins", e.target.value)}/></label>
-      <label>Ruleta nivel 2<input type="number" min="0" step="1" value={form.roulette_level_2_spins} onChange={(e) => number("roulette_level_2_spins", e.target.value)}/></label>
-      <label>Ruleta nivel 3<input type="number" min="0" step="1" value={form.roulette_level_3_spins} onChange={(e) => number("roulette_level_3_spins", e.target.value)}/></label>
-      <label>Ruleta especial<input type="number" min="0" step="1" value={form.roulette_special_spins} onChange={(e) => number("roulette_special_spins", e.target.value)}/></label>
+      <p className={styles.note}>{PURCHASE_RANK_SPIN_NOTICE}</p>
     </div>
-    {preview && <div className={styles.rankPreview}><strong>Vista previa real · sin acreditar nada</strong><span>{preview.package_source === "promotion" ? "Promoción" : "Pack estándar"} · {preview.package_key} · {preview.rank_key || "Sin rango"} · {preview.package_level ? `Nivel ${preview.package_level}` : "Sin nivel"}</span><div className={styles.rankBenefitPills}>{matrixBenefitLabels(preview.rank_benefits).map((label) => <span key={label}>{label}</span>)}</div></div>}
+    {preview && <div className={styles.rankPreview}><strong>Vista previa real · sin acreditar nada</strong><span>{preview.package_source === "promotion" ? "Promoción" : "Pack estándar"} · {preview.package_key} · {preview.rank_key || "Sin rango"} · {preview.package_level ? `Nivel ${preview.package_level}` : "Sin nivel"}</span><div className={styles.rankBenefitPills}>{purchaseRankBenefitLabels(preview.rank_benefits).map((label) => <span key={label}>{label}</span>)}</div></div>}
     {error && <div className={styles.message} role="alert">{error}</div>}
     <div className={styles.toolbar}><button type="button" className={styles.primary} disabled={busy || !dirty} onClick={() => void save()}><Save size={16}/>{busy ? "Guardando…" : dirty ? "Guardar cambios" : "Sin cambios"}</button><button type="button" className={styles.secondary} disabled={busy} onClick={() => void showPreview()}><Eye size={16}/> Vista previa</button></div>
   </div>;
@@ -391,3 +389,4 @@ function HistoryRows({ rows, kind }: { rows: any[]; kind: "delivery" | "audit" }
   if (!rows.length) return <div className={styles.empty}>Todavía no hay registros.</div>;
   return <div className={styles.rankHistoryList}>{rows.map((row, index) => <article key={row.id || `${kind}-${index}`}><div><strong>{kind === "delivery" ? row.client_name || row.cliente_id : row.action}</strong><small>{kind === "delivery" ? `${row.benefit_type}${row.package_level ? ` · paquete N${row.package_level}` : ""}` : `${row.entity} · ${row.actor_name || "Sistema"}`}</small></div><time>{fmt(row.created_at)}</time></article>)}</div>;
 }
+
