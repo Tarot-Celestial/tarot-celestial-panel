@@ -25,7 +25,8 @@ async function makeClient(rank = 'diamante') {
 
 async function order(customer, options = {}) {
   const n = sequence++, kind = options.kind || 'client_purchase';
-  const packId = options.promo ? 'promo:fixture-payment-boundary' : 'pack_20';
+  const packId = options.packId || (options.promo ? 'promo:fixture-payment-boundary' : 'pack_20');
+  const amount = options.amount ?? 22;
   const payload = {
     pack_id: packId, pack_name: 'Synthetic 20 minute pack', total_minutes: 20,
     normal: 20, free: 0, points: 0, oracle_credits: 0,
@@ -36,11 +37,11 @@ async function order(customer, options = {}) {
     ...options.payload,
   };
   await db.query(`insert into crm_paypal_orders(id,cliente_id,worker_id,environment,order_id,amount,pack_id,pack_name,purchase_payload,create_payload,checkout_kind,purchaser_auth_user_id)
-    values($1,$2,$3,'sandbox',$4,22,$5,$6,$7,'{}',$8,$9)`,
-  [id(n), customer.client, kind === 'crm_collection' ? id(1) : null, `SYNTHETIC-ORDER-${n}`, packId, payload.pack_name, JSON.stringify(payload), kind, kind === 'client_purchase' ? customer.actor : null]);
-  return { ...customer, n, kind, orderId: id(n), remoteOrder: `SYNTHETIC-ORDER-${n}`, capture: `SYNTHETIC-CAPTURE-${n}` };
+    values($1,$2,$3,'sandbox',$4,$10,$5,$6,$7,'{}',$8,$9)`,
+  [id(n), customer.client, kind === 'crm_collection' ? id(1) : null, `SYNTHETIC-ORDER-${n}`, packId, payload.pack_name, JSON.stringify(payload), kind, kind === 'client_purchase' ? customer.actor : null, amount]);
+  return { ...customer, n, kind, amount, orderId: id(n), remoteOrder: `SYNTHETIC-ORDER-${n}`, capture: `SYNTHETIC-CAPTURE-${n}` };
 }
-const finish = a => call(a.kind === 'crm_collection' ? 'tc_complete_paypal_crm' : 'tc_complete_paypal_client', a.orderId, a.remoteOrder, a.capture, 22, 'EUR');
+const finish = a => call(a.kind === 'crm_collection' ? 'tc_complete_paypal_crm' : 'tc_complete_paypal_client', a.orderId, a.remoteOrder, a.capture, a.amount, 'EUR');
 
 function newPurchase(customer, extra = {}) {
   return {
@@ -149,6 +150,54 @@ test('web purchases credit base and rank minutes once, with matching receipt and
     assert.equal(await scalar("select count(*)::int v from tc_client_benefit_events where payment_id=$1 and benefit_key='regular_purchase_minutes'", [result.payment_id]), bonus ? 1 : 0);
   }
 });
+
+for (const pack of [
+  { level: 2, total: 60, normal: 40, free: 20, amount: 35, oracle: 0 },
+  { level: 3, total: 80, normal: 50, free: 30, amount: 49, oracle: 1 },
+]) {
+  for (const kind of ['client_purchase', 'crm_collection']) {
+    for (const account of kind === 'crm_collection' ? accountKeys : ['client_business_v1']) {
+      test(`normal level ${pack.level}, ${pack.total} minutes/${pack.amount} EUR: ${kind}/${account} credits Diamond rewards once`, async () => {
+        const customer = await makeClient('diamante');
+        const a = await order(customer, {
+          kind, account, packId: `pack_${pack.total}`, amount: pack.amount,
+          payload: {
+            pack_name: `Synthetic ${pack.total} minute pack`, total_minutes: pack.total,
+            normal: pack.normal, free: pack.free, roulette_level: pack.level, oracle_credits: pack.oracle,
+          },
+        });
+        const completion = await finish(a);
+        let paymentId, registration;
+        if (kind === 'crm_collection') {
+          assert.deepEqual(await wallet(customer.client), { coins: 700, free: 4, normal: 6 });
+          assert.equal(await count('crm_cliente_pagos', customer.client), 0);
+          registration = newPurchase(customer, {
+            importe: pack.amount, paypal_collection_source: 'crm_collection', paypal_collection_order_id: a.orderId,
+            minutos_guardados_free: pack.free, minutos_guardados_normales: pack.normal - 5,
+            purchase_benefits: { oracle_credits: pack.oracle, roulette_level: pack.level, roulette_spins: 1 },
+          });
+          paymentId = (await register(registration)).payment.id;
+        } else {
+          paymentId = completion.payment_id;
+          assert.equal(completion.credited.coins, 300);
+          assert.equal(completion.credited.rank_free_minutes, 8);
+          assert.equal(completion.credited.total_minutes, pack.total + 8);
+          assert.deepEqual(completion.credited.spins, [{ level: pack.level, count: 1 }]);
+        }
+        const expected = { coins: 1000, free: 4 + pack.free + 8, normal: 6 + pack.normal - (kind === 'crm_collection' ? 5 : 0) };
+        assert.deepEqual(await wallet(customer.client), expected);
+        assert.equal((await finish(a)).duplicated, true);
+        if (registration) assert.equal((await register(registration)).duplicate_prevented, true);
+        await call('tc_apply_purchase_benefits', paymentId);
+        assert.deepEqual(await wallet(customer.client), expected);
+        assert.equal(await count('crm_cliente_pagos', customer.client), 1);
+        assert.deepEqual(await scalar('select jsonb_agg(nivel order by nivel) v from cliente_ruleta_giros where cliente_id=$1', [customer.client]), [pack.level]);
+        assert.deepEqual(await scalar("select jsonb_build_object('events',count(*),'minutes',sum(minutes)) v from tc_client_benefit_events where payment_id=$1 and benefit_key='regular_purchase_minutes'", [paymentId]), { events: 1, minutes: 8 });
+        assert.equal(await scalar('select sum(coins)::int v from tc_client_benefit_events where payment_id=$1', [paymentId]), 300);
+      });
+    }
+  }
+}
 
 test('Promo preserves purchased minutes but never adds Coins, wheels or rank minutes in either channel', async () => {
   for (const kind of ['client_purchase', 'crm_collection']) {
