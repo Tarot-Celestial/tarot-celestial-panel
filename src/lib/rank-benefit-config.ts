@@ -175,4 +175,3 @@ export function matrixBenefitLabels(value: Partial<RankPackageBenefitConfig> | n
     Number(value.roulette_diamond_spins) > 0 ? `+${Number(value.roulette_diamond_spins)} giro Diamante` : null,
   ].filter(Boolean) as string[];
 }
-
