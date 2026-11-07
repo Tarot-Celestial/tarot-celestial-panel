@@ -10,6 +10,7 @@ const { PGlite } = require('@electric-sql/pglite');
 // rolled-back transactions to prove this correction preserves those awards.
 const read = p => fs.readFileSync(path.join(__dirname, p), 'utf8');
 const migrationPath = '../supabase/migrations/20261107165204_purchase_roulette_without_rank_extras.sql';
+const promotionMigrationPath = '../supabase/migrations/20261107171110_promo_purchase_no_oracle_extras.sql';
 const id = n => `73000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const ranks = ['bronce', 'plata', 'oro', 'diamante'];
 const channels = ['web', 'central'];
@@ -141,6 +142,18 @@ before(async () => {
   assert.deepEqual(await spins(historical.paymentId), [1, 1], 'the previous implementation reproduces the reported duplicate');
   historicalState = await historicalSnapshot();
   await db.exec(read(migrationPath));
+  await db.exec(read(promotionMigrationPath));
+  // Reuse exact captured grant helpers from the separate Oracle payment suite.
+  // No mock of Oracle settlement: the real finalizer runs with the deferred trigger.
+  const oracleSource = read('paypal-oracle-fulfillment.integration.cjs');
+  const oracleStart = oracleSource.indexOf('const liveFunctions=') + 'const liveFunctions='.length;
+  const oracleDefinitions = JSON.parse(oracleSource.slice(oracleStart, oracleSource.indexOf('\n};', oracleStart) + 2));
+  await db.exec(`create table cliente_oracle_question_movements(id uuid primary key default gen_random_uuid(),cliente_id uuid not null,
+    amount integer not null,movement_type text not null,reference text,notes text,meta jsonb default '{}',created_at timestamptz default now());
+    create unique index fixture_question_reference on cliente_oracle_question_movements(reference) where reference is not null;`);
+  await db.exec(oracleDefinitions.get_cliente_oracle_question_balance);
+  await db.exec(oracleDefinitions.grant_cliente_oracle_questions);
+  await db.exec(read('../supabase/migrations/20261029005516_paypal_oracle_fulfillment.sql'));
 });
 after(async () => { await db?.close(); });
 
@@ -168,12 +181,15 @@ for (const rank of ranks) for (const channel of channels) {
 }
 
 for (const channel of channels) {
-  test(`Promo/${channel}: no Coins, rank minutes or wheels at any rank/level`, async () => {
+  test(`Promo/${channel}: no Coins, Oracle, rank minutes or wheels at any rank/level`, async () => {
+    assert.ok([...baselines.entries()].some(([key, value]) => key.endsWith('/promo') && value.oracle > 0), 'the previous engine reproduces the Oracle benefit leak');
     for (const rank of ranks) for (const pack of packs) {
       const p = await execute(rank, channel, pack, 'promo');
       assert.deepEqual(await spins(p.paymentId), []);
       const actual = await balance(p.client);
-      assert.deepEqual(actual, baselines.get(key(rank, channel, pack, 'promo')));
+      assert.deepEqual(actual, { ...baselines.get(key(rank, channel, pack, 'promo')), oracle: 0 });
+      assert.equal(await scalar('select coalesce(sum(oracle_credits),0)::int v from tc_client_benefit_events where payment_id=$1', [p.paymentId]), 0);
+      assert.equal(await scalar('select count(*)::int v from cliente_oracle_credit_movements where cliente_id=$1', [p.client]), 0);
       assert.equal(actual.coins, 700);
       assert.equal(actual.free, 4 + pack.free);
       assert.equal(actual.normal, 6 + pack.normal - (channel === 'central' ? 5 : 0));
@@ -224,6 +240,46 @@ test('Super Promo retains one exclusive Special wheel with no normal wheel or Co
   }
 });
 
+test('promotion preview excludes Oracle even when its configured rank matrix includes it', async () => {
+  await db.query("insert into tc_purchase_package_levels(package_source,package_key,package_label,package_level) values('promotion','synthetic-oracle-promo','Synthetic promotion',3)");
+  for (const rank of ranks) {
+    const c = await customer(rank);
+    const standard = await call('tc_resolve_rank_package_benefit', c.client, null, 'standard', 'pack_80', null);
+    assert.ok(standard.rank_benefits.oracle_credits > 0, 'the regular rank/package retains Oracle');
+    const promo = await call('tc_resolve_rank_package_benefit', c.client, null, 'promotion', 'synthetic-oracle-promo', null);
+    assert.equal(promo.rank_benefits.oracle_credits, 0);
+    assert.equal(promo.rank_benefits.coins, 0);
+  }
+});
+
+test('direct paid Oracle credits and questions settle once, without minute-purchase benefits', async () => {
+  for (const pack of [
+    { id: 'oracle_2', name: 'Pack Oráculo', amount: 1, credits: 2, questions: 0 },
+    { id: 'destino_3', name: 'Pack Destino', amount: 2, credits: 3, questions: 0 },
+    { id: 'oracle_questions_3', name: 'Preguntas al Oráculo', amount: 2, credits: 0, questions: 3 },
+  ]) {
+    const c = await customer('diamante'), order = id(sequence++);
+    const remote = `SYNTHETIC-ORACLE-${order}`, capture = `SYNTHETIC-ORACLE-CAPTURE-${order}`;
+    const snapshot = { purchase_kind: 'oracle', pack_id: pack.id, pack_name: pack.name, normal: 0, free: 0, total_minutes: 0,
+      points: 0, oracle_credits: pack.credits, oracle_questions: pack.questions, roulette_level: null, roulette_spins: 0,
+      package_level: null, reward_policy_version: 1, pricing_mode: 'oracle', purchase_classification: 'nada', rewards_eligible: false, created_by_role: 'cliente' };
+    await db.query(`insert into crm_paypal_orders(id,cliente_id,environment,order_id,amount,pack_id,pack_name,purchase_payload,create_payload,checkout_kind,purchaser_auth_user_id)
+      values($1,$2,'sandbox',$3,$4,$5,$6,$7,'{}','client_purchase',$8)`, [order,c.client,remote,pack.amount,pack.id,pack.name,JSON.stringify(snapshot),c.actor]);
+    const finish = () => call('tc_complete_paypal_oracle', order, remote, capture, pack.amount, 'EUR');
+    const results = await Promise.all(Array.from({ length: 5 }, finish));
+    assert.equal(new Set(results.map(r => r.payment_id)).size, 1);
+    assert.equal(results.filter(r => !r.duplicated).length, 1);
+    assert.deepEqual(await balance(c.client), { coins: 700, free: 4, normal: 6, oracle: pack.credits });
+    assert.equal(await call('get_cliente_oracle_question_balance', c.client), pack.questions);
+    assert.deepEqual(await spins(results[0].payment_id), []);
+    assert.equal(await scalar('select count(*)::int v from tc_client_benefit_events where payment_id=$1', [results[0].payment_id]), 0);
+    assert.equal(await scalar('select count(*)::int v from crm_client_notes where cliente_id=$1', [c.client]), 1);
+    await call('tc_apply_purchase_benefits', results[0].payment_id);
+    assert.deepEqual(await balance(c.client), { coins: 700, free: 4, normal: 6, oracle: pack.credits });
+    assert.equal(await call('get_cliente_oracle_question_balance', c.client), pack.questions);
+  }
+});
+
 test('non-Diamond customers cannot choose a Diamond wheel', async () => {
   for (const rank of ['bronce', 'plata', 'oro']) {
     const p = await prepare(rank, 'web', packs[0], 'ruleta_diamante');
@@ -270,6 +326,7 @@ test('reapplying the roulette migration does not change already processed purcha
   const before = {};
   for (const table of tables) before[table] = await scalar(`select jsonb_agg(to_jsonb(r) order by id) v from ${table} r`);
   await db.exec(read(migrationPath));
+  await db.exec(read(promotionMigrationPath));
   for (const table of tables) assert.deepEqual(await scalar(`select jsonb_agg(to_jsonb(r) order by id) v from ${table} r`), before[table]);
 });
 
