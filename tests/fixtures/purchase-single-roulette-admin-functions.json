@@ -1,0 +1,15 @@
+[
+  {
+    "proname": "tc_assert_benefit_admin",
+    "args": "p_actor uuid",
+    "definition": "CREATE OR REPLACE FUNCTION public.tc_assert_benefit_admin(p_actor uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\r\nbegin\r\n  if p_actor is null or not exists(\r\n    select 1 from public.workers w\r\n    where w.user_id=p_actor and (w.role='admin' or public.tc_has_admin_access(p_actor)) and coalesce(w.is_active,true)=true\r\n  ) then raise exception 'ADMIN_REQUIRED'; end if;\r\nend $function$\n",
+    "acl": "{postgres=X/postgres,service_role=X/postgres}"
+  },
+  {
+    "proname": "tc_has_admin_access",
+    "args": "p_user_id uuid",
+    "definition": "CREATE OR REPLACE FUNCTION public.tc_has_admin_access(p_user_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO ''\nAS $function$\n  select p_user_id is not null and private.tc_admin_access_allowed(null,p_user_id)\n$function$\n",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+  }
+]
+

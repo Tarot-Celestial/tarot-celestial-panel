@@ -1,0 +1,9 @@
+[
+  {
+    "proname": "tc_admin_access_allowed",
+    "args": "p_worker_id uuid, p_user_id uuid",
+    "definition": "CREATE OR REPLACE FUNCTION private.tc_admin_access_allowed(p_worker_id uuid, p_user_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO ''\nAS $function$\n  select exists (\n    select 1 from public.workers w\n    where (p_worker_id is null or w.id=p_worker_id)\n      and (p_user_id is null or w.user_id=p_user_id)\n      and (p_worker_id is not null or p_user_id is not null)\n      and w.user_id is not null\n      and w.is_active is true\n      and (w.user_id=(select auth.uid()) or (select auth.jwt()->>'role')='service_role')\n      and (\n        w.role='admin'\n        or (w.role='central' and exists (\n          select 1 from public.worker_admin_access a\n          where a.worker_id=w.id and a.user_id=w.user_id\n            and a.is_active and a.revoked_at is null\n        ))\n      )\n  )\n$function$\n",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+  }
+]
+
