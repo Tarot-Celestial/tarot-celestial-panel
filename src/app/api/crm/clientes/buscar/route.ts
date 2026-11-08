@@ -5,6 +5,13 @@ import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
+function json(body: unknown, status = 200) {
+  return NextResponse.json(body, { status, headers: { "Cache-Control": "private, no-store, max-age=0" } });
+}
 
 function getEnv(name: string) {
   const v = process.env[name];
@@ -64,9 +71,9 @@ function clientWebMeta(cliente: any) {
 export async function GET(req: Request) {
   try {
     const worker = await workerFromReq(req);
-    if (!worker) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    if (!worker) return json({ ok: false, error: "NO_AUTH" }, 401);
     if (!["admin", "central"].includes(String(worker.role || ""))) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return json({ ok: false, error: "FORBIDDEN" }, 403);
     }
 
     const { searchParams } = new URL(req.url);
@@ -86,16 +93,16 @@ export async function GET(req: Request) {
       const { data: etiquetasData, error: tagsErr } = await admin.from("crm_etiquetas").select("id").ilike("nombre", etiqueta);
       if (tagsErr) throw tagsErr;
       const idsEtiqueta = (etiquetasData || []).map((e: any) => String(e.id));
-      if (!idsEtiqueta.length) return NextResponse.json({ ok: true, clientes: [] });
+      if (!idsEtiqueta.length) return json({ ok: true, clientes: [] });
       const { data: rels, error: relErr } = await admin.from("crm_cliente_etiquetas").select("cliente_id").in("etiqueta_id", idsEtiqueta);
       if (relErr) throw relErr;
       clienteIdsFiltro = Array.from(new Set((rels || []).map((r: any) => String(r.cliente_id)).filter(Boolean)));
-      if (!clienteIdsFiltro.length) return NextResponse.json({ ok: true, clientes: [] });
+      if (!clienteIdsFiltro.length) return json({ ok: true, clientes: [] });
     }
 
     let query = admin
       .from("crm_clientes")
-      .select("id, nombre, apellido, telefono, telefono_normalizado, email, pais, notas, origen, updated_at, created_at, onboarding_completado, total_accesos, ultimo_acceso_at, ultima_actividad_at")
+      .select("id, nombre, apellido, telefono, telefono_normalizado, email, pais, notas, origen, updated_at, created_at, onboarding_completado, total_accesos, ultimo_acceso_at, ultima_actividad_at, minutos_free_pendientes, minutos_normales_pendientes, deuda_pendiente")
       .order("updated_at", { ascending: false, nullsFirst: false })
       .limit(120);
 
@@ -151,7 +158,7 @@ export async function GET(req: Request) {
     clientes = clientes.filter((c: any) => !String(c?.origen || "").toLowerCase().includes("orion"));
 
     const ids = clientes.map((c: any) => String(c.id)).filter(Boolean);
-    if (!ids.length) return NextResponse.json({ ok: true, clientes: [] });
+    if (!ids.length) return json({ ok: true, clientes: [] });
 
     const sinceIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -230,8 +237,8 @@ export async function GET(req: Request) {
         return true;
       });
 
-    return NextResponse.json({ ok: true, clientes });
+    return json({ ok: true, clientes });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+    return json({ ok: false, error: e?.message || "ERR" }, 500);
   }
 }

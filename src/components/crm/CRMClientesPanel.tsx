@@ -273,6 +273,12 @@ function clientWebBadge(cliente: any) {
   return { label: "🔴 No registrado", bg: "rgba(239,68,68,.16)", border: "1px solid rgba(239,68,68,.30)", color: "#fecaca" };
 }
 
+function formatCrmMinutes(value: unknown) {
+  if (value === null || value === undefined || value === "") return "—";
+  const minutes = Number(value);
+  return Number.isFinite(minutes) ? minutes.toLocaleString("es-ES", { maximumFractionDigits: 2 }) : "—";
+}
+
 function formatWebDateTime(v?: string | null) {
   if (!v) return "—";
   const d = new Date(v);
@@ -324,12 +330,39 @@ export default function CRMClientesPanel({
   );
   const brandAutoSearchRef = useRef(false);
   const crmSearchRefreshRef = useRef<() => void>(() => undefined);
+  const crmSearchRequestSeq = useRef(0);
+  const crmRowSnapshotSeq = useRef(0);
+  const crmRowSnapshots = useRef(new Map<string, { version: number; patch: Record<string, unknown> }>());
+
+  function syncCrmResultSnapshot(client: any, extra: Record<string, unknown> = {}) {
+    const id = String(client?.id || "");
+    if (!id) return;
+    const patch: Record<string, unknown> = {};
+    for (const key of ["minutos_free_pendientes", "minutos_normales_pendientes", "deuda_pendiente", "updated_at"]) {
+      if (Object.prototype.hasOwnProperty.call(client, key)) patch[key] = client[key];
+    }
+    if (!Object.keys(patch).length && !Object.keys(extra).length) return;
+    crmRowSnapshots.current.set(id, { version: ++crmRowSnapshotSeq.current, patch });
+    setCrmRows(rows => rows.map(row => String(row.id || "") === id ? { ...row, ...extra, ...patch } : row));
+  }
+
+  function applyCrmSearchRows(rows: any[], snapshotVersion: number) {
+    // A ficha/call result received after this search started wins over its older snapshot.
+    setCrmRows(rows.map(row => {
+      const newer = crmRowSnapshots.current.get(String(row.id || ""));
+      return newer && newer.version > snapshotVersion ? { ...row, ...newer.patch } : row;
+    }));
+  }
 
   useEffect(() => {
     setActiveBrand(getActiveBrand());
     function onBrandChanged(e: any) {
       const next = String(e?.detail?.brand || "celestial").toLowerCase() === "orion" ? "orion" : "celestial";
       setActiveBrand(next);
+      ++crmSearchRequestSeq.current;
+      crmRowSnapshots.current.clear();
+      ++crmRowSnapshotSeq.current;
+      setCrmLoading(false);
       setCrmRows([]);
       setCrmClienteSelId("");
       setCrmClienteFicha(null);
@@ -736,6 +769,9 @@ export default function CRMClientesPanel({
       if (!phone) return;
 
       setCrmPhoneFilter(phone);
+      const searchRequest = ++crmSearchRequestSeq.current;
+      const snapshotVersion = crmRowSnapshotSeq.current;
+      setCrmLoading(false);
 
       try {
         const token = await getTokenOrLogin();
@@ -745,8 +781,9 @@ export default function CRMClientesPanel({
           cache: "no-store",
         });
         const j = await safeJson(r);
+        if (searchRequest !== crmSearchRequestSeq.current || !j?._ok || !j?.ok) return;
         const clientes = Array.isArray(j?.clientes) ? j.clientes : [];
-        setCrmRows(clientes);
+        applyCrmSearchRows(clientes, snapshotVersion);
         setCrmMsg(`Resultados: ${clientes.length}`);
         if (clientes.length === 1 && mode !== "new") {
           await openCRMFicha(String(clientes[0].id));
@@ -776,6 +813,9 @@ export default function CRMClientesPanel({
     if (!phoneFromUrl) return;
 
     setCrmPhoneFilter(phoneFromUrl);
+    const searchRequest = ++crmSearchRequestSeq.current;
+    const snapshotVersion = crmRowSnapshotSeq.current;
+    setCrmLoading(false);
 
     void (async () => {
       try {
@@ -786,8 +826,8 @@ export default function CRMClientesPanel({
           cache: "no-store",
         });
         const j = await safeJson(r);
-        if (!j?._ok || !j?.ok) return;
-        setCrmRows(j.clientes || []);
+        if (searchRequest !== crmSearchRequestSeq.current || !j?._ok || !j?.ok) return;
+        applyCrmSearchRows(j.clientes || [], snapshotVersion);
         setCrmMsg(`Resultados: ${(j.clientes || []).length}`);
       } catch {
         // noop
@@ -922,10 +962,12 @@ export default function CRMClientesPanel({
     const telefono = crmPhoneFilter.trim();
     const etiqueta = crmTagFilter.trim();
     const pais = crmCountryFilter.trim();
+    const searchRequest = ++crmSearchRequestSeq.current;
+    const snapshotVersion = crmRowSnapshotSeq.current;
 
     try {
+      setCrmLoading(!silent);
       if (!silent) {
-        setCrmLoading(true);
         setCrmMsg("");
       }
 
@@ -949,19 +991,22 @@ export default function CRMClientesPanel({
       const url = `/api/crm/clientes/buscar?${params.toString()}`;
       const r = await fetch(url, {
   headers: { Authorization: `Bearer ${token}` },
+  cache: "no-store",
 });
 
       const j = await safeJson(r);
+      if (searchRequest !== crmSearchRequestSeq.current) return;
 
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
-      setCrmRows(j.clientes || []);
+      applyCrmSearchRows(j.clientes || [], snapshotVersion);
       setCrmMsg(`Resultados: ${(j.clientes || []).length}`);
     } catch (e: any) {
-      setCrmRows([]);
+      if (searchRequest !== crmSearchRequestSeq.current) return;
+      // Preserve the last confirmed rows if a background read fails.
       setCrmMsg(`❌ ${e?.message || "Error"}`);
     } finally {
-      if (!silent) setCrmLoading(false);
+      if (searchRequest === crmSearchRequestSeq.current) setCrmLoading(false);
     }
   }
 
@@ -1438,11 +1483,7 @@ export default function CRMClientesPanel({
           minutos_normales_pendientes: current.minutos_normales_pendientes,
           updated_at: current.updated_at };
       });
-      if (Object.keys(rankPatch).length) setCrmRows(previous => previous.map(row => {
-        if (String(row.id || "") !== clientId) return row;
-        const rankChanged = Object.entries(rankPatch).some(([key, value]) => JSON.stringify(row[key]) !== JSON.stringify(value));
-        return rankChanged ? { ...row, ...rankPatch } : row;
-      }));
+      syncCrmResultSnapshot(current, rankPatch);
       return true;
     } catch (error) {
       console.error("Error refrescando saldo real del CRM", error);
@@ -1506,6 +1547,8 @@ export default function CRMClientesPanel({
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
       const c = j.cliente;
+      if (String(c?.id || "") !== id) throw new Error("La ficha recibida no corresponde al cliente seleccionado");
+      syncCrmResultSnapshot(c);
       setCrmClienteFicha(c);
       setCrmClienteSelId(String(c?.id || id || ""));
       setCrmEditNombre(String(c?.nombre || ""));
@@ -1597,6 +1640,7 @@ export default function CRMClientesPanel({
       if (!j?._ok || !j?.ok) throw new Error(j?.error || "Error guardando");
 
       await saveEtiquetasCliente(targetId);
+      syncCrmResultSnapshot(j.cliente);
       if (visibleClientRef.current !== targetId) return;
       balanceEdited.current = false;
       setCrmClienteFicha((prev: any) => prev?.id === crmClienteSelId ? { ...prev, ...j.cliente } : prev);
@@ -2857,13 +2901,19 @@ export default function CRMClientesPanel({
         onSuccess={async (message, confirmed) => {
           const targetId = confirmed?.clienteId || String(crmClienteFicha?.id || crmClienteSelId || "").trim();
           setCrmRegistrarOpen(false);
-          if (targetId !== visibleClientRef.current) return;
+          const balances = confirmed?.balances;
+          if (balances && Number.isFinite(balances.free_after) && Number.isFinite(balances.normal_after)) {
+            syncCrmResultSnapshot({ id: targetId,
+              minutos_free_pendientes: balances.free_after,
+              minutos_normales_pendientes: balances.normal_after,
+            });
+          }
+          if (targetId !== visibleClientRef.current) { void searchCRM(true); return; }
           // La operación confirmada prevalece sobre cualquier borrador anterior.
           balanceEdited.current = false;
           ++fichaFetchVersion.current;
           // La misma transacción que escribe la nota devuelve el saldo final.
           // Mostrarlo inmediatamente; los reintentos duplicados no traen recibo.
-          const balances = confirmed?.balances;
           if (balances && Number.isFinite(balances.free_after) && Number.isFinite(balances.normal_after)) {
             setCrmEditMinFree(String(balances.free_after));
             setCrmEditMinNormales(String(balances.normal_after));
@@ -2953,8 +3003,8 @@ export default function CRMClientesPanel({
                       </div>
                     </td>
                     <td>{rankChip(r.rango_efectivo || r.rango_actual, r, mode === "admin")}</td>
-                    <td>{r.minutos_free_pendientes ?? 0}</td>
-                    <td>{r.minutos_normales_pendientes ?? 0}</td>
+                    <td>{formatCrmMinutes(r.minutos_free_pendientes)}</td>
+                    <td>{formatCrmMinutes(r.minutos_normales_pendientes)}</td>
                     <td>{eur(r.deuda_pendiente || 0)}</td>
                     <td>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

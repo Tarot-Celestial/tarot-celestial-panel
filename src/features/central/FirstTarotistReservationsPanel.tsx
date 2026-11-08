@@ -271,6 +271,7 @@ export default function FirstTarotistReservationsPanel() {
         body: JSON.stringify({ action, id: row.id, brand }),
       });
       const json = await res.json().catch(() => ({}));
+      if (res.status === 409) await load(true);
       if (!res.ok || json?.ok === false) throw new Error(json?.error || "No se pudo actualizar la reserva.");
       setNotice(`Reserva #${row.reservation_number} actualizada.`);
       await load(true);
@@ -309,6 +310,11 @@ export default function FirstTarotistReservationsPanel() {
         }),
       });
       const json = await res.json().catch(() => ({}));
+      if (res.status === 409) {
+        setActionRow(null);
+        setActionType(null);
+        await load(true);
+      }
       if (!res.ok || json?.ok === false) throw new Error(json?.error || "No se pudo actualizar la reserva.");
       const label = actionType === "complete" ? "Consulta cumplida y primera consulta gratis marcada como utilizada." : "Reserva actualizada correctamente.";
       setNotice(label);
@@ -332,7 +338,7 @@ export default function FirstTarotistReservationsPanel() {
           <span className={styles.eyebrow}>PRIMERA CONSULTA GRATIS · CONTROL OPERATIVO</span>
           <h2>Primera tarotista</h2>
           <p>
-            Gestiona la cola de bienvenida, respeta el orden de reservas y comprueba de un vistazo quién ya utilizó su primera consulta gratis con la tarotista nueva.
+            Gestiona la cola de bienvenida y comprueba quién ya realizó su consulta. Al registrar el regalo con la tarotista correspondiente, la reserva vinculada se marca como cumplida automáticamente.
           </p>
         </div>
         <div className={styles.heroBadge}>
@@ -361,7 +367,7 @@ export default function FirstTarotistReservationsPanel() {
           <label>
             <span>Teléfono / número de cliente</span>
             <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Ej. +34 600 000 000" />
-            <small>Recomendado: el teléfono permite detectar duplicados con mucha más seguridad.</small>
+            <small>Usa el teléfono completo de su ficha CRM para vincular la consulta y cerrar la reserva automáticamente.</small>
           </label>
           <label>
             <span>Tarotista de bienvenida</span>
@@ -446,6 +452,7 @@ export default function FirstTarotistReservationsPanel() {
 
                   <div className={styles.timeStrip}>
                     <div><Clock3 size={15} /><span>Reserva</span><strong>{fmtDate(row.scheduled_at)}</strong></div>
+                    {row.status === "cumplida" && row.completed_at ? <div><CheckCircle2 size={15} /><span>Consulta realizada</span><strong>{fmtDate(row.completed_at)}</strong></div> : null}
                     {row.status === "aplazada" && row.original_scheduled_at ? <div><History size={15} /><span>Original</span><strong>{fmtDate(row.original_scheduled_at)}</strong></div> : null}
                     {row.postponed_count > 0 ? <div><AlarmClock size={15} /><span>Aplazada</span><strong>{row.postponed_count} vez{row.postponed_count === 1 ? "" : "es"}</strong></div> : null}
                   </div>
