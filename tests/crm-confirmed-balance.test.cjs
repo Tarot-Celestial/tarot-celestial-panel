@@ -27,7 +27,7 @@ function harness({ dirty = false, free = '23', normal = '15', serverFree = 0, se
     safeJson: async () => ({ _ok: true, ok: true, cliente: { ...h.client, minutos_free_pendientes: serverFree, minutos_normales_pendientes: serverNormal } }),
     crmClienteFicha: h.client, crmClienteSelId: 'a',
     crmEditMinFree: free, crmEditMinNormales: normal, crmEditNombre: 'Cliente', crmEditApellido: '', crmEditTelefono: '', crmEditPais: '', crmEditEmail: '', crmEditNotas: '', crmEditOrigen: '', crmEditDeuda: '0',
-    setCrmSaveLoading: () => {}, saveEtiquetasCliente: async () => {}, searchCRM: () => {},
+    setCrmSaveLoading: () => {}, saveEtiquetasCliente: async () => {}, searchCRM: () => {}, syncCrmResultSnapshot: () => {},
     setCrmEditMinFree: x => h.free = x, setCrmEditMinNormales: x => h.normal = x,
     setCrmClienteFicha: fn => h.client = typeof fn === 'function' ? fn(h.client) : fn, setCrmRegistrarOpen: x => h.opened = x,
     setCrmFichaMsg: x => h.message = x,

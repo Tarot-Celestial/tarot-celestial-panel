@@ -245,9 +245,22 @@ export async function POST(req: Request) {
       .from("first_tarotist_reservations")
       .update(updates)
       .eq("id", id)
+      .eq("brand", brand)
+      // A registered consultation may have closed this reservation since the
+      // initial read. Never overwrite that completion with an older manual action.
+      .eq("free_consult_used", false)
+      .eq("status", current.status)
+      .eq("updated_at", current.updated_at)
       .select("id, reservation_number, brand, client_name, phone, client_key, tarotista_id, tarotista_name, scheduled_at, original_scheduled_at, status, notes, postpone_reason, postponed_count, free_consult_used, free_consult_used_at, completed_at, created_at, updated_at")
-      .single();
+      .maybeSingle();
     if (error) throw error;
+    if (!row) {
+      return NextResponse.json({
+        ok: false,
+        code: "RESERVATION_CHANGED",
+        error: "La reserva se ha actualizado mientras la revisabas. Consulta su estado actual antes de realizar otro cambio.",
+      }, { status: 409 });
+    }
 
     return NextResponse.json({ ok: true, row });
   } catch (error: any) {
