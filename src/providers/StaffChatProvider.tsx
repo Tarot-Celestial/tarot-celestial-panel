@@ -8,12 +8,13 @@ import { usePanelSessionAccess } from '@/hooks/usePanelSessionAccess';
 import { isPanelPath } from '@/lib/attendance/panel-session';
 import { chatRequest } from '@/lib/staff-chat-client';
 import { CHAT_SOUND_KEY, CHAT_DEFAULT_VOLUME, chatSoundPreferences, chatVolume, chatUnreadTotal, canReadStaffChat } from '@/lib/staff-chat-alerts';
+import type { StaffConsultation } from '@/lib/staff-chat-operations';
 
 export type StaffChatContact = { id: string; display_name: string; role: string; team: string | null; state: string; presence_expires_at?: string | null };
 export type StaffChatAttachment = { id: string; kind: 'image' | 'audio'; mime_type: string; file_name: string; size_bytes: number };
-export type StaffChatMessage = { id: string; thread_id: string; sender_worker_id: string; sender_display_name: string; text: string; created_at: string; read_at?: string | null; client_message_id?: string | null; pending?: boolean; failed?: boolean; attachment?: StaffChatAttachment | null };
+export type StaffChatMessage = { id: string; thread_id: string; sender_worker_id: string; sender_display_name: string; text: string; created_at: string; updated_at?: string | null; kind?: 'text' | 'consultation' | 'pause' | 'appeal'; consultation?: StaffConsultation | null; read_at?: string | null; client_message_id?: string | null; pending?: boolean; failed?: boolean; attachment?: StaffChatAttachment | null };
 export type StaffChatThread = { id: string; central_worker_id?: string | null; central_display_name?: string; tarotist_worker_id?: string | null; last_message_at?: string | null; last_message_preview?: string | null; unread_count: number; contact?: StaffChatContact | null; legacy?: boolean; latest_incoming?: StaffChatMessage | null };
-type Actor = { id: string; role: 'central' | 'tarotista' | 'admin'; display_name: string };
+type Actor = { id: string; role: 'central' | 'tarotista' | 'admin'; display_name: string; can_admin?: boolean };
 type Overview = { me: Actor | null; contacts: StaffChatContact[]; threads: StaffChatThread[] };
 type Notice = StaffChatMessage;
 type ChatContextValue = Overview & {
@@ -267,10 +268,20 @@ export function StaffChatProvider({ children }: { children: ReactNode }) {
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, payload => {
           if (disposed || generation.current !== version) return;
           const row = payload.new;
-          const message: StaffChatMessage = { id: String(row.id || ''), thread_id: String(row.thread_id || ''), sender_worker_id: String(row.sender_worker_id || ''), sender_display_name: String(row.sender_display_name || 'Compañero'), text: String(row.body || ''), created_at: String(row.created_at || ''), client_message_id: row.client_message_id ? String(row.client_message_id) : null };
+          const message: StaffChatMessage = { id: String(row.id || ''), thread_id: String(row.thread_id || ''), sender_worker_id: String(row.sender_worker_id || ''), sender_display_name: String(row.sender_display_name || 'Compañero'), text: String(row.body || ''), created_at: String(row.created_at || ''), updated_at: row.updated_at ? String(row.updated_at) : null, kind: row.kind || 'text', client_message_id: row.client_message_id ? String(row.client_message_id) : null };
           if (overviewRef.current.threads.some(thread => thread.id === message.thread_id)) announce(message);
           // Unknown/new threads are verified against the authenticated overview;
           // its latest_incoming also recovers an event missed while reconnecting.
+          void refresh();
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, payload => {
+          if (disposed || generation.current !== version) return;
+          const row = payload.new;
+          // Operational summaries keep a stable message ID. An edit updates the
+          // visible conversation without sounding like a newly sent message.
+          if (overviewRef.current.threads.some(thread => thread.id === String(row.thread_id || ''))) {
+            setIncoming({ id: String(row.id || ''), thread_id: String(row.thread_id || ''), sender_worker_id: String(row.sender_worker_id || ''), sender_display_name: String(row.sender_display_name || 'Compañero'), text: String(row.body || ''), created_at: String(row.created_at || ''), updated_at: row.updated_at ? String(row.updated_at) : null, kind: row.kind || 'text', client_message_id: row.client_message_id ? String(row.client_message_id) : null });
+          }
           void refresh();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_thread_reads', filter: `worker_id=eq.${overview.me!.id}` }, () => { void refresh(); })
@@ -282,7 +293,7 @@ export function StaffChatProvider({ children }: { children: ReactNode }) {
   useEffect(() => () => { window.clearTimeout(noticeTimer.current); void audio.current?.close().catch(() => undefined); }, []);
 
   const unreadTotal = chatUnreadTotal(overview.threads);
-  const value = useMemo<ChatContextValue>(() => ({ ...overview, mode: overview.me?.role || 'central', unreadTotal, loading, error, live,
+  const value = useMemo<ChatContextValue>(() => ({ ...overview, mode: overview.me?.can_admin ? 'admin' : overview.me?.role || 'central', unreadTotal, loading, error, live,
     sound, volume, audioReady, notificationPermission, refresh, setSound, setVolume, testSound, enableNotifications,
     setVisibleThread, incoming, notice, dismissNotice, requestOpen, openRequest,
   }), [overview, unreadTotal, loading, error, live, sound, volume, audioReady, notificationPermission, refresh, setSound, setVolume, testSound, enableNotifications, setVisibleThread, incoming, notice, dismissNotice, requestOpen, openRequest]);

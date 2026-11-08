@@ -58,6 +58,7 @@ async function fixture(t, initial=[thread()], options={}) {
     now:()=>FixtureDate.now(),
     async advance(ms){assert.notEqual(simulatedNow,null,'advance requires an explicit fake clock');simulatedNow+=ms;await flush(()=>{for(const timer of timers.values())if(timer.ms===1000)timer.fn();});},
     async incoming(row){await flush(()=>{const current=subscriptions.at(-1);current.handlers.find(h=>h.filter.table==='chat_messages').callback({new:{...row,body:row.text}});});},
+    async updated(row){await flush(()=>{const current=subscriptions.at(-1);current.handlers.find(h=>h.filter.table==='chat_messages'&&h.filter.event==='UPDATE').callback({new:{...row,body:row.text}});});},
     async auth(session){input.session=session;await flush(()=>authCallbacks.forEach(fn=>fn('SIGNED_IN',session)));},
     async reRender(){await act(async()=>view.update(React.createElement(exports.StaffChatProvider,null,React.createElement(Probe))));},
   };
@@ -67,6 +68,21 @@ test('preexisting unread counts appear without playing old notifications',async 
   const f=await fixture(t,[thread(12,message('old'))]);
   assert.equal(f.chat.unreadTotal,12);assert.equal(f.chat.notice,null);assert.equal(f.oscillatorCount,0);
   assert.ok(f.input.requests.every(url=>url==='/api/chat/threads'),'provider never fetches or acknowledges hidden messages');
+});
+
+test('a delegated supervisor keeps their identity while seeing supervisor controls',async t=>{
+ const f=await fixture(t); f.state.me={id:'central-directora',role:'central',display_name:'Directora de prueba',can_admin:true};
+ await act(async()=>f.chat.refresh());
+ assert.equal(f.chat.mode,'admin');assert.equal(f.chat.me.role,'central');assert.equal(f.chat.me.id,'central-directora');
+});
+
+test('an edited consultation refreshes the same message without an extra sound',async t=>{
+ const f=await fixture(t);await act(async()=>f.chat.testSound());
+ const baseline=f.oscillatorCount;
+ await f.updated({...message('consultation-a'),text:'10 FREE · 20 CLIENTE · Michell'});
+ assert.equal(f.chat.incoming.id,'consultation-a');assert.equal(f.chat.incoming.text,'10 FREE · 20 CLIENTE · Michell');
+ assert.equal(f.oscillatorCount,baseline);assert.equal(f.chat.notice,null);
+ await f.updated(message('other-private','unauthorized-thread'));assert.equal(f.chat.incoming.id,'consultation-a');
 });
 test('duplicate realtime deliveries create one sound and preserve an exact count from the server',async t=>{
   const f=await fixture(t);await act(async()=>f.chat.testSound());const baseline=f.oscillatorCount;

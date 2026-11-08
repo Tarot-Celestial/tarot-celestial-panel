@@ -41,6 +41,7 @@ function harness(options={}){
   }};
  const deps={
   '@/lib/supabase-admin':{supabaseAdmin:()=>db},
+  '@/lib/server/admin-access':{hasAdminAccess:async()=>false},
   '@/lib/server/panel-attendance':{requireActivePanelSession:async()=>options.offline?{ok:false,status:423,error:'PANEL_CONNECTION_REQUIRED'}:{ok:true}},
   'next/server':{NextResponse:{json:(data,init={})=>new Response(JSON.stringify(data),{...init,headers:init.headers})}},
  };
@@ -48,6 +49,9 @@ function harness(options={}){
   vm.runInNewContext(code,{exports,require:n=>{if(!deps[n])throw Error(n);return deps[n];},Buffer,Uint8Array,Date,crypto,URL,Map});return exports;}
  deps['@/lib/server/staff-chat']=load('src/lib/server/staff-chat.ts');
  deps['@/lib/server/staff-chat-media']=load('src/lib/server/staff-chat-media.ts');
+ deps['@/lib/activity-codes']=load('src/lib/activity-codes.ts');
+ deps['@/lib/staff-chat-operations']=load('src/lib/staff-chat-operations.ts');
+ deps['@/lib/server/staff-chat-operations']=load('src/lib/server/staff-chat-operations.ts');
  const upload=load('src/app/api/chat/media/upload/route.ts'),read=load('src/app/api/chat/media/read/route.ts'),send=load('src/app/api/chat/messages/route.ts');
  const input={thread_id:id(10),client_upload_id:id(20),kind:'image',mime_type:'image/png',file_name:'test.png',size_bytes:png.length};
  const req=(body,token='valid',url='/api/chat/media/upload')=>new Request('https://panel.test'+url,{method:body?'POST':'GET',headers:{authorization:'Bearer '+token},...(body?{body:JSON.stringify(body)}:{})});

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { Bell, ChevronDown, ChevronLeft, MessageCircle, RefreshCw, Search, Volume2, VolumeX } from "lucide-react";
+import { Bell, ChevronDown, ChevronLeft, MessageCircle, Palette, RefreshCw, Search, Volume2, VolumeX } from "lucide-react";
 import { useAttendance } from "@/hooks/useAttendance";
 import { usePanelSessionAccess } from "@/hooks/usePanelSessionAccess";
 import { chatRequest } from "@/lib/staff-chat-client";
@@ -9,6 +9,9 @@ import { releaseChatMediaDraft, uploadStaffChatMedia, type StaffChatMediaDraft }
 import { useStaffChat, type StaffChatMessage } from "@/providers/StaffChatProvider";
 import StaffChatComposer from "./StaffChatComposer";
 import StaffChatAttachment from "./StaffChatAttachment";
+import StaffChatAppearanceSettings, { StaffChatAvatar, useStaffChatAppearance } from "./StaffChatAppearance";
+import StaffPanelCallButton from "./StaffPanelCallButton";
+import StaffChatOperations, { StaffChatConsultationCard } from "./StaffChatOperations";
 import styles from "./StaffDirectChatPanel.module.css";
 
 const FILTERS = ["todos", "conectados", "no-leidos"] as const;
@@ -16,7 +19,6 @@ type Page = { messages: StaffChatMessage[]; has_more: boolean; next_cursor: stri
 type ThreadHistory = { messages: StaffChatMessage[]; hasMore: boolean; cursor: string | null; loaded: boolean; scrollTop: number | null };
 function draftKey(threadId: string, contactId: string) { return threadId ? `thread:${threadId}` : `contact:${contactId}`; }
 
-function initials(name: string) { return name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase() || "TC"; }
 function presence(state: string) {
   const value = String(state || "offline").toLowerCase();
   if (["online", "connected", "conectado", "active", "working"].includes(value)) return { key: "online", label: "Conectado" };
@@ -64,6 +66,8 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
   [mode, directOnly, threads, meId]);
   const [selectedContactId, setSelectedContactId] = useState("");
   const [selectedThreadId, setSelectedThreadId] = useState("");
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const { appearance, error: appearanceError, refresh: refreshAppearance, setAppearance } = useStaffChatAppearance(meId, selectedThreadId);
   const [messages, setMessages] = useState<StaffChatMessage[]>([]);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("todos");
@@ -144,7 +148,7 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
     const history = histories.current.get(threadId);
     initialLoaded.current = history?.loaded || false; scrollToEnd.current = history?.scrollTop == null; scrollRestore.current = null;
     restoreThreadTop.current = history?.scrollTop ?? null;
-    setSelectedContactId(contactId); setSelectedThreadId(threadId);
+    setSelectedContactId(contactId); setSelectedThreadId(threadId); setAppearanceOpen(false);
     setMessages(mergeMessages(history?.messages || [], outbox.current.get(threadId) || [])); setComposer(drafts.current.get(draftKey(threadId, contactId)) || ""); setError("");
     setMediaDraft(mediaDrafts.current.get(draftKey(threadId, contactId)) || null);
     setCursor(history?.cursor || null); setHasMore(history?.hasMore || false); setLoadingMore(false); setMessageLoading(false);
@@ -378,8 +382,9 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
     <header className={styles.top}>
       <div><span className={styles.eyebrow}>COMUNICACIÓN INTERNA</span><h2>Chat del equipo</h2><p>Conversaciones entre administración, centrales y tarotistas.</p></div>
       <div className={styles.controls}>
+        <button type="button" onClick={() => setAppearanceOpen(true)} disabled={!meId} aria-label="Personalizar mi perfil y chat" title="Mi perfil y fondos"><Palette size={17}/><span>Personalizar</span></button>
         <span className={`${styles.live} ${live ? styles.liveOn : ""}`}>● {live ? "Chat en vivo" : "Reconectando"}</span>
-        <button type="button" onClick={() => { void refresh(); void loadMessages(); }} aria-label="Actualizar chat" title="Actualizar chat"><RefreshCw size={16}/></button>
+        <button type="button" onClick={() => { void refresh(); void loadMessages(); void refreshAppearance(); }} aria-label="Actualizar chat" title="Actualizar chat"><RefreshCw size={16}/></button>
         <button type="button" onClick={() => setSound(!sound)} aria-label={sound ? "Silenciar mensajes" : "Activar sonido de mensajes"} aria-pressed={sound} title="Sonido de mensajes">{sound ? <Volume2 size={17}/> : <VolumeX size={17}/>}</button>
         <label className={styles.volume}>Volumen <input aria-label="Volumen de mensajes" type="range" min="0" max="100" value={volume} onChange={event => setVolume(Number(event.target.value))}/><output>{volume}%</output></label>
         <button type="button" onClick={() => void testSound()} className={styles.testSound}>Probar sonido</button>
@@ -390,29 +395,32 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
     {mode === "admin" && <div className={styles.viewSwitch} aria-label="Vista del chat">
       <button type="button" aria-pressed={directOnly} onClick={() => { setDirectOnly(true); chooseThread("", "", true); }}>Mis conversaciones</button>
       <button type="button" aria-pressed={!directOnly} onClick={() => { setDirectOnly(false); chooseThread("", "", true); }}>Supervisar equipo</button>
-      <span>{directOnly ? "Escribe con tu propia cuenta de administrador." : "Historial del equipo y conversaciones propias."}</span>
+      <span>{directOnly ? "Escribe con tu propia cuenta de administrador." : "Puedes intervenir en cada chat con tu nombre de administrador."}</span>
     </div>}
     {error || sharedError ? <div className={styles.error} role="alert">{error || sharedError}</div> : null}
     {!connected ? <div className={styles.connectionNotice}>Pulsa Conectado para enviar mensajes y confirmar su lectura.</div> : null}
     {verificationPending ? <div className={styles.connectionNotice}>Comprobando la conexión del panel…</div> : null}
     <div className={`${styles.workspace} ${mobileConversation ? styles.mobileOpen : ""}`}>
       <aside className={styles.contacts} aria-label="Contactos del equipo">
+        <div className={styles.myProfile}><span className={styles.avatar}><StaffChatAvatar name={me?.display_name || "Mi perfil"} profile={appearance.profile}/></span><div><b>{me?.display_name || "Mi perfil"}</b><small>Tu espacio de equipo</small></div><button type="button" onClick={() => setAppearanceOpen(true)} disabled={!meId} aria-label="Editar mi foto y fondo"><Palette size={17}/></button></div>
         <div className={styles.search}><Search size={16}/><input aria-label="Buscar contacto" value={search} onChange={event => setSearch(event.target.value)} placeholder={`Buscar ${mode === "admin" ? "central o tarotista" : mode === "tarotista" ? "central o administración" : "tarotista o administración"}…`}/></div>
         <div className={styles.filters}>{FILTERS.map(item => <button key={item} type="button" className={filter === item ? styles.activeFilter : ""} aria-pressed={filter === item} onClick={() => setFilter(item)}>{item === "no-leidos" ? "No leídos" : item[0].toUpperCase() + item.slice(1)}</button>)}</div>
         <div className={styles.contactList}>{loading && !contacts.length ? <div className={styles.empty}>Cargando contactos…</div> : sortedContacts.map(({ contact, thread }) => {
           const state = presence(contact.state);
           return <button key={contact.id} type="button" className={`${styles.contact} ${selectedContactId === contact.id ? styles.activeContact : ""}`} aria-pressed={selectedContactId === contact.id} onClick={() => void openContact(contact.id)}>
-            <span className={`${styles.avatar} ${styles[`team${String(contact.team || "").toLowerCase()}`] || ""}`}>{initials(contact.display_name)}</span>
+            <span className={`${styles.avatar} ${styles[`team${String(contact.team || "").toLowerCase()}`] || ""}`}><StaffChatAvatar name={contact.display_name} profile={appearance.profiles[contact.id]}/></span>
             <span className={styles.contactText}><b>{contact.display_name}</b><small><i className={styles[state.key]}/> {state.label}{contact.team ? ` · ${contact.team}` : ""}</small><em>{thread?.last_message_preview || "Iniciar conversación"}</em></span>
             {thread?.unread_count ? <span className={styles.badge} aria-label={`${thread.unread_count} mensajes no leídos`}>{thread.unread_count}</span> : null}
           </button>;
         })}{!loading && !sortedContacts.length ? <div className={styles.empty}>No hay contactos que coincidan.</div> : null}</div>
       </aside>
       <div className={styles.conversation} aria-label="Conversación">{selectedContact ? <>
-        <div className={styles.chatHeader}><button type="button" className={styles.back} onClick={() => setMobileConversation(false)}><ChevronLeft size={18}/> Volver</button><span className={styles.avatar}>{initials(selectedContact.display_name)}</span><div><b>{selectedContact.display_name}</b><small>{selectedContact.role === "central" ? "Central" : selectedContact.role === "admin" ? "Administración" : "Tarotista"} · <i className={styles[selectedPresence.key]}/> {selectedPresence.label}</small></div>
+        <div className={styles.chatHeader}><button type="button" className={styles.back} onClick={() => setMobileConversation(false)}><ChevronLeft size={18}/> Volver</button><span className={styles.avatar}><StaffChatAvatar name={selectedContact.display_name} profile={appearance.profiles[selectedContact.id]}/></span><div><b>{selectedContact.display_name}</b><small>{selectedContact.role === "central" ? "Central" : selectedContact.role === "admin" ? "Administración" : "Tarotista"} · <i className={styles[selectedPresence.key]}/> {selectedPresence.label}</small></div>
           {mode === "admin" && contactThreads.length > 1 ? <label className={styles.threadChooser}><span>Conversación</span><select aria-label="Conversación con central" value={selectedThreadId} onChange={event => chooseThread(event.target.value, selectedContactId)}>{contactThreads.map(thread => <option key={thread.id} value={thread.id}>Conversación con {thread.central_display_name || `Central ${String(thread.central_worker_id || thread.id).slice(0, 8)}`}{thread.unread_count ? ` · ${thread.unread_count} sin leer` : ""}</option>)}</select></label> : null}
+          <div className={styles.headerActions}><button type="button" onClick={() => setAppearanceOpen(true)} aria-label="Cambiar fondo de esta conversación" title="Cambiar fondo"><Palette size={18}/></button><StaffPanelCallButton threadId={selectedThreadId} targetWorkerId={selectedContact.id} targetName={selectedContact.display_name} disabled={!connected || !selectedThreadId}/></div>
         </div>
-        <div className={styles.messages} ref={listRef} role="log" aria-label={`Mensajes con ${selectedContact.display_name}`} aria-busy={messageLoading || opening} onScroll={() => measureVisibleMessages()}>
+        {selectedThreadId && me ? <StaffChatOperations key={`${meId}:${selectedThreadId}`} threadId={selectedThreadId} me={me} hasConsultationMessage={messages.some(message => message.kind === "consultation")} onChanged={() => { void refresh(); void loadMessages(); }}/>: null}
+        <div className={styles.messages} data-wallpaper={appearance.preference.wallpaper} style={appearance.preference.background_url ? { backgroundImage: `linear-gradient(rgba(10,13,22,.66),rgba(10,13,22,.76)), url(${JSON.stringify(appearance.preference.background_url)})` } : undefined} ref={listRef} role="log" aria-label={`Mensajes con ${selectedContact.display_name}`} aria-busy={messageLoading || opening} onScroll={() => measureVisibleMessages()}>
           {hasMore ? <button type="button" className={styles.older} disabled={loadingMore || !active} onClick={() => { if (cursor) void loadMessages(cursor); }}>{loadingMore ? "Cargando…" : "Cargar mensajes anteriores"}</button> : null}
           {messages.map(message => {
             const label = dayLabel(message.created_at), showDay = label !== previousDay; previousDay = label;
@@ -420,8 +428,10 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
             return <div key={message.id} data-message-id={message.pending || message.failed ? undefined : message.id}>
               {showDay ? <div className={styles.day}>{label}</div> : null}
               <div className={`${styles.messageRow} ${own ? styles.ownRow : ""}`}><article className={`${styles.bubble} ${own ? styles.ownBubble : ""} ${message.failed ? styles.failed : ""}`}>
+                <strong className={styles.senderName}>{message.sender_display_name || (own ? me?.display_name : contacts.find(contact => contact.id === message.sender_worker_id)?.display_name) || "Equipo"}{own ? <span> · Tú</span> : null}</strong>
+                {message.kind === "consultation" && message.consultation && me ? <StaffChatConsultationCard key={`${meId}:${selectedThreadId}:${message.consultation.id}:${message.consultation.revision}`} record={message.consultation} me={me} threadId={selectedThreadId} onChanged={() => void loadMessages()}/> : null}
                 {message.attachment ? <StaffChatAttachment attachment={message.attachment} localPreview={message.client_message_id ? mediaOutbox.current.get(message.client_message_id)?.previewUrl : undefined}/> : null}
-                {message.text && !(message.attachment && ["📷 Imagen", "🎤 Nota de voz"].includes(message.text)) ? <p>{message.text}</p> : null}
+                {message.text && !(message.kind === "consultation" && message.consultation) && !(message.attachment && ["📷 Imagen", "🎤 Nota de voz"].includes(message.text)) ? <p>{message.text}</p> : null}
                 <footer><span>{timeLabel(message.created_at)}</span>{own ? message.failed ? <button type="button" className={styles.retry} disabled={!connected} onClick={() => void send(message)}>Reintentar envío</button> : <span>{message.pending ? "Enviando…" : message.read_at ? "✓✓ Leído" : "✓ Enviado"}</span> : null}</footer></article></div>
             </div>;
           })}
@@ -431,5 +441,6 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
         <StaffChatComposer key={`${meId}:${draftKey(selectedThreadId, selectedContactId)}`} text={composer} onText={value => { setComposer(value); drafts.current.set(draftKey(selectedThreadId, selectedContactId), value); }} draft={mediaDraft} onDraft={changeMediaDraft} onSend={() => void send()} disabled={!connected || !selectedThreadId} sending={sending}/>
       </> : <div className={styles.emptyChat}><MessageCircle size={48}/><b>Selecciona un contacto</b><span>Elige a quién quieres escribir.</span></div>}</div>
     </div>
+    {appearanceOpen && me ? <StaffChatAppearanceSettings key={`${meId}:${selectedThreadId}`} workerId={meId} threadId={selectedThreadId} name={me.display_name} value={appearance} disabled={!connected} onClose={() => setAppearanceOpen(false)} onSaved={setAppearance} onReload={refreshAppearance} loadError={appearanceError}/> : null}
   </section>;
 }

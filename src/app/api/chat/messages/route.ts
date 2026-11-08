@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getStaffChatActor, requireStaffChatConnection, requireStaffChatThread, staffChatError } from "@/lib/server/staff-chat";
 import { messageAttachments, sendStaffMediaMessage, staffMediaError, requireExpectedChatActor } from "@/lib/server/staff-chat-media";
+import { enrichStaffOperationMessages } from "@/lib/server/staff-chat-operations";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,13 +26,13 @@ export async function GET(req: Request) {
     if (!threadId) throw new Error("MISSING_THREAD_ID");
     const thread = await requireStaffChatThread(db, me, threadId);
 
-    let query = db.from("chat_messages").select("id, thread_id, sender_worker_id, sender_display_name, body, created_at, client_message_id").eq("thread_id", threadId).order("created_at", { ascending: false }).limit(limit + 1);
+    let query = db.from("chat_messages").select("id, thread_id, sender_worker_id, sender_display_name, body, created_at, updated_at, kind, client_message_id").eq("thread_id", threadId).order("created_at", { ascending: false }).limit(limit + 1);
     if (before) query = query.lt("created_at", before);
     const { data, error } = await query;
     if (error) throw error;
     const rows = data || [];
     const hasMore = rows.length > limit;
-    const page = rows.slice(0, limit).reverse();
+    const page: Record<string, any>[] = await enrichStaffOperationMessages(db, thread, rows.slice(0, limit).reverse());
     const attachments = await messageAttachments(db, page.map((message: any) => String(message.id)));
     const otherWorkerId = me.id === String(thread.central_worker_id || "") ? String(thread.tarotist_worker_id) : String(thread.central_worker_id || "");
     const { data: otherRead, error: readError } = otherWorkerId ? await db.from("chat_thread_reads").select("last_read_at").eq("thread_id", threadId).eq("worker_id", otherWorkerId).maybeSingle() : { data: null, error: null };
@@ -45,6 +46,9 @@ export async function GET(req: Request) {
         id: String(message.id), thread_id: String(message.thread_id), sender_worker_id: String(message.sender_worker_id), sender_display_name: String(message.sender_display_name || ""), text: String(message.body || ""), created_at: String(message.created_at), client_message_id: message.client_message_id ? String(message.client_message_id) : null,
         read_at: otherRead?.last_read_at && new Date(otherRead.last_read_at).getTime() >= new Date(message.created_at).getTime() ? String(otherRead.last_read_at) : null,
         attachment: attachments.get(String(message.id)) || null,
+        kind: message.kind || "text",
+        updated_at: message.updated_at ? String(message.updated_at) : null,
+        consultation: message.consultation || null,
       })),
       has_more: hasMore,
       next_cursor: hasMore && page[0]?.created_at ? String(page[0].created_at) : null,
