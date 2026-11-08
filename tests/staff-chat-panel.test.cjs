@@ -51,7 +51,8 @@ function harness(options = {}) {
     requestAnimationFrame: callback => { const id = ++timerId; const handle = setImmediate(() => { frames.delete(id); callback(); }); frames.set(id, handle); return id; },
     cancelAnimationFrame: id => { clearImmediate(frames.get(id)); frames.delete(id); },
   };
-  const documentMock = { get visibilityState() { return visible; }, hasFocus: () => focused, addEventListener: add, removeEventListener: remove, activeElement: null };
+  const documentMock = { get visibilityState() { return visible; }, hasFocus: () => focused, addEventListener: add, removeEventListener: remove, activeElement: null,
+    createElement: () => ({ getContext: () => ({ beginPath() {}, arc() {}, fill() {}, stroke() {}, fillText() {} }), toBlob: callback => options.stickerBlob ? options.stickerBlob(callback) : callback(new Blob(['fixture png'], {type:'image/png'})) }) };
   const chatRequest = async (url, init = {}) => {
     const request = { url, method: init.method || 'GET', body: init.body ? JSON.parse(init.body) : null, signal: init.signal };
     requests.push(request);
@@ -81,6 +82,10 @@ function harness(options = {}) {
       exports, require: name => name in extra ? extra[name] : name.endsWith('.module.css') ? { default: styles } : name === 'lucide-react' ? icons : name === '@/hooks/useAttendance' ? { useAttendance: () => attendance } : name === '@/providers/StaffChatProvider' ? { useStaffChat: () => context } : name === '@/lib/staff-chat-client' ? { chatRequest } :
         name === '@/hooks/usePanelSessionAccess' ? evaluateExports('src/hooks/usePanelSessionAccess.ts') :
         name === '@/lib/staff-chat-media' ? evaluateExports('src/lib/staff-chat-media.ts') :
+        name === '@/lib/staff-chat-appearance' ? evaluateExports('src/lib/staff-chat-appearance.ts') :
+        name === './StaffChatAppearance' ? {default:()=>null,StaffChatAvatar:({name})=>name.slice(0,1),useStaffChatAppearance:worker=>({appearance:evaluateExports('src/lib/staff-chat-appearance.ts').defaultChatAppearance(worker),error:'',refresh:async()=>{},setAppearance() {}})} :
+        name === './StaffPanelCallButton' ? { default:()=>null } :
+        name === './StaffChatOperations' ? { default:()=>null,StaffChatConsultationCard:({record})=>React.createElement('div',{'data-consultation-id':record.id},`${record.first_name} ${record.total}`) } :
         name === './StaffChatComposer' ? evaluateExports('src/components/chat/StaffChatComposer.tsx') :
         name === './StaffChatAttachment' ? evaluateExports('src/components/chat/StaffChatAttachment.tsx') :
         name === '@/lib/supabase-browser' ? { supabaseBrowser: () => ({ storage: { from: bucket => ({ uploadToSignedUrl: async (...args) => { uploads.push({ bucket, args }); return options.upload ? options.upload(...args) : { error: null }; } }) } }) } : require(name),
@@ -98,7 +103,7 @@ function harness(options = {}) {
   return {
     context, attendance, requests, calls, pages, listNode, audioNode, uploads, revoked,
     get view() { return view; }, get refreshes() { return refreshes; },
-    async mount() { await flush(() => { view = create(React.createElement(Component, props), { createNodeMock: element => element.props.role === 'log' ? listNode : element.type === 'audio' ? audioNode : { focus() {} } }); }); },
+    async mount() { await flush(() => { view = create(React.createElement(Component, props), { createNodeMock: element => element.props.role === 'log' ? listNode : element.type === 'audio' ? audioNode : { focus() {},setSelectionRange() {} } }); }); },
     async rerender(next = {}) { props = { ...props, ...next }; await flush(() => view.update(React.createElement(Component, props))); },
     async clickContact(id) { const button = view.root.findAllByType('button').find(node => text(node).includes(`${id} Simulada`)); assert.ok(button, id); await flush(() => button.props.onClick()); },
     async focus(value) { focused = value; await flush(() => listeners.get(value ? 'focus' : 'blur')?.forEach(callback => callback())); },
@@ -530,4 +535,37 @@ test('Admin without a direct pair never falls into another central conversation 
     assert.equal(h.requests.find(request => request.url === '/api/chat/threads').body.contact_worker_id, 'a');
     assert.equal(getRequests(h).some(request => request.url.includes('tmaria')), false);
   } finally { await h.dispose(); }
+});
+
+test('each bubble attributes its real sender including an admin intervention in a supervised chat',async()=>{
+ const h=harness({context:{mode:'admin',me:{id:'me',role:'admin',display_name:'Supervisor fixture'}},pages:{ta:[message('m1'),message('m2','ta',{sender_worker_id:'me',sender_display_name:'Supervisor fixture'}),message('m3','ta',{sender_worker_id:'another-central',sender_display_name:'Otra central'})]}});
+ await h.mount();try{
+  const names=h.view.root.findAll(node=>node.props.className==='senderName').map(text);
+  assert.deepEqual(names,['A Simulada','Supervisor fixture · Tú','Otra central']);
+ }finally{await h.dispose();}
+});
+test('emoji insertion stays a draft; stickers preview before sending and can be removed',async()=>{
+ const h=harness();await h.mount();try{
+  await flush(()=>button(h,'Emojis').props.onClick());await flush(()=>button(h,'Añadir 💜').props.onClick());
+  assert.equal(h.view.root.findByType('textarea').props.value,'💜');assert.equal(h.requests.some(r=>r.url==='/api/chat/messages'),false);
+  await flush(()=>button(h,'Stickers').props.onClick());await flush(()=>button(h,'👋¡Hola!').props.onClick());
+  assert.ok(h.view.root.findAllByType('img').some(node=>node.props.alt==='Vista previa: sticker-hello.png'));
+  assert.equal(h.uploads.length,0);assert.equal(h.requests.some(r=>r.url==='/api/chat/messages'),false);
+  await flush(()=>button(h,'Quitar adjunto').props.onClick());assert.equal(h.revoked.length,1);
+ }finally{await h.dispose();}
+});
+test('a sticker finishing after switching contacts never leaks into the other draft',async()=>{
+ let complete;const h=harness({stickerBlob:cb=>{complete=cb;}});await h.mount();try{
+  await flush(()=>button(h,'Stickers').props.onClick());await flush(()=>button(h,'👋¡Hola!').props.onClick());
+  await h.clickContact('b');await flush(()=>complete(new Blob(['fixture'],{type:'image/png'})));
+  assert.equal(h.view.root.findAllByType('img').length,0);assert.equal(h.uploads.length,0);
+ }finally{await h.dispose();}
+});
+test('a consultation UPDATE refreshes its existing card without adding a new message',async()=>{
+ const row=message('m1','ta',{kind:'consultation',consultation:{id:'call-1',first_name:'Ana',total:30,revision:0}});
+ const h=harness({pages:{ta:[row]}});await h.mount();try{
+  assert.equal(text(h.view.root.findByProps({'data-consultation-id':'call-1'})),'Ana 30');
+  h.context.incoming={...row,consultation:{...row.consultation,total:20}};h.pages.ta=[h.context.incoming];await h.rerender();
+  assert.equal(h.view.root.findAllByProps({'data-consultation-id':'call-1'}).length,1);assert.equal(text(h.view.root.findByProps({'data-consultation-id':'call-1'})),'Ana 20');
+ }finally{await h.dispose();}
 });

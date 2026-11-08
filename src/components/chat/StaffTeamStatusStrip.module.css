@@ -1,0 +1,9 @@
+.strip { flex: 0 1 260px; min-width: 150px; max-width: 300px; position: relative; }
+.label { display: block; color: #b8accb; font-size: 9px; font-weight: 800; letter-spacing: .06em; margin-bottom: 5px; text-transform: uppercase; }
+.items { display: flex; gap: 6px; overflow-x: auto; max-height: 45px; scrollbar-width: thin; padding-bottom: 3px; }
+.pause, .pending { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; max-width: 275px; padding: 6px 9px; border-radius: 9px; font-size: 11px; line-height: 1.3; border: 1px solid #725e93; background: #292036; color: #ede3fa; }
+button.pause, .pending { cursor: pointer; }
+.pending { background: #382b16; color: #ffe0a0; border-color: #8a6e33; }
+.pause svg, .pending svg { flex-shrink: 0; }
+.pause:focus-visible, .pending:focus-visible { outline: 2px solid #f6d27a; outline-offset: 2px; }
+@media(max-width: 1000px) { .strip { order: 3; flex-basis: 100%; max-width: 100%; } .items { max-height: 50px; } }

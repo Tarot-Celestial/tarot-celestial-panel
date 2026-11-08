@@ -11,6 +11,7 @@ import { useAttendance } from "@/hooks/useAttendance";
 import { ArrowLeft, Clock3, Network } from "lucide-react";
 import styles from "./AppHeader.module.css";
 import { backgroundFetch } from "@/lib/background-fetch";
+import StaffTeamStatusStrip from '@/components/chat/StaffTeamStatusStrip';
 
 const sb = supabaseBrowser();
 
@@ -387,6 +388,7 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
       >
         <div className={`tc-container ${styles.inner}`} style={{ padding: "14px 18px" }}>
           <div className={`tc-row ${styles.layout}`} style={{ justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
+            <StaffTeamStatusStrip />
             <div className={`tc-row ${styles.identity}`} style={{ gap: 14, alignItems: "center" }}>
               <div
                 className={styles.logo}

@@ -28,6 +28,7 @@ function harness(options={}){
   attendance_panel_sessions:[],
   attendance_state:[],
   staff_chat_attachments:[],
+  rendimiento_llamadas:[], staff_chat_call_appeals:[],
  };
  const calls=[],writes=[],authCalls=[],connectionCalls=[];
  class Query {
@@ -37,6 +38,7 @@ function harness(options={}){
   is(k,v){return this.eq(k,v);}
   in(k,values){this.filters.push(r=>values.includes(r[k]));return this;}
   lt(k,v){this.filters.push(r=>r[k]<v);return this;}
+  gt(k,v){this.filters.push(r=>r[k]>v);return this;}
   or(value){const conditions=value.split(',').map(v=>v.split('.eq.'));this.filters.push(r=>conditions.some(([k,v])=>r[k]===v));return this;}
   order(k,o={}){this.orders.push([k,o.ascending!==false]);return this;}
   limit(n){this.cap=n;return this;}
@@ -83,12 +85,30 @@ function harness(options={}){
  function load(file){const exports={};vm.runInNewContext(loadSource(file),{exports,require:name=>{if(!(name in dependencies))throw Error('Unexpected dependency '+name);return dependencies[name];},URL,Request,Response,Headers,Date,crypto,console,Buffer,Uint8Array});return exports;}
  dependencies['@/lib/server/staff-chat']=load('src/lib/server/staff-chat.ts');
  dependencies['@/lib/server/staff-chat-media']=load('src/lib/server/staff-chat-media.ts');
+ dependencies['@/lib/activity-codes']=load('src/lib/activity-codes.ts');
+ dependencies['@/lib/staff-chat-operations']=load('src/lib/staff-chat-operations.ts');
+ dependencies['@/lib/server/staff-chat-operations']=load('src/lib/server/staff-chat-operations.ts');
  const messages=load('src/app/api/chat/messages/route.ts'),threads=load('src/app/api/chat/threads/route.ts');
  dependencies['@/app/api/chat/messages/route']=messages;
  dependencies['@/app/api/chat/threads/route']=threads;
  return {tables,calls,writes,authCalls,connectionCalls,helper:dependencies['@/lib/server/staff-chat'],messages,threads,read:load('src/app/api/chat/read/route.ts'),legacy:{messages:load('src/app/api/central/chat/messages/route.ts'),threads:load('src/app/api/central/chat/threads/route.ts'),send:load('src/app/api/central/chat/send/route.ts'),open:load('src/app/api/central/chat/open/route.ts')}};
 }
 function req(url,body,authorization='Bearer signed-fixture-token'){return new Request('https://panel.test'+url,{method:body===undefined?'GET':'POST',headers:authorization?{authorization,'content-type':'application/json'}:{},...(body===undefined?{}:{body:JSON.stringify(body)})});}
+
+test('tarotista receives only first name and codes from consultation, never client identifiers or phones',async()=>{
+ const h=harness({actor:2});
+ h.tables.chat_messages[0].kind='consultation';h.tables.chat_messages[0].body='10 FREE · 20 CLIENTE · Michell';
+ h.tables.chat_messages[0].operation_meta={client_phone:'17870009999',private_note:'private fixture'};
+ h.tables.rendimiento_llamadas.push({id:id(701),cliente_nombre:'Michell ApellidoConfidencial',cliente_id:'17870009999',telefono:'17870009999',tiempo:30,fecha_hora:'2026-11-08T12:00:00Z',created_at:'2026-11-08T12:00:00Z',edit_revision:1,code_blocks:[{code:'FREE',minutes:10},{code:'CLIENTE',minutes:20}],telefonista_worker_id:id(1),tarotista_worker_id:id(2)});
+ const response=await h.messages.GET(req('/api/chat/messages?thread_id='+id(10)));
+ assert.equal(response.status,200);const data=await response.json();
+ assert.equal(data.messages[0].consultation.first_name,'Michell');
+ assert.deepEqual(data.messages[0].consultation.blocks,[{code:'FREE',minutes:10},{code:'CLIENTE',minutes:20}]);
+ assert.doesNotMatch(JSON.stringify(data),/17870009999|ApellidoConfidencial|private fixture|cliente_id|telefono|operation_meta/);
+ h.tables.rendimiento_llamadas[0].cliente_nombre='17870009999';h.tables.chat_messages[0].body='10 FREE · 20 CLIENTE · Clienta';
+ const hidden=await(await h.messages.GET(req('/api/chat/messages?thread_id='+id(10)))).json();
+ assert.equal(hidden.messages[0].consultation.first_name,'Clienta');assert.doesNotMatch(JSON.stringify(hidden),/17870009999/);
+});
 
 test('overview uses live panel sessions instead of stale worker heartbeat and never renews them',async()=>{
  const h=harness();const future=new Date(Date.now()+600000).toISOString();
