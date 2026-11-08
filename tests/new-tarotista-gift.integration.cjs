@@ -24,13 +24,45 @@ const request=(c,rank='plata',tarotista=id(2),op=id(seq++))=>({
  rank_free_expected_minutes:{sin_rango:7,bronce:7,plata:10,oro:12,diamante:15}[rank],rank_free_eligibility_key:tarotista
 });
 const call=(p,user=id(11))=>scalar('select tc_register_new_tarotista_gift($1,$2::jsonb) v',[user,JSON.stringify(p)]);
+async function phoneClient(rank='plata',free=0){
+ const c=await client(rank,free),phone='4477009'+String(seq++).padStart(5,'0');
+ await db.query('update crm_clientes set telefono=$2,telefono_normalizado=$2 where id=$1',[c,phone]);
+ return {c,phone};
+}
+async function book({phone},options={}){
+ const r=id(seq++),t=options.tarotista||id(2);
+ await db.query(`insert into first_tarotist_reservations(id,client_name,phone,client_key,tarotista_id,tarotista_name,
+  status,brand,scheduled_at,created_at,notes,free_consult_used,created_by_worker_id)
+  values($1,'Test Client',$2,$3,$4,'Test Tarotist',$5,$6,now()+interval '1 day',now()+$7::interval,'Original booking note',$8,$9)`,
+  [r,options.phone===undefined?phone:options.phone,options.clientKey||'phone:'+phone,t,
+   options.status||'pendiente',options.brand||'celestial',options.createdOffset||'-1 minute',options.used||false,id(1)]);
+ return r;
+}
+const booking=r=>scalar('select to_jsonb(r) v from first_tarotist_reservations r where id=$1',[r]);
+const reconcile=g=>scalar('select tc_complete_first_tarotist_from_gift($1) v',[g]);
 before(async()=>{
  db=new PGlite();
  await db.exec("create role anon;create role authenticated;create role service_role bypassrls;");
  await db.exec(read('fixtures/purchase-reward-schema.sql'));
  await db.exec(`
  create table workers(id uuid primary key,user_id uuid,role text,is_active boolean,display_name text,email text,created_at timestamptz default now());
- create table crm_clientes(id uuid primary key,nombre text,apellido text,minutos_free_pendientes numeric default 0,minutos_normales_pendientes numeric default 0,puntos numeric default 0,updated_at timestamptz);
+ create table crm_clientes(id uuid primary key,nombre text,apellido text,telefono text,telefono_normalizado text,minutos_free_pendientes numeric default 0,minutos_normales_pendientes numeric default 0,puntos numeric default 0,updated_at timestamptz);
+ create table first_tarotist_reservations(
+  id uuid primary key default gen_random_uuid(),reservation_number bigint generated always as identity,
+  brand text not null default 'celestial',client_name text not null,phone text,client_key text not null,
+  tarotista_id uuid not null references workers(id),tarotista_name text not null,
+  scheduled_at timestamptz not null,original_scheduled_at timestamptz,
+  status text not null default 'pendiente' check(status in('pendiente','confirmada','aplazada','cumplida','no_presentada','cancelada')),
+  notes text,postpone_reason text,postponed_count integer not null default 0,
+  free_consult_used boolean not null default false,free_consult_used_at timestamptz,completed_at timestamptz,
+  created_by_worker_id uuid references workers(id),updated_by_worker_id uuid references workers(id),
+  created_at timestamptz not null default now(),updated_at timestamptz not null default now(),
+  unique(brand,tarotista_id,client_key)
+ );
+ create function set_first_tarotist_reservations_updated_at() returns trigger language plpgsql as $$
+ begin new.updated_at=now(); return new; end $$;
+ create trigger trg_first_tarotist_reservations_updated_at before update on first_tarotist_reservations
+ for each row execute function set_first_tarotist_reservations_updated_at();
  create table client_rank_overrides(id uuid primary key default gen_random_uuid(),client_id uuid,assigned_rank text,active boolean,starts_at timestamptz,ends_at timestamptz,created_at timestamptz default now(),intervention_type text,reason text,notes text);
  create table crm_call_operations(operation_id uuid primary key,cliente_id uuid,worker_id uuid,request jsonb,result jsonb,created_at timestamptz default now());
  create table crm_client_notes(cliente_id text,texto text,author_user_id uuid,author_name text,author_email text,is_pinned boolean,created_at timestamptz default now(),event_type text,event_data jsonb);
@@ -87,6 +119,7 @@ before(async()=>{
  const historical=await client(),oldRequest=request(historical),oldReceipt=await call(oldRequest);
  preUpgrade={request:oldRequest,receipt:oldReceipt,ledger:await scalar('select to_jsonb(x) v from crm_new_tarotista_gift_uses x where operation_id=$1',[oldRequest.operation_id]),activation:await scalar('select activated_at::text v from crm_new_tarotista_gift_policy where id')};
  await db.exec(read('../supabase/migrations/20261030171707_new_tarotista_gift_all_ranks.sql'));
+ await db.exec(read('../supabase/migrations/20261108195453_first_tarotist_complete_from_registered_gift.sql'));
 });
 after(async()=>{if(db)await db.close();});
 
@@ -266,4 +299,126 @@ test('new objects are service-only with RLS; only the legacy new-hire gift funct
  await db.exec('set role service_role');try{await call(p);}finally{await db.exec('reset role');}
  assert.deepEqual(await scalar("select jsonb_object_agg(proname,md5(pg_get_functiondef(oid))) v from pg_proc where proname in ('crm_register_call_atomic_v8','tc_register_call_minutes','capture_client_on_first_valid_contact','register_client_capture_contact')"),legacyDefinitions);
  assert.notEqual(await scalar("select md5(pg_get_functiondef('tc_diamond_new_tarotista_gift()'::regprocedure)) v"),legacyDiamondDefinition);
+});
+
+test('recorded welcome gift completes exactly the matching active booking, with audit and unchanged balances',async()=>{
+ for(const status of ['pendiente','confirmada','aplazada']){
+  const person=await phoneClient('plata',23),r=await book(person,{status}),p=request(person.c);
+  await db.query('update crm_clientes set puntos=420 where id=$1',[person.c]);
+  const before=await balance(person.c);
+  // Execute the actual production gift RPC as its real server role. The trigger
+  // must run at the final ledger insert, not in a separate HTTP request.
+  await db.exec('set role service_role');
+  let receipt;try{receipt=await call(p);}finally{await db.exec('reset role');}
+  const row=await booking(r),ledger=await scalar('select to_jsonb(u) v from crm_new_tarotista_gift_uses u where operation_id=$1',[p.operation_id]);
+  assert.equal(row.status,'cumplida');assert.equal(row.free_consult_used,true);
+  assert.equal(row.completion_source,'registered_new_tarotista_gift');
+  assert.equal(row.completion_gift_use_id,ledger.id);assert.equal(row.completion_rendimiento_id,receipt.rendimiento.id);
+  assert.equal(row.completion_cliente_id,person.c);assert.equal(row.updated_by_worker_id,id(1));
+  assert.equal(row.completed_at,ledger.created_at);assert.equal(row.free_consult_used_at,ledger.created_at);
+  assert.ok(row.notes.startsWith('Original booking note\nCierre automático:'));
+  assert.ok(new Date(row.scheduled_at)>new Date(row.completed_at),'attended early after booking creation');
+  assert.deepEqual(await balance(person.c),before);assert.equal(await scalar('select puntos::int v from crm_clientes where id=$1',[person.c]),420);
+  assert.equal(await scalar('select count(*)::int v from crm_cliente_pagos where cliente_id=$1',[person.c]),1);
+  assert.equal(await scalar("select count(*)::int v from tc_client_benefit_events where cliente_id=$1 and delivery_key like 'new-tarotista-call:%'",[person.c]),1);
+  assert.equal((await call(p)).duplicate_prevented,true);assert.equal(await reconcile(ledger.id),null);
+  assert.deepEqual(await booking(r),row,'replay cannot append audit notes or change timestamps');
+ }
+});
+
+test('exact stored raw phone remains usable when normalized phone is stale; formatting is harmless',async()=>{
+ const person=await phoneClient(),r=await book(person,{phone:'+'+person.phone.slice(0,2)+' ('+person.phone.slice(2)+')'});
+ await db.query('update crm_clientes set telefono_normalizado=$2 where id=$1',[person.c,'4477008'+String(seq++).padStart(5,'0')]);
+ await call(request(person.c));assert.equal((await booking(r)).status,'cumplida');
+});
+
+test('wrong tarotist, other brands and other clients remain pending after the same gift',async()=>{
+ const person=await phoneClient(),other=await phoneClient();
+ const wrongTarotist=await book(person,{tarotista:id(3)}),otherBrand=await book(person,{brand:'leonaris'}),otherClient=await book(other);
+ await call(request(person.c));
+ for(const r of [wrongTarotist,otherBrand,otherClient])assert.equal((await booking(r)).status,'pendiente');
+});
+
+test('no-shows, cancelled, manually fulfilled and already-used bookings are preserved',async()=>{
+ for(const options of [{status:'cancelada'},{status:'no_presentada'},{status:'cumplida',used:true},{used:true}]){
+  const person=await phoneClient(),r=await book(person,options),before=await booking(r);
+  await call(request(person.c));assert.deepEqual(await booking(r),before);
+ }
+});
+
+test('no name matching, suffix matching, malformed keys or contradictory reservation phone',async()=>{
+ for(const options of [{clientKey:'name:test client',phone:null},{clientKey:'phone:123456789'}, {phone:'447700000001'}]){
+  const person=await phoneClient(),r=await book(person,options);
+  await call(request(person.c));assert.equal((await booking(r)).status,'pendiente');
+ }
+ const person=await phoneClient(),r=await book(person,{clientKey:'phone:'+person.phone.slice(1),phone:person.phone.slice(1)});
+ await call(request(person.c));assert.equal((await booking(r)).status,'pendiente');
+ for(const value of [null,'12345']){
+  const person=await phoneClient(),r=await book(person);
+  await db.query('update crm_clientes set telefono=$2,telefono_normalizado=$2 where id=$1',[person.c,value]);
+  await call(request(person.c));assert.equal((await booking(r)).status,'pendiente');
+ }
+});
+
+test('cross-field duplicate CRM phones and multiple alias bookings are ambiguous and skipped',async()=>{
+ for(const target of ['telefono','telefono_normalizado']){
+  const person=await phoneClient(),other=await phoneClient(),r=await book(person);
+  // The collision may sit in the other field even when its preferred normalized
+  // number differs. Neither field is a safe unique identity in that case.
+  await db.query(`update crm_clientes set ${target}=$2 where id=$1`,[other.c,'+'+person.phone]);
+  await call(request(person.c));assert.equal((await booking(r)).status,'pendiente');
+ }
+ const person=await phoneClient(),alternate='4477007'+String(seq++).padStart(5,'0');
+ await db.query('update crm_clientes set telefono_normalizado=$2 where id=$1',[person.c,alternate]);
+ const first=await book(person),second=await book({phone:alternate});
+ await call(request(person.c));
+ assert.equal((await booking(first)).status,'pendiente');assert.equal((await booking(second)).status,'pendiente');
+});
+
+test('historic gift before reservation creation never completes the new booking',async()=>{
+ const person=await phoneClient(),receipt=await call(request(person.c));
+ const g=await scalar('select id v from crm_new_tarotista_gift_uses where rendimiento_id=$1',[receipt.rendimiento.id]);
+ const r=await book(person,{createdOffset:'1 minute'});
+ assert.equal(await reconcile(g),null);assert.equal((await booking(r)).status,'pendiente');
+});
+
+test('normal balance calls cannot close introductory reservations without a gift receipt',async()=>{
+ const person=await phoneClient('plata',10),r=await book(person);
+ await scalar('select tc_register_call_minutes($1::jsonb) v',[JSON.stringify({operation_id:id(seq++),cliente_id:person.c,telefonista_worker_id:id(1),tarotista_worker_id:id(2),tipo_registro:'minutos',codigo_1:'FREE',minutos_1:10,minutos_2:0,note_text:'Ordinary balance call'})]);
+ assert.equal((await booking(r)).status,'pendiente');
+ assert.equal(await scalar('select count(*)::int v from crm_new_tarotista_gift_uses where cliente_id=$1',[person.c]),0);
+});
+
+test('failure after automatic completion rolls back reservation, call, gift and minutes atomically',async()=>{
+ const person=await phoneClient('plata',19),r=await book(person),p=request(person.c),before=await booking(r);
+ await db.exec(`create function fail_after_reservation_fixture() returns trigger language plpgsql as $$
+ begin if new.cliente_id='${person.c}' then
+  if not exists(select 1 from public.first_tarotist_reservations where id='${r}' and status='cumplida') then raise exception 'FIXTURE_CLOSURE_NOT_RUN'; end if;
+  raise exception 'FIXTURE_AFTER_CLOSURE'; end if; return new; end $$;
+ create trigger zzz_fail_after_reservation_fixture after insert on crm_new_tarotista_gift_uses for each row execute function fail_after_reservation_fixture();`);
+ await assert.rejects(call(p),/FIXTURE_AFTER_CLOSURE/);
+ assert.deepEqual(await booking(r),before);assert.deepEqual(await balance(person.c),[19,37]);
+ for(const table of ['crm_new_tarotista_gift_uses','tc_client_benefit_events','rendimiento_llamadas','crm_client_notes'])
+  assert.equal(await scalar(`select count(*)::int v from ${table} where cliente_id=$1`,[person.c]),0);
+ await db.exec('drop trigger zzz_fail_after_reservation_fixture on crm_new_tarotista_gift_uses;drop function fail_after_reservation_fixture()');
+ await call(p);assert.equal((await booking(r)).status,'cumplida');
+});
+
+test('guarded historical reconciliation changes a reservation once without replaying any benefits',async()=>{
+ const person=await phoneClient('plata',9),r=await book(person),p=request(person.c);
+ await db.exec('alter table crm_new_tarotista_gift_uses disable trigger trg_first_tarotist_complete_registered_gift');
+ try{await call(p);}finally{await db.exec('alter table crm_new_tarotista_gift_uses enable trigger trg_first_tarotist_complete_registered_gift');}
+ const g=await scalar('select id v from crm_new_tarotista_gift_uses where operation_id=$1',[p.operation_id]);
+ const counts=await scalar(`select jsonb_build_array((select count(*) from rendimiento_llamadas),(select count(*) from crm_cliente_pagos),(select count(*) from tc_client_benefit_events),(select count(*) from crm_client_notes)) v`);
+ assert.equal(await reconcile(g),r);assert.equal(await reconcile(g),null);assert.deepEqual(await balance(person.c),[9,37]);
+ assert.deepEqual(await scalar(`select jsonb_build_array((select count(*) from rendimiento_llamadas),(select count(*) from crm_cliente_pagos),(select count(*) from tc_client_benefit_events),(select count(*) from crm_client_notes)) v`),counts);
+});
+
+test('completion helpers are restricted invokers; no new client table privileges',async()=>{
+ for(const fn of ['tc_complete_first_tarotist_from_gift(uuid)','tc_sync_first_tarotist_after_gift()']){
+  assert.equal(await scalar('select prosecdef v from pg_proc where oid=$1::regprocedure',[fn]),false);
+  for(const role of ['anon','authenticated'])assert.equal(await scalar("select has_function_privilege($1,$2,'EXECUTE') v",[role,fn]),false);
+  assert.equal(await scalar("select has_function_privilege('service_role',$1,'EXECUTE') v",[fn]),true);
+ }
+ for(const role of ['anon','authenticated'])assert.equal(await scalar("select has_table_privilege($1,'first_tarotist_reservations','UPDATE') v",[role]),false);
 });
