@@ -7,27 +7,48 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
+function parseBefore(value: string | null): { createdAt: string; id: string | null } | null {
+  if (value === null) return null;
+  if (value.length > 100) throw new Error("INVALID_CURSOR");
+  const parts = value.split("|");
+  const composite = parts.length === 3 && parts[0] === "v1";
+  if (parts.length !== 1 && !composite) throw new Error("INVALID_CURSOR");
+  const createdAt = composite ? parts[1] : value;
+  const id = composite ? parts[2] : null;
+  // These values enter PostgREST's filter grammar: allow only a complete ISO
+  // timestamp and UUID, never arbitrary filter expressions or delimiters.
+  if (id !== null && (id.length !== 36 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))) throw new Error("INVALID_CURSOR");
+  const date = createdAt.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|[+-](\d{2}):(\d{2}))$/);
+  if (!date || date[0] !== createdAt) throw new Error("INVALID_CURSOR");
+  const year = Number(date[1]), month = Number(date[2]), day = Number(date[3]);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1] ||
+    Number(date[4]) > 23 || Number(date[5]) > 59 || Number(date[6]) > 59 ||
+    Number(date[7] || 0) > 15 || Number(date[8] || 0) > 59 || !Number.isFinite(Date.parse(createdAt))) throw new Error("INVALID_CURSOR");
+  // Do not round-trip through Date/toISOString: Postgres retains microseconds.
+  return { createdAt, id: id?.toLowerCase() ?? null };
+}
+
 export async function GET(req: Request) {
   try {
     const { db, me } = await getStaffChatActor(req);
     const url = new URL(req.url);
     const threadId = String(url.searchParams.get("thread_id") || "");
-    const before = url.searchParams.get("before");
+    const before = parseBefore(url.searchParams.get("before"));
     const requestedLimit = url.searchParams.get("limit");
     if (requestedLimit !== null && (!/^\d+$/.test(requestedLimit) || !Number.isSafeInteger(Number(requestedLimit)) || Number(requestedLimit) < 1)) throw new Error("INVALID_LIMIT");
     const limit = Math.min(50, Math.max(10, Number(requestedLimit ?? 40)));
-    if (before !== null) {
-      const date = before.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|[+-](\d{2}):(\d{2}))$/);
-      if (!date || Number(date[1]) < 1 || Number(date[2]) < 1 || Number(date[2]) > 12 || Number(date[3]) < 1 ||
-        Number(date[3]) > new Date(Date.UTC(Number(date[1]), Number(date[2]), 0)).getUTCDate() ||
-        Number(date[4]) > 23 || Number(date[5]) > 59 || Number(date[6]) > 59 ||
-        Number(date[7] || 0) > 23 || Number(date[8] || 0) > 59 || !Number.isFinite(Date.parse(before))) throw new Error("INVALID_CURSOR");
-    }
     if (!threadId) throw new Error("MISSING_THREAD_ID");
     const thread = await requireStaffChatThread(db, me, threadId);
 
-    let query = db.from("chat_messages").select("id, thread_id, sender_worker_id, sender_display_name, body, created_at, updated_at, kind, client_message_id").eq("thread_id", threadId).order("created_at", { ascending: false }).limit(limit + 1);
-    if (before) query = query.lt("created_at", before);
+    let query = db.from("chat_messages").select("id, thread_id, sender_worker_id, sender_display_name, body, created_at, updated_at, kind, client_message_id").eq("thread_id", threadId).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(limit + 1);
+    if (before?.id) {
+      query = query.or(`created_at.lt.${before.createdAt},and(created_at.eq.${before.createdAt},id.lt.${before.id})`);
+    } else if (before) {
+      // Existing tabs may still hold the previous timestamp-only cursor.
+      query = query.lt("created_at", before.createdAt);
+    }
     const { data, error } = await query;
     if (error) throw error;
     const rows = data || [];
@@ -51,7 +72,7 @@ export async function GET(req: Request) {
         consultation: message.consultation || null,
       })),
       has_more: hasMore,
-      next_cursor: hasMore && page[0]?.created_at ? String(page[0].created_at) : null,
+      next_cursor: hasMore && page[0] ? `v1|${page[0].created_at}|${page[0].id}` : null,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const { code, status } = staffChatError(error);

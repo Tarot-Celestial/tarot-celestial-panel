@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   try {
     const { db, me } = await getStaffChatActor(req);
     const contactRoles = me.can_admin ? ["admin", "central", "tarotista"] : me.role === "tarotista" ? ["central", "admin"] : ["tarotista", "admin"];
-    const contactsQuery = db.from("workers").select("id, display_name, role, team, state").in("role", contactRoles).eq("is_active", true).order("display_name");
+    const contactsQuery = db.from("workers").select("id, display_name, role, team, state, is_active").in("role", contactRoles).eq("is_active", true).order("display_name");
     let threadsQuery = db.from("chat_threads").select("id, central_worker_id, tarotist_worker_id, status, created_at, last_message_at, last_message_preview, title").order("last_message_at", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false });
     if (me.role === "central" && !me.can_admin) threadsQuery = threadsQuery.eq("central_worker_id", me.id);
     if (me.role === "tarotista") threadsQuery = threadsQuery.eq("tarotist_worker_id", me.id);
@@ -46,11 +46,24 @@ export async function GET(req: Request) {
     }]));
     const normalizedThreads = (threads || []).map((thread: any) => {
       const otherId = String(thread.tarotist_worker_id) === me.id ? thread.central_worker_id : thread.tarotist_worker_id;
-      const legacyContact = !otherId && me.role === "tarotista" ? { id: `legacy:${thread.id}`, display_name: "Historial anterior", role: "central", team: null, state: "offline" } : null;
+      const legacyContact = !otherId && me.role === "tarotista" ? { id: `legacy:${thread.id}`, display_name: "Historial anterior", role: "central", team: null, state: "offline", presence_expires_at: null } : null;
       return { ...thread, id: String(thread.id), central_display_name: thread.central_worker_id ? workerById.get(String(thread.central_worker_id))?.display_name || 'Central' : 'Historial anterior', contact: otherId ? workerById.get(String(otherId)) || null : legacyContact, unread_count: unreadByThread.get(String(thread.id)) || 0, latest_incoming: incomingByThread.get(String(thread.id)) || null, legacy: !thread.central_worker_id };
     });
-    const legacyContacts = normalizedThreads.filter((thread: any) => thread.legacy && thread.contact).map((thread: any) => thread.contact);
-    return NextResponse.json({ ok: true, mode: me.can_admin ? "admin" : me.role, me: { ...me, ...presence.states.get(me.id) }, presence_checked_at: presence.checkedAt, contacts: [...(contacts || []).filter((worker: any) => String(worker.id) !== me.id).map((worker: any) => publicWorker(worker, presence.states)), ...legacyContacts], threads: normalizedThreads, unread_total: normalizedThreads.reduce((total: number, thread: any) => total + Number(thread.unread_count || 0), 0) }, { headers: { "Cache-Control": "no-store" } });
+    // The contact list is also the entry point to existing conversations. A
+    // worker leaving the team must not hide authorized history. Add only the
+    // other participants of the already-scoped threads, never all inactive staff.
+    // The active-worker/role requirements for opening a new chat stay in POST.
+    const contactsById = new Map<string, ReturnType<typeof publicWorker>>();
+    for (const worker of contacts || []) {
+      if (String(worker.id) !== me.id) contactsById.set(String(worker.id), workerById.get(String(worker.id)) || publicWorker(worker, presence.states));
+    }
+    for (const thread of normalizedThreads) {
+      const contact = thread.contact;
+      if (contact && contact.id !== me.id && contactRoles.includes(contact.role) && !contactsById.has(contact.id)) {
+        contactsById.set(contact.id, contact);
+      }
+    }
+    return NextResponse.json({ ok: true, mode: me.can_admin ? "admin" : me.role, me: { ...me, ...presence.states.get(me.id) }, presence_checked_at: presence.checkedAt, contacts: [...contactsById.values()], threads: normalizedThreads, unread_total: normalizedThreads.reduce((total: number, thread: any) => total + Number(thread.unread_count || 0), 0) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const { code, status } = staffChatError(error);
     return NextResponse.json({ ok: false, error: code }, { status, headers: { "Cache-Control": "no-store" } });

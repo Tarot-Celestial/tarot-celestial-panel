@@ -108,12 +108,140 @@ function harness(options = {}) {
     async clickContact(id) { const button = view.root.findAllByType('button').find(node => text(node).includes(`${id} Simulada`)); assert.ok(button, id); await flush(() => button.props.onClick()); },
     async focus(value) { focused = value; await flush(() => listeners.get(value ? 'focus' : 'blur')?.forEach(callback => callback())); },
     async visibility(value) { visible = value; await flush(() => listeners.get('visibilitychange')?.forEach(callback => callback())); },
+    async scroll(value, user = true) { await flush(() => { const log = view.root.findByProps({ role: 'log' }); if (user) log.props.onPointerDown(); listNode.scrollTop = value; log.props.onScroll(); }); },
     async dispose() { await flush(() => view.unmount()); for (const handle of frames.values()) clearImmediate(handle); },
   };
 }
 const readRequests = h => h.requests.filter(request => request.url === '/api/chat/read');
 const getRequests = h => h.requests.filter(request => request.method === 'GET');
 const button = (h, label) => h.view.root.findAllByType('button').find(node => text(node) === label || node.props['aria-label'] === label);
+const historyMessages = (count, thread = 'ta') => Array.from({ length: count }, (_, index) => message(`history-${String(index + 1).padStart(3, '0')}`, thread, { created_at: new Date(Date.UTC(2026, 10, 1, index)).toISOString() }));
+function paginatedHistory(items, request) {
+  const before = new URL(request.url, 'https://fixture.invalid').searchParams.get('before');
+  const end = before ? items.findIndex(item => item.id === before) : items.length;
+  const start = Math.max(0, end - 40);
+  return { messages: items.slice(start, end), has_more: start > 0, next_cursor: start > 0 ? items[start].id : null };
+}
+const renderedMessageIds = h => h.view.root.findAll(node => typeof node.props['data-message-id'] === 'string').map(node => node.props['data-message-id']);
+
+test('125 saved messages load automatically at the top without losing the visible message, then show the dated beginning', async () => {
+  const items = historyMessages(125);
+  const h = harness({ request: request => request.url.includes('thread_id=ta') ? paginatedHistory(items, request) : undefined }); await h.mount();
+  assert.equal(renderedMessageIds(h).length, 40);
+  assert.equal(getRequests(h).length, 1, 'initial programmatic scroll does not drain the history');
+  assert.ok(!text(h.view.toJSON()).includes('Inicio del historial guardado'));
+  await h.scroll(0, false); assert.equal(getRequests(h).length, 1, 'restored scroll position alone never loads another page');
+  await h.scroll(0);
+  assert.equal(renderedMessageIds(h).length, 80); assert.equal(h.listNode.scrollTop, 2400);
+  assert.equal(h.listNode.querySelectorAll().find(row => row.getBoundingClientRect().bottom > 0).dataset.messageId, items[85].id);
+  await h.scroll(0); assert.equal(renderedMessageIds(h).length, 120);
+  await h.scroll(0); assert.equal(renderedMessageIds(h).length, 125);
+  assert.equal(new Set(renderedMessageIds(h)).size, 125);
+  assert.equal(button(h, 'Cargar mensajes anteriores'), undefined);
+  assert.ok(text(h.view.toJSON()).includes('Inicio del historial guardado1 de noviembre de 2026'));
+  await h.dispose();
+});
+
+test('only two saved messages are presented as a complete dated history, independently from the day separators', async () => {
+  const h = harness({ pages: { ta: historyMessages(2) } }); await h.mount();
+  assert.equal(renderedMessageIds(h).length, 2);
+  assert.ok(text(h.view.toJSON()).includes('Inicio del historial guardado1 de noviembre de 2026'));
+  assert.equal(button(h, 'Cargar mensajes anteriores'), undefined);
+  await h.scroll(0); assert.equal(getRequests(h).length, 1);
+  await h.dispose();
+});
+
+test('a failed older page does not loop and leaves its visible retry button usable', async () => {
+  const items = historyMessages(81); let olderAttempts = 0;
+  const h = harness({ request: request => {
+    if (!request.url.includes('thread_id=ta')) return;
+    if (request.url.includes('&before=') && ++olderAttempts === 1) throw new Error('Sin conexión temporal');
+    return paginatedHistory(items, request);
+  } }); await h.mount(); await h.scroll(0);
+  for (let i = 0; i < 3; i++) await flush(() => h.view.root.findByProps({ role: 'log' }).props.onWheel({ deltaY: -10 }));
+  assert.equal(olderAttempts, 1); assert.equal(renderedMessageIds(h).length, 40);
+  await flush(() => button(h, 'Cargar mensajes anteriores').props.onClick());
+  assert.equal(olderAttempts, 2); assert.equal(renderedMessageIds(h).length, 80);
+  assert.ok(!text(h.view.toJSON()).includes('Sin conexión temporal'));
+  await h.dispose();
+});
+
+test('in-flight older loading captures the current reading anchor even when new messages arrive and the reader scrolls', async () => {
+  const older = deferred(), items = historyMessages(120); let pending = true;
+  const h = harness({ request: request => {
+    if (!request.url.includes('thread_id=ta')) return;
+    if (request.url.includes('&before=') && pending) return older.promise;
+    return paginatedHistory(items, request);
+  } }); await h.mount(); await h.scroll(0); await h.scroll(300);
+  assert.equal(getRequests(h).filter(request => request.url.includes('&before=')).length, 1);
+  const next = historyMessages(121).at(-1); items.push(next); h.context.incoming = next; await h.rerender();
+  assert.equal(h.listNode.scrollTop, 300);
+  pending = false; await flush(() => older.resolve({ messages: items.slice(40, 80), has_more: true, next_cursor: items[40].id }));
+  assert.equal(h.listNode.scrollTop, 2700);
+  assert.equal(h.listNode.querySelectorAll().find(row => row.getBoundingClientRect().bottom > 0).dataset.messageId, items[85].id);
+  assert.ok(button(h, 'Nuevos mensajes (1) '));
+  await h.dispose();
+});
+
+test('switching threads aborts an older request without blocking history in the newly selected thread', async () => {
+  const old = deferred(), a = historyMessages(81), b = historyMessages(81, 'tb');
+  const h = harness({ request: request => {
+    if (!request.url.startsWith('/api/chat/messages?')) return;
+    if (request.url.includes('thread_id=ta') && request.url.includes('&before=')) return old.promise;
+    return paginatedHistory(request.url.includes('thread_id=tb') ? b : a, request);
+  } }); await h.mount(); await h.scroll(0);
+  const oldRequest = getRequests(h).at(-1); await h.clickContact('b'); assert.equal(oldRequest.signal.aborted, true);
+  await h.scroll(0); assert.equal(renderedMessageIds(h).length, 80);
+  await flush(() => old.resolve({ messages: a.slice(0, 40), has_more: false, next_cursor: null }));
+  assert.equal(renderedMessageIds(h).length, 80);
+  assert.ok(h.view.root.findByProps({ role: 'log' }).props['aria-label'].includes('b Simulada'));
+  await h.dispose();
+});
+
+test('losing focus during pagination releases the loading state and permits retry in the same conversation', async () => {
+  const old = deferred(), items = historyMessages(85); let olderAttempts = 0;
+  const h = harness({ request: request => {
+    if (!request.url.includes('thread_id=ta')) return;
+    if (request.url.includes('&before=') && ++olderAttempts === 1) return old.promise;
+    return paginatedHistory(items, request);
+  } });
+  await h.mount(); await h.scroll(0);
+  assert.equal(button(h, 'Cargando mensajes anteriores…').props.disabled, true);
+  const oldRequest = getRequests(h).at(-1);
+  await h.focus(false); assert.equal(oldRequest.signal.aborted, true);
+  await flush(() => old.reject(new Error('AbortError simulado')));
+  await h.focus(true);
+  assert.equal(renderedMessageIds(h).length, 40);
+  assert.equal(button(h, 'Cargar mensajes anteriores').props.disabled, false);
+  assert.equal(h.view.root.findByProps({ role: 'log' }).props['aria-busy'], false);
+  await flush(() => button(h, 'Cargar mensajes anteriores').props.onClick());
+  assert.equal(olderAttempts, 2); assert.equal(renderedMessageIds(h).length, 80);
+  assert.ok(!text(h.view.toJSON()).includes('AbortError simulado'));
+  await h.dispose();
+});
+
+test('returning after more than a page of messages fills the gap without jumping away from cached history', async () => {
+  const items = historyMessages(40);
+  const h = harness({ request: request => request.url.includes('thread_id=ta') ? paginatedHistory(items, request) : undefined });
+  await h.mount(); await h.scroll(0); await h.focus(false);
+  items.push(...historyMessages(125).slice(40));
+  await h.focus(true);
+  assert.equal(renderedMessageIds(h).length, 125);
+  assert.equal(new Set(renderedMessageIds(h)).size, 125);
+  assert.equal(h.listNode.scrollTop, 0);
+  assert.equal(getRequests(h).length, 4);
+  assert.ok(text(h.view.toJSON()).includes('Inicio del historial guardado'));
+  await h.dispose();
+});
+
+test('a single realtime event after a long absence does not disguise a gap between the cached and newest page', async () => {
+  const items = historyMessages(40);
+  const h = harness({ request: request => request.url.includes('thread_id=ta') ? paginatedHistory(items, request) : undefined });
+  await h.mount(); await h.scroll(0);
+  items.push(...historyMessages(125).slice(40)); h.context.incoming = items.at(-1); await h.rerender();
+  assert.equal(renderedMessageIds(h).length, 125); assert.equal(h.listNode.scrollTop, 0);
+  await h.dispose();
+});
 
 test('only an on-screen, focused, connected conversation explicitly acknowledges the last visible message', async () => {
   const h = harness(); await h.mount();

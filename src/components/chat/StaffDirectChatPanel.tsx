@@ -16,8 +16,15 @@ import styles from "./StaffDirectChatPanel.module.css";
 
 const FILTERS = ["todos", "conectados", "no-leidos"] as const;
 type Page = { messages: StaffChatMessage[]; has_more: boolean; next_cursor: string | null };
-type ThreadHistory = { messages: StaffChatMessage[]; hasMore: boolean; cursor: string | null; loaded: boolean; scrollTop: number | null };
+type ThreadHistory = { messages: StaffChatMessage[]; hasMore: boolean; cursor: string | null; loaded: boolean; scrollTop: number | null; latestFetched?: StaffChatMessage };
+type ScrollAnchor = { height: number; top: number; id: string | null; offset: number };
 function draftKey(threadId: string, contactId: string) { return threadId ? `thread:${threadId}` : `contact:${contactId}`; }
+function captureScrollAnchor(box: HTMLDivElement): ScrollAnchor {
+  const top = box.getBoundingClientRect().top;
+  const row = [...box.querySelectorAll<HTMLElement>("[data-message-id]")].find(item => item.getBoundingClientRect().bottom > top);
+  return { height: box.scrollHeight, top: box.scrollTop, id: row?.dataset.messageId || null, offset: row ? row.getBoundingClientRect().top - top : 0 };
+}
+function compareMessageOrder(a: StaffChatMessage, b: StaffChatMessage) { return a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id); }
 
 function presence(state: string) {
   const value = String(state || "offline").toLowerCase();
@@ -51,7 +58,7 @@ function mergeMessages(current: StaffChatMessage[], incoming: StaffChatMessage[]
     merged.set(key, { ...previous, ...message, attachment: message.attachment || previous?.attachment, read_at: message.read_at || previous?.read_at, pending: message.pending || false, failed: message.failed || false });
     keysById.set(message.id, key);
   }
-  return [...merged.values()].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+  return [...merged.values()].sort(compareMessageOrder);
 }
 
 export default function StaffDirectChatPanel({ compact = false, directConversations = false }: { compact?: boolean; directConversations?: boolean }) {
@@ -108,7 +115,9 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
   const readAck = useRef(new Map<string, string>());
   const readInFlight = useRef(new Set<string>());
   const scrollToEnd = useRef(false);
-  const scrollRestore = useRef<{ height: number; top: number } | null>(null);
+  const scrollRestore = useRef<ScrollAnchor | null>(null);
+  const historyScrollIntent = useRef(false);
+  const attemptedOlderCursor = useRef<string | null>(null);
   const restoreThreadTop = useRef<number | null>(null);
   const handledOpen = useRef<number | null>(null);
   const handledIncoming = useRef(new Set<string>());
@@ -145,6 +154,8 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
     if (!reset && previous && listRef.current) previous.scrollTop = listRef.current.scrollTop;
     selection.current = { threadId, contactId, generation: selection.current.generation + 1 };
     latestRequest.current?.abort(); olderRequest.current?.abort();
+    latestRequest.current = null; olderRequest.current = null;
+    historyScrollIntent.current = false; attemptedOlderCursor.current = null;
     const history = histories.current.get(threadId);
     initialLoaded.current = history?.loaded || false; scrollToEnd.current = history?.scrollTop == null; scrollRestore.current = null;
     restoreThreadTop.current = history?.scrollTop ?? null;
@@ -199,7 +210,7 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
     const controller = new AbortController();
     if (before) {
       if (olderRequest.current) return;
-      olderRequest.current = controller; setLoadingMore(true);
+      olderRequest.current = controller; setLoadingMore(true); setError("");
     } else {
       latestRequest.current?.abort(); latestRequest.current = controller;
       if (!initialLoaded.current) setMessageLoading(true);
@@ -207,9 +218,27 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
     const isCurrent = () => mounted.current && !controller.signal.aborted && actorRef.current === actor && selection.current.generation === selected.generation && selection.current.threadId === selected.threadId;
     const timeout = window.setTimeout(() => controller.abort(), 15000);
     try {
-      const data: Page = await chatRequest(`/api/chat/messages?thread_id=${encodeURIComponent(selected.threadId)}${before ? `&before=${encodeURIComponent(before)}` : ""}`, { signal: controller.signal });
+      const fetchPage = (pageCursor?: string): Promise<Page> => chatRequest(`/api/chat/messages?thread_id=${encodeURIComponent(selected.threadId)}${pageCursor ? `&before=${encodeURIComponent(pageCursor)}` : ""}`, { signal: controller.signal });
+      const data = await fetchPage(before);
       if (!isCurrent()) return;
-      const page = (Array.isArray(data.messages) ? data.messages : []).filter(message => message.thread_id === selected.threadId);
+      let page = (Array.isArray(data.messages) ? data.messages : []).filter(message => message.thread_id === selected.threadId);
+      // After a long absence the latest page may not overlap the cached history.
+      // Fetch the missing interval before displaying it, keeping the old cursor.
+      const currentHistory = histories.current.get(selected.threadId);
+      const cached = currentHistory?.messages.filter(message => !message.pending && !message.failed && (!currentHistory.latestFetched || compareMessageOrder(message, currentHistory.latestFetched) <= 0)) || [];
+      const cachedIds = new Set(cached.map(message => message.id));
+      const newestCached = currentHistory?.latestFetched || cached.at(-1);
+      let boundary = data;
+      const visited = new Set<string>();
+      while (!before && newestCached && boundary.has_more && boundary.next_cursor && page.length && !page.some(message => cachedIds.has(message.id)) && compareMessageOrder(page[0], newestCached) > 0) {
+        if (visited.has(boundary.next_cursor)) throw new Error("No se pudo completar el historial. Pulsa actualizar para reintentarlo.");
+        visited.add(boundary.next_cursor);
+        boundary = await fetchPage(boundary.next_cursor);
+        if (!isCurrent()) return;
+        const older = (Array.isArray(boundary.messages) ? boundary.messages : []).filter(message => message.thread_id === selected.threadId);
+        if (!older.length) break;
+        page = mergeMessages(older, page);
+      }
       const confirmed = new Set(page.map(messageKey));
       outbox.current.set(selected.threadId, (outbox.current.get(selected.threadId) || []).filter(message => !confirmed.has(messageKey(message))));
       for (const message of page) {
@@ -218,13 +247,14 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
         }
       }
       const box = listRef.current;
-      if (before && box) scrollRestore.current = { height: box.scrollHeight, top: box.scrollTop };
-      if (!before && (!initialLoaded.current || (box && box.scrollHeight - box.scrollTop - box.clientHeight < 70))) scrollToEnd.current = true;
+      if (before && box) { scrollRestore.current = captureScrollAnchor(box); scrollToEnd.current = false; }
+      if (!before && !olderRequest.current && !scrollRestore.current && (!initialLoaded.current || (restoreThreadTop.current == null && box && box.scrollHeight - box.scrollTop - box.clientHeight < 70))) scrollToEnd.current = true;
       const history = histories.current.get(selected.threadId) || { messages: [], hasMore: false, cursor: null, loaded: false, scrollTop: null };
       if (before || !initialLoaded.current) {
         setHasMore(data.has_more); setCursor(data.next_cursor);
         history.hasMore = data.has_more; history.cursor = data.next_cursor;
       }
+      if (!before && page.length) history.latestFetched = page.at(-1);
       history.loaded = true; histories.current.set(selected.threadId, history);
       initialLoaded.current = true;
       updateThreadMessages(selected.threadId, page);
@@ -238,10 +268,16 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
     }
   }, [updateThreadMessages]);
   useEffect(() => {
-    if (!active || !selectedThreadId) return;
+    if (!active || !selectedThreadId) {
+      // Cleanup invalidates request identities, so their finally handlers cannot
+      // reset the UI. Reset here while mounted, also allowing an explicit retry.
+      setLoadingMore(false); setMessageLoading(false);
+      historyScrollIntent.current = false; attemptedOlderCursor.current = null;
+      return;
+    }
     void loadMessages();
     const timer = window.setInterval(() => void loadMessages(), 15000);
-    return () => { window.clearInterval(timer); latestRequest.current?.abort(); olderRequest.current?.abort(); };
+    return () => { window.clearInterval(timer); latestRequest.current?.abort(); olderRequest.current?.abort(); latestRequest.current = null; olderRequest.current = null; };
   }, [active, selectedThreadId, loadMessages]);
   useEffect(() => {
     if (active && incoming?.thread_id === selectedThreadId) {
@@ -249,7 +285,7 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
       const nearBottom = !box || box.scrollHeight - box.scrollTop - box.clientHeight < 70;
       if (!handledIncoming.current.has(incoming.id)) {
         handledIncoming.current.add(incoming.id);
-        if (nearBottom) scrollToEnd.current = true;
+        if (nearBottom && !olderRequest.current && !scrollRestore.current) scrollToEnd.current = true;
         else setNewBelow(value => value + 1);
       }
       // The authenticated provider has validated this thread. Display its event
@@ -279,6 +315,17 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
     }
     setReadCandidate(last);
   }, []);
+  const loadEarlierOnScroll = useCallback(() => {
+    const box = listRef.current, history = histories.current.get(selection.current.threadId);
+    if (!box || !activeRef.current || !history?.loaded || !historyScrollIntent.current || scrollRestore.current || restoreThreadTop.current != null) return;
+    if (box.scrollTop > 90) { attemptedOlderCursor.current = null; return; }
+    if (!history.hasMore || !history.cursor || olderRequest.current || attemptedOlderCursor.current === history.cursor) return;
+    // A failed request does not retry continuously while the viewport stays up.
+    // Moving away and back, or the visible button, explicitly retries it.
+    attemptedOlderCursor.current = history.cursor;
+    historyScrollIntent.current = false;
+    void loadMessages(history.cursor);
+  }, [loadMessages]);
   useEffect(() => {
     window.addEventListener("scroll", measureVisibleMessages, { passive: true, capture: true });
     window.addEventListener("resize", measureVisibleMessages);
@@ -287,9 +334,15 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       const box = listRef.current;
-      if (box && restoreThreadTop.current != null) { box.scrollTop = restoreThreadTop.current; restoreThreadTop.current = null; scrollToEnd.current = false; }
-      else if (box && scrollRestore.current) { box.scrollTop += box.scrollHeight - scrollRestore.current.height; scrollRestore.current = null; }
-      else if (box && scrollToEnd.current) { box.scrollTop = box.scrollHeight; scrollToEnd.current = false; }
+      if (box && restoreThreadTop.current != null) { historyScrollIntent.current = false; box.scrollTop = restoreThreadTop.current; restoreThreadTop.current = null; scrollToEnd.current = false; }
+      else if (box && scrollRestore.current) {
+        const anchor = scrollRestore.current;
+        const row = [...box.querySelectorAll<HTMLElement>("[data-message-id]")].find(item => item.dataset.messageId === anchor.id);
+        historyScrollIntent.current = false;
+        box.scrollTop = row ? box.scrollTop + row.getBoundingClientRect().top - box.getBoundingClientRect().top - anchor.offset : anchor.top + box.scrollHeight - anchor.height;
+        scrollRestore.current = null;
+      }
+      else if (box && scrollToEnd.current) { historyScrollIntent.current = false; box.scrollTop = box.scrollHeight; scrollToEnd.current = false; }
       measureVisibleMessages();
     });
     return () => window.cancelAnimationFrame(frame);
@@ -375,6 +428,7 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
 
   const selectedPresence = presence(selectedContact?.state || "offline");
   const sending = messages.some(message => message.pending);
+  const firstSavedMessage = messages.find(message => !message.pending && !message.failed);
   const notificationLabel = notificationPermission === "granted" ? "Notificaciones activadas" : notificationPermission === "denied" ? "Notificaciones bloqueadas en el navegador" : notificationPermission === "unsupported" ? "Notificaciones no disponibles" : "Activar notificaciones";
   let previousDay = "";
 
@@ -420,8 +474,13 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
           <div className={styles.headerActions}><button type="button" onClick={() => setAppearanceOpen(true)} aria-label="Cambiar fondo de esta conversación" title="Cambiar fondo"><Palette size={18}/></button><StaffPanelCallButton threadId={selectedThreadId} targetWorkerId={selectedContact.id} targetName={selectedContact.display_name} disabled={!connected || !selectedThreadId}/></div>
         </div>
         {selectedThreadId && me ? <StaffChatOperations key={`${meId}:${selectedThreadId}`} threadId={selectedThreadId} me={me} hasConsultationMessage={messages.some(message => message.kind === "consultation")} onChanged={() => { void refresh(); void loadMessages(); }}/>: null}
-        <div className={styles.messages} data-wallpaper={appearance.preference.wallpaper} style={appearance.preference.background_url ? { backgroundImage: `linear-gradient(rgba(10,13,22,.66),rgba(10,13,22,.76)), url(${JSON.stringify(appearance.preference.background_url)})` } : undefined} ref={listRef} role="log" aria-label={`Mensajes con ${selectedContact.display_name}`} aria-busy={messageLoading || opening} onScroll={() => measureVisibleMessages()}>
-          {hasMore ? <button type="button" className={styles.older} disabled={loadingMore || !active} onClick={() => { if (cursor) void loadMessages(cursor); }}>{loadingMore ? "Cargando…" : "Cargar mensajes anteriores"}</button> : null}
+        <div className={styles.messages} data-wallpaper={appearance.preference.wallpaper} style={appearance.preference.background_url ? { backgroundImage: `linear-gradient(rgba(10,13,22,.66),rgba(10,13,22,.76)), url(${JSON.stringify(appearance.preference.background_url)})` } : undefined} ref={listRef} role="log" tabIndex={0} aria-label={`Mensajes con ${selectedContact.display_name}`} aria-busy={messageLoading || opening || loadingMore}
+          onWheel={event => { if (event.deltaY < 0) { historyScrollIntent.current = true; loadEarlierOnScroll(); } }}
+          onTouchStart={() => { historyScrollIntent.current = true; }}
+          onPointerDown={() => { historyScrollIntent.current = true; }}
+          onKeyDown={event => { if (["ArrowUp", "PageUp", "Home"].includes(event.key)) { historyScrollIntent.current = true; loadEarlierOnScroll(); } }}
+          onScroll={() => { measureVisibleMessages(); loadEarlierOnScroll(); }}>
+          {hasMore ? <div className={styles.historyControl}><button type="button" className={styles.older} disabled={loadingMore || !active} onClick={() => { if (cursor) { attemptedOlderCursor.current = cursor; void loadMessages(cursor); } }}>{loadingMore ? "Cargando mensajes anteriores…" : "Cargar mensajes anteriores"}</button><span>Sube para ver el historial anterior</span></div> : initialLoaded.current && firstSavedMessage ? <div className={styles.historyStart} role="note"><b>Inicio del historial guardado</b><span>{new Date(firstSavedMessage.created_at).toLocaleDateString("es-ES", { timeZone: "Europe/Madrid", day: "numeric", month: "long", year: "numeric" })}</span></div> : null}
           {messages.map(message => {
             const label = dayLabel(message.created_at), showDay = label !== previousDay; previousDay = label;
             const own = message.sender_worker_id === meId;

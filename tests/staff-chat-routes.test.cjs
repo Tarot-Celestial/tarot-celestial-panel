@@ -3,6 +3,27 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const id=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0');
 const plain=value=>JSON.parse(JSON.stringify(value));
 const sources=new Map();
+// Model Postgres timestamp comparison including sub-millisecond precision and
+// timezone offsets; string comparison would conceal cursor precision failures.
+function comparable(key,value){
+ if(key==='created_at'&&value){
+  const match=String(value).match(/^(.*T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}:\d{2})$/);
+  if(match)return BigInt(Date.parse(match[1]+match[3]))*1000n+BigInt((match[2]||'').padEnd(6,'0'));
+ }
+ return String(value??'');
+}
+function compare(key,a,b){const left=comparable(key,a),right=comparable(key,b);return left<right?-1:left>right?1:0;}
+function splitFilters(value){
+ const parts=[];let start=0,depth=0;
+ for(let i=0;i<value.length;i++){if(value[i]==='(')depth++;else if(value[i]===')')depth--;else if(value[i]===','&&depth===0){parts.push(value.slice(start,i));start=i+1;}}
+ parts.push(value.slice(start));return parts;
+}
+function filterExpression(expression){
+ const group=expression.match(/^(and|or)\((.*)\)$/);
+ if(group){const predicates=splitFilters(group[2]).map(filterExpression);return row=>group[1]==='and'?predicates.every(p=>p(row)):predicates.some(p=>p(row));}
+ const match=expression.match(/^(\w+)\.(eq|lt|gt)\.(.*)$/);assert.ok(match,'Unsupported fixture filter: '+expression);
+ return row=>{const comparison=compare(match[1],row[match[1]],match[3]);return match[2]==='eq'?comparison===0:match[2]==='lt'?comparison<0:comparison>0;};
+}
 function loadSource(file){
  if(!sources.has(file))sources.set(file,ts.transpileModule(fs.readFileSync(path.join(__dirname,'../'+file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText);
  return sources.get(file);
@@ -37,16 +58,16 @@ function harness(options={}){
   eq(k,v){this.filters.push(r=>r[k]===v);return this;}
   is(k,v){return this.eq(k,v);}
   in(k,values){this.filters.push(r=>values.includes(r[k]));return this;}
-  lt(k,v){this.filters.push(r=>r[k]<v);return this;}
+  lt(k,v){this.filters.push(r=>compare(k,r[k],v)<0);return this;}
   gt(k,v){this.filters.push(r=>r[k]>v);return this;}
-  or(value){const conditions=value.split(',').map(v=>v.split('.eq.'));this.filters.push(r=>conditions.some(([k,v])=>r[k]===v));return this;}
+  or(value){this.rawOr=value;this.filters.push(filterExpression('or('+value+')'));return this;}
   order(k,o={}){this.orders.push([k,o.ascending!==false]);return this;}
   limit(n){this.cap=n;return this;}
   insert(value){this.action='insert';this.value=value;return this;}
   update(value){this.action='update';this.value=value;return this;}
   upsert(value){this.action='upsert';this.value=value;return this;}
   async run(single=false){
-   calls.push({table:this.table,action:this.action});
+   calls.push({table:this.table,action:this.action,or:this.rawOr,order:this.orders});
    if(options.failTable===this.table)return {data:null,error:{message:'synthetic unavailable'}};
    let rows=(tables[this.table]||[]).filter(r=>this.filters.every(f=>f(r)));
    if(this.action==='insert'){
@@ -57,7 +78,7 @@ function harness(options={}){
    }else if(this.action==='upsert'){
     writes.push({table:this.table,action:this.action,value:this.value});rows=[this.value];
    }
-   for(const [key,ascending] of [...this.orders].reverse())rows.sort((a,b)=>(String(a[key]??'').localeCompare(String(b[key]??'')))*(ascending?1:-1));
+   for(const [key,ascending] of [...this.orders].reverse())rows.sort((a,b)=>compare(key,a[key],b[key])*(ascending?1:-1));
    rows=rows.slice(0,this.cap);
    return {data:single?rows[0]??null:rows,error:null};
   }
@@ -67,7 +88,7 @@ function harness(options={}){
  }
  const db={
   auth:{getUser:async token=>{authCalls.push(token);return options.authError?{data:{user:null},error:options.authError}:options.invalidAuth?{data:{user:null},error:{message:'bad signature'}}:{data:{user:{id:id(200+(options.actor??1))}},error:null};}},
-  from:table=>new Query(table),
+  from:table=>options.messageClient&&table==='chat_messages'?options.messageClient.from(table):new Query(table),
   rpc:async(name,args)=>{
    calls.push({rpc:name,args});
    if(name==='staff_chat_unread_counts')return {data:options.unreadRows??[{thread_id:id(10),unread_count:72}],error:null};
@@ -94,6 +115,118 @@ function harness(options={}){
  return {tables,calls,writes,authCalls,connectionCalls,helper:dependencies['@/lib/server/staff-chat'],messages,threads,read:load('src/app/api/chat/read/route.ts'),legacy:{messages:load('src/app/api/central/chat/messages/route.ts'),threads:load('src/app/api/central/chat/threads/route.ts'),send:load('src/app/api/central/chat/send/route.ts'),open:load('src/app/api/central/chat/open/route.ts')}};
 }
 function req(url,body,authorization='Bearer signed-fixture-token'){return new Request('https://panel.test'+url,{method:body===undefined?'GET':'POST',headers:authorization?{authorization,'content-type':'application/json'}:{},...(body===undefined?{}:{body:JSON.stringify(body)})});}
+
+function historyMessage(n,createdAt='2026-11-08T12:00:00.123456+00:00'){
+ return {id:id(1000+n),thread_id:id(10),sender_worker_id:id(2),sender_display_name:'Tarotista fixture',body:'History '+n,created_at:createdAt,client_message_id:'history-'+n};
+}
+async function historyPage(h,before,extra=''){
+ const response=await h.messages.GET(req('/api/chat/messages?thread_id='+id(10)+(before?'&before='+encodeURIComponent(before):'')+extra));
+ assert.equal(response.status,200);return response.json();
+}
+
+test('history pagination returns every message once across many pages, including identical timestamps',async()=>{
+ for(const actor of [1,2,3])for(const tied of [false,true]){
+  const h=harness({actor});
+  h.tables.chat_messages=Array.from({length:123},(_,n)=>historyMessage(n,tied?undefined:new Date(Date.UTC(2026,10,8,12,0,n)).toISOString()));
+  // Deliberately scramble insertion order: timestamp ties must use the ID.
+  h.tables.chat_messages.reverse();
+  const seen=[],counts=[];let cursor;
+  for(let attempt=0;attempt<5;attempt++){
+   const page=await historyPage(h,cursor);counts.push(page.messages.length);seen.push(...page.messages.map(m=>m.id));
+   for(let i=1;i<page.messages.length;i++){
+    const a=page.messages[i-1],b=page.messages[i];assert.ok(compare('created_at',a.created_at,b.created_at)<0||(compare('created_at',a.created_at,b.created_at)===0&&a.id<b.id),'chronological and stable within each page');
+   }
+   if(!page.has_more){assert.equal(page.next_cursor,null);break;}
+   assert.match(page.next_cursor,/^v1\|/);assert.notEqual(page.next_cursor,cursor);cursor=page.next_cursor;
+  }
+  assert.deepEqual(counts,[40,40,40,3]);assert.equal(new Set(seen).size,123);
+  assert.deepEqual([...seen].sort(),h.tables.chat_messages.map(m=>m.id).sort());assert.equal(h.writes.length,0);
+ }
+});
+
+test('cursor preserves all six fractional digits and walks messages within one millisecond',async()=>{
+ const h=harness();
+ h.tables.chat_messages=Array.from({length:65},(_,n)=>historyMessage(n,'2026-11-08T12:00:00.'+String(123000+Math.floor(n/3)).padStart(6,'0')+'+00:00'));
+ const first=await historyPage(h),boundary=first.messages[0];
+ assert.equal(first.next_cursor,'v1|'+boundary.created_at+'|'+boundary.id);
+ assert.match(first.next_cursor,/\.123008\+00:00/);
+ const second=await historyPage(h,first.next_cursor);
+ assert.equal(second.has_more,false);assert.equal(second.messages.length,25);
+ assert.equal(new Set([...first.messages,...second.messages].map(m=>m.id)).size,65);
+ const sent=h.calls.filter(call=>call.table==='chat_messages').at(-1);
+ assert.ok(sent.or.includes(boundary.created_at));assert.deepEqual(plain(sent.order),[['created_at',false],['id',false]]);
+});
+
+test('pagination anchor remains usable after deletion and new incoming messages do not shift older pages',async()=>{
+ const h=harness();h.tables.chat_messages=Array.from({length:82},(_,n)=>historyMessage(n));
+ const first=await historyPage(h),anchorId=first.messages[0].id;
+ h.tables.chat_messages=h.tables.chat_messages.filter(m=>m.id!==anchorId);
+ h.tables.chat_messages.push(historyMessage(900),historyMessage(901,'2026-11-08T12:00:01.000001Z'));
+ const second=await historyPage(h,first.next_cursor),third=await historyPage(h,second.next_cursor);
+ assert.deepEqual([first.messages.length,second.messages.length,third.messages.length],[40,40,2]);
+ const seen=[...first.messages,...second.messages,...third.messages].map(m=>m.id);
+ assert.equal(new Set(seen).size,82);assert.ok(!seen.includes(id(1900)));assert.ok(!seen.includes(id(1901)));
+ assert.equal(third.has_more,false);assert.equal(h.writes.length,0);
+});
+
+test('legacy timestamp cursors remain valid and return a composite cursor for subsequent pages',async()=>{
+ const h=harness();h.tables.chat_messages=Array.from({length:75},(_,n)=>historyMessage(n));
+ const first=await historyPage(h,'2026-11-08T13:00:00.123457+01:00');
+ assert.equal(first.messages.length,40);assert.match(first.next_cursor,/^v1\|2026-11-08T12:00:00\.123456\+00:00\|/);
+ const second=await historyPage(h,first.next_cursor);assert.equal(second.messages.length,35);assert.equal(second.has_more,false);
+ assert.equal((await historyPage(h,'2026-11-08T12:00:00.123456Z')).messages.length,0,'legacy timestamp semantics stay strictly earlier');
+});
+
+test('composite cursor cannot broaden thread ownership or return another thread through its OR clause',async()=>{
+ const h=harness();h.tables.chat_messages=Array.from({length:41},(_,n)=>historyMessage(n));
+ h.tables.chat_messages.push({...historyMessage(999,'2020-01-01T00:00:00.000001Z'),thread_id:id(11),body:'Other private thread'});
+ const first=await historyPage(h),second=await historyPage(h,first.next_cursor);
+ assert.equal(second.messages.length,1);assert.ok(second.messages.every(m=>m.thread_id===id(10)));
+ const response=await h.messages.GET(req('/api/chat/messages?thread_id='+id(11)+'&before='+encodeURIComponent(first.next_cursor)));
+ assert.equal(response.status,403);assert.equal(h.writes.length,0);
+});
+
+test('invalid composite cursors and filter injection are rejected before querying chat messages',async()=>{
+ const timestamp='2026-11-08T12:00:00.123456+00:00',messageId=id(1000);
+ const invalid=[
+  `v2|${timestamp}|${messageId}`,`v1|${timestamp}|`, `v1|${timestamp}|not-a-uuid`,
+  `v1|${timestamp}|${messageId}|extra`,`v1|${timestamp}|${messageId},thread_id.neq.null`,
+  `v1|${timestamp}|${messageId}\n`,`v1|${timestamp}|${messageId}\r\n`,
+  `v1|${timestamp}),id.neq.null|${messageId}`,`v1|${timestamp}\n|${messageId}`,
+  `v1|2026-02-29T12:00:00Z|${messageId}`,`v1|2026-11-08T12:00:00.1234567Z|${messageId}`,
+  `v1|2026-11-08T12:00:00+16:00|${messageId}`,`v1|${timestamp}|${'a'.repeat(200)}`,
+  `${timestamp},id.neq.null`,`${timestamp}\0`, `v1|${timestamp}|${messageId}%2Cthread_id.neq.null`,
+ ];
+ for(const cursor of invalid){
+  const h=harness(),response=await h.messages.GET(req('/api/chat/messages?thread_id='+id(10)+'&before='+encodeURIComponent(cursor)));
+  assert.equal(response.status,400,cursor);assert.equal((await response.json()).error,'INVALID_CURSOR');
+  assert.equal(h.calls.filter(call=>call.table==='chat_messages').length,0);assert.equal(h.writes.length,0);
+ }
+});
+
+test('empty and exactly full final pages stop pagination, while limit clamps remain unchanged',async()=>{
+ for(const [count,limit,expected,more] of [[0,40,0,false],[40,40,40,false],[10,1,10,false],[51,999,50,true]]){
+  const h=harness();h.tables.chat_messages=Array.from({length:count},(_,n)=>historyMessage(n));
+  const page=await historyPage(h,null,'&limit='+limit);
+  assert.equal(page.messages.length,expected);assert.equal(page.has_more,more);assert.equal(page.next_cursor!==null,more);
+ }
+});
+
+test('real Supabase client serializes the composite timestamp and UUID filters without precision or scope loss',async()=>{
+ const {createClient}=require('@supabase/supabase-js');const requests=[];
+ const client=createClient('https://fixture.supabase.test','fixture-anon-key',{
+  auth:{persistSession:false,autoRefreshToken:false},
+  global:{fetch:async(input,init)=>{requests.push({url:new URL(String(input)),method:init?.method});return new Response('[]',{status:200,headers:{'Content-Type':'application/json'}});}},
+ });
+ const h=harness({messageClient:client}),timestamp='2026-11-08T13:00:00.123456+01:00',messageId='aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+ const page=await historyPage(h,`v1|${timestamp}|${messageId.toUpperCase()}`);
+ assert.equal(page.has_more,false);assert.equal(requests.length,1);
+ const params=requests[0].url.searchParams;
+ assert.equal(requests[0].method,'GET');assert.equal(params.get('thread_id'),'eq.'+id(10));
+ assert.equal(params.get('order'),'created_at.desc,id.desc');assert.equal(params.get('limit'),'41');
+ assert.equal(params.get('or'),`(created_at.lt.${timestamp},and(created_at.eq.${timestamp},id.lt.${messageId}))`);
+ assert.equal(h.writes.length,0);
+});
 
 test('tarotista receives only first name and codes from consultation, never client identifiers or phones',async()=>{
  const h=harness({actor:2});
