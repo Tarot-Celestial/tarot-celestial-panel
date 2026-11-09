@@ -16,7 +16,7 @@ function harness(){
    not:(k,op,v)=>{filters.push(r=>(r[k]??null)!==v);return q;},in:(k,v)=>{filters.push(r=>v.includes(r[k]));return q;},
    insert:v=>{mode='insert';value=v;return q;},upsert:v=>{mode='insert';value=v;return q;},delete:()=>q,
    maybeSingle:()=>{one=true;return q;},single:()=>{one=true;return q;},
-   then:resolve=>{const rows=table==='workers'?[{id:id(1),user_id:id(1),role:h.role,is_active:h.active}]:tables[table]||[];
+   then:resolve=>{const rows=table==='workers'?[{id:id(1),user_id:id(1),role:h.role,is_active:h.active},...(tables.workers||[])]:tables[table]||[];
     let selected=mode==='insert'?[{...value,id:id(9)}]:rows.filter(r=>filters.every(f=>f(r)));
     if(range)selected=selected.slice(range[0],range[1]+1);
     return Promise.resolve({data:one?selected[0]||null:selected,error:h.failedTable===table?{message:'Temporary read failure'}:null}).then(resolve);}};return q;
@@ -44,6 +44,34 @@ test('Only active admin/central can read candidates or register calls',async()=>
  const h=harness();assert.equal((await h.post(h.body,'bad')).status,401);
  h.role='tarotista';assert.equal((await h.post()).status,403);assert.equal((await h.get()).status,403);
  h.role='central';h.active=false;assert.equal((await h.get()).status,401);assert.equal(h.rpcCalls.length,0);
+});
+
+test('Team CALL validates worker identity and keeps CALL tariff metadata in the atomic payload',async()=>{
+ const h=harness();h.tables.workers=[{id:id(8),display_name:'Josefa',role:'tarotista',is_active:true}];
+ const response=await h.post({...h.body,existing_payment_id:null,tarotista_worker_id:id(8),tarotista_manual_call:'Josefa CALL'});
+ assert.equal(response.status,200);assert.equal(h.rpcCalls.filter(call=>call.name==='tc_register_call_minutes').length,1);
+ const payload=h.rpcCalls[0].payload;
+ assert.equal(payload.tarotista_worker_id,id(8));assert.equal(payload.tarotista_nombre,'Josefa');
+ assert.equal(payload.tarotista_manual_call,'Josefa CALL');assert.equal(payload.llamada_call,true);
+ assert.equal(payload.tiempo,20);assert.equal(payload.codigo_1,'CLIENTE');assert.equal(payload.minutos_1,20);
+ assert.equal(payload.operation_id,id(7));
+});
+
+test('Team CALL cannot target an inactive, missing or non-tarotista worker even with a manual fallback name',async()=>{
+ for(const candidate of [null,{role:'tarotista',is_active:false},{role:'central',is_active:true},{role:'admin',is_active:true}]) {
+  const h=harness();h.tables.workers=candidate?[{id:id(8),display_name:'Fixture',...candidate}]:[];
+  const response=await h.post({...h.body,existing_payment_id:null,tarotista_worker_id:id(8),tarotista_manual_call:'Fixture CALL'});
+  assert.equal(response.status,400);assert.equal((await response.json()).error,'TAROTISTA_INACTIVA');assert.equal(h.rpcCalls.length,0);
+ }
+});
+
+test('Legacy manual CALL without a worker remains accepted without assigning by name',async()=>{
+ const h=harness();h.tables.workers=[{id:id(8),display_name:'Josefa',role:'tarotista',is_active:true}];
+ const response=await h.post({...h.body,existing_payment_id:null,tarotista_manual_call:'Josefa call'});
+ assert.equal(response.status,200);assert.equal(h.rpcCalls.filter(call=>call.name==='tc_register_call_minutes').length,1);
+ const payload=h.rpcCalls[0].payload;
+ assert.equal(payload.tarotista_worker_id,null);assert.equal(payload.tarotista_nombre,'Josefa call');
+ assert.equal(payload.llamada_call,true);assert.equal(payload.tiempo,20);
 });
 test('Old listing and payment selection are disabled before mutation',async()=>{
  const h=harness();assert.equal((await h.get()).status,410);

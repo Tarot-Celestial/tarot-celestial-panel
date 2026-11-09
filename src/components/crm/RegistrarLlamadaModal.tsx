@@ -419,6 +419,7 @@ export default function RegistrarLlamadaModal({
 
   const [tarotistaId, setTarotistaId] = useState("");
   const [marioTarotistaId, setMarioTarotistaId] = useState("");
+  const [callTarotistaId, setCallTarotistaId] = useState("");
   const [tarotistaCallManual, setTarotistaCallManual] = useState("");
   const [formaPago, setFormaPago] = useState<(typeof PAGO_OPTIONS)[number] | "">("");
   const [importe, setImporte] = useState("");
@@ -476,6 +477,7 @@ export default function RegistrarLlamadaModal({
     setCodigo2("");
     setTarotistaId("");
     setMarioTarotistaId("");
+    setCallTarotistaId("");
     setTarotistaCallManual("");
     setFormaPago("");
     setImporte("");
@@ -595,7 +597,7 @@ export default function RegistrarLlamadaModal({
       if (usoSinCompra === "minutos") {
         list.push({ key: "tarotista", title: "Tarotista que atiende", subtitle: "Selecciona la tarotista que ha recibido la llamada." });
         if (tarotistaId === CALL_MANUAL_VALUE) {
-          list.push({ key: "call_manual", title: "Nombre tarotista CALL", subtitle: "Escribe el nombre manual que quieres guardar en rendimiento." });
+          list.push({ key: "call_manual", title: "Tarotista CALL", subtitle: "Si tiene panel, selecciónala para que esta llamada aparezca en su actividad." });
         }
         if (tarotistaId === CALL_MARIO_VALUE) {
           list.push({ key: "mario_tarotista", title: "Tarotista real que atiende", subtitle: "CALL MARIO indica el origen. Selecciona ahora quién prestó realmente el servicio." });
@@ -612,7 +614,7 @@ export default function RegistrarLlamadaModal({
         list.push({ key: "codigos", title: "¿Qué código de minutos usa?", subtitle: "Registra aquí los minutos utilizados en esta llamada." });
         list.push({ key: "tarotista", title: "Tarotista que atiende", subtitle: "Selecciona la tarotista que ha atendido la llamada." });
         if (tarotistaId === CALL_MANUAL_VALUE) {
-          list.push({ key: "call_manual", title: "Nombre tarotista CALL", subtitle: "Escribe el nombre manual de la tarotista CALL." });
+          list.push({ key: "call_manual", title: "Tarotista CALL", subtitle: "Si tiene panel, selecciónala para que esta llamada aparezca en su actividad." });
         }
         if (tarotistaId === CALL_MARIO_VALUE) {
           list.push({ key: "mario_tarotista", title: "Tarotista real que atiende", subtitle: "CALL MARIO indica el colaborador de origen; selecciona la tarotista que realizó la consulta." });
@@ -634,12 +636,18 @@ export default function RegistrarLlamadaModal({
     return toNum(minutos1) + toNum(minutos2);
   }, [clienteCompra, usoSinCompra, minutos1, minutos2, isRankFree, selectedRankFree, isInitialFree, initialFree.minutes]);
 
+  const selectedCallTarotista = tarotistas.find(t => t.id === callTarotistaId && isUuid(t.id) && t.is_active !== false);
+  // Keep the manual CALL marker alongside the real worker ID: it determines the existing CALL tariff.
+  const callTarotistaName = callTarotistaId
+    ? selectedCallTarotista ? `${selectedCallTarotista.display_name?.trim() || "Tarotista"} CALL` : ""
+    : tarotistaCallManual.trim();
+
   const tarotistaLabel = useMemo(() => {
     if (isRankFree) return selectedRankFree?.workerName || "—";
-    if (tarotistaId === CALL_MANUAL_VALUE) return tarotistaCallManual.trim() || "CALL";
+    if (tarotistaId === CALL_MANUAL_VALUE) return callTarotistaName || "CALL";
     const realTarotistaId = tarotistaId === CALL_MARIO_VALUE ? marioTarotistaId : tarotistaId;
     return tarotistas.find((t) => String(t.id) === String(realTarotistaId))?.display_name || "—";
-  }, [tarotistaId, marioTarotistaId, tarotistaCallManual, tarotistas, isRankFree, selectedRankFree]);
+  }, [tarotistaId, marioTarotistaId, callTarotistaName, tarotistas, isRankFree, selectedRankFree]);
 
   const isMarioCall = !isFreeGift && tarotistaId === CALL_MARIO_VALUE;
 
@@ -670,7 +678,7 @@ export default function RegistrarLlamadaModal({
 
   const tarotistaSelectOptions = useMemo<GameSelectOption[]>(() => [
     { value: CALL_MARIO_VALUE, label: "✦ CALL MARIO · colaborador", special: "mario" },
-    { value: CALL_MANUAL_VALUE, label: "CALL · tarotista manual", special: "manual" },
+    { value: CALL_MANUAL_VALUE, label: "CALL · equipo o manual", special: "manual" },
     ...tarotistas.map((tarotista) => ({
       value: String(tarotista.id),
       label: `${tarotista.display_name || tarotista.id}${tarotista.state ? ` · ${tarotista.state}` : ""}`,
@@ -686,7 +694,10 @@ export default function RegistrarLlamadaModal({
   function changeTarotistaChoice(value: string) {
     setTarotistaId(value);
     if (value !== CALL_MARIO_VALUE) setMarioTarotistaId("");
-    if (value !== CALL_MANUAL_VALUE) setTarotistaCallManual("");
+    if (value !== CALL_MANUAL_VALUE) {
+      setCallTarotistaId("");
+      setTarotistaCallManual("");
+    }
   }
 
   function chooseRankFree(offer: RankFreeOffer) {
@@ -695,6 +706,7 @@ export default function RegistrarLlamadaModal({
     setRankFreeWorkerId(offer.workerId);
     setTarotistaId(offer.workerId);
     setMarioTarotistaId("");
+    setCallTarotistaId("");
     setTarotistaCallManual("");
     setCodigo1("FREE");
     setMinutos1("0");
@@ -709,6 +721,7 @@ export default function RegistrarLlamadaModal({
     setUsoSinCompra("initial_free");
     setTarotistaId("");
     setMarioTarotistaId("");
+    setCallTarotistaId("");
     setTarotistaCallManual("");
     setCodigo1("FREE");
     setMinutos1("0");
@@ -754,7 +767,7 @@ export default function RegistrarLlamadaModal({
       case "tarotista":
         return Boolean(tarotistaId);
       case "call_manual":
-        return Boolean(tarotistaCallManual.trim());
+        return Boolean(callTarotistaName);
       case "mario_tarotista":
         return Boolean(marioTarotistaId);
       case "pago":
@@ -809,6 +822,10 @@ export default function RegistrarLlamadaModal({
       setMsg("Selecciona la tarotista real de la primera consulta antes de guardar.");
       return;
     }
+    if (!isFreeGift && tarotistaId === CALL_MANUAL_VALUE && !callTarotistaName) {
+      setMsg("Selecciona una tarotista activa del equipo o escribe el nombre manual de quien no tiene panel.");
+      return;
+    }
     if (!paypalSourceValid) {
       setMsg("Revisa el origen del cobro y las compras web en Importe cobrado antes de registrar una compra nueva.");
       return;
@@ -821,7 +838,7 @@ export default function RegistrarLlamadaModal({
       if (modalGeneration !== modalGenerationRef.current) return;
       if (!token) return;
 
-      const actualTarotistaWorkerId = isRankFree ? selectedRankFree?.workerId : isMarioCall ? marioTarotistaId : (tarotistaId && tarotistaId !== CALL_MANUAL_VALUE ? tarotistaId : null);
+      const actualTarotistaWorkerId = isRankFree ? selectedRankFree?.workerId : isMarioCall ? marioTarotistaId : tarotistaId === CALL_MANUAL_VALUE ? callTarotistaId || null : tarotistaId || null;
 
       const payload = {
         minute_accounting_version: 3,
@@ -843,7 +860,7 @@ export default function RegistrarLlamadaModal({
         codigo_2: isFreeGift ? null : codigo2 || null,
         minutos_2: isFreeGift ? 0 : toNum(minutos2),
         tarotista_worker_id: actualTarotistaWorkerId,
-        tarotista_manual_call: !isFreeGift && tarotistaId === CALL_MANUAL_VALUE ? tarotistaCallManual.trim() : null,
+        tarotista_manual_call: !isFreeGift && tarotistaId === CALL_MANUAL_VALUE ? callTarotistaName : null,
         collaborator_source: isMarioCall ? CALL_MARIO_VALUE : null,
         forma_pago: clienteCompra === "si" ? formaPago || null : null,
         paypal_collection_order_id: selectedCollection?.id || null,
@@ -1154,8 +1171,16 @@ export default function RegistrarLlamadaModal({
 
             {current?.key === "call_manual" && (
               <div style={{ marginTop: 18 }}>
-                <div className="tc-sub">Nombre tarotista CALL</div>
-                <input className={`${styles.gameInput} tc-input`} value={tarotistaCallManual} onChange={(e) => setTarotistaCallManual(e.target.value)} placeholder="Ej: Call400" style={{ width: "100%", marginTop: 6 }} />
+                <label className="tc-sub" htmlFor="call-team-tarotista">Tarotista del equipo (opcional)</label>
+                <select id="call-team-tarotista" className={`${styles.gameInput} ${styles.gameSelect} tc-input`} value={callTarotistaId} onChange={(e) => { setCallTarotistaId(e.target.value); setTarotistaCallManual(""); }} style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}>
+                  <option value="">Nombre manual · sin panel</option>
+                  {initialTarotistaOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+                {callTarotistaId ? <p>Se registrará como {callTarotistaName || "tarotista pendiente de seleccionar"}, vinculada a su panel. Se mantiene la tarifa CALL.</p> : <>
+                  <label className="tc-sub" htmlFor="call-manual-name">Nombre tarotista CALL sin panel</label>
+                  <input id="call-manual-name" className={`${styles.gameInput} tc-input`} value={tarotistaCallManual} onChange={(e) => setTarotistaCallManual(e.target.value)} placeholder="Ej: Call400" style={{ width: "100%", marginTop: 6 }} />
+                  <p>Esta opción guarda el nombre, pero no asigna la llamada a ningún panel de tarotista.</p>
+                </>}
               </div>
             )}
 

@@ -44,7 +44,7 @@ async function click(tree, label) {
   assert.notEqual(button.props.disabled, true, `Disabled button: ${label}`);
   await renderer.act(async () => { await button.props.onClick(); });
 }
-async function mount({ rank = 'plata', offer = {}, balance = 0, initial = { eligible: false, reason: 'PREVIOUS_CONSULTATION' }, balanceFetch, post } = {}) {
+async function mount({ rank = 'plata', offer = {}, balance = 0, initial = { eligible: false, reason: 'PREVIOUS_CONSULTATION' }, balanceFetch, post, tarotistas = [{ id: worker, display_name: 'Josefa' }] } = {}) {
   const requests = [], saved = [], closed = [];
   const Component = loadComponent(async (url, init = {}) => {
     requests.push({ url, ...init });
@@ -52,7 +52,7 @@ async function mount({ rank = 'plata', offer = {}, balance = 0, initial = { elig
     if (url.includes('mode=balance')) return balanceFetch ? balanceFetch(url) : jsonResponse({ ok: true, balance: { minutos_free_pendientes: balance, minutos_normales_pendientes: 0 }, rank_free: preview(rank, offer), initial_free: { policy_key: 'initial_consultation_once_v1', minutes: 7, ...initial } });
     return jsonResponse({ ok: true, capture_xp: null });
   });
-  const props = { open: true, cliente: { id: client, nombre: 'Clienta simulada', free_passes: { effective_rank: 'diamante' } }, tarotistas: [{ id: worker, display_name: 'Josefa' }], getToken: async () => 'fixture', onClose: () => closed.push(true), onSuccess: (...args) => saved.push(args) };
+  const props = { open: true, cliente: { id: client, nombre: 'Clienta simulada', free_passes: { effective_rank: 'diamante' } }, tarotistas, getToken: async () => 'fixture', onClose: () => closed.push(true), onSuccess: (...args) => saved.push(args) };
   let tree;
   await renderer.act(async () => { tree = renderer.create(React.createElement(Component, props)); });
   return { tree, requests, saved, closed, Component, props, posts: () => requests.filter(item => item.method === 'POST').map(item => JSON.parse(item.body)), unmount: () => renderer.act(async () => tree.unmount()) };
@@ -61,6 +61,136 @@ async function openConsultation(tree) {
   await click(tree, 'Usar saldo o regalo · sin nueva compra');
   await click(tree, 'Siguiente');
 }
+
+async function changeField(tree, id, value) {
+  await renderer.act(async () => tree.root.findByProps({ id }).props.onChange({ target: { value } }));
+}
+async function changeGameSelect(tree, ariaLabel, value) {
+  await renderer.act(async () => tree.root.findByProps({ ariaLabel }).props.onChange(value));
+}
+async function openCallSelection(tree, purchase = false) {
+  if (purchase) {
+    await click(tree, 'Registrar una compra nueva'); await click(tree, 'Siguiente');
+    await click(tree, 'Usa todos los minutos'); await click(tree, 'Siguiente');
+  } else {
+    await openConsultation(tree); await click(tree, 'Usar saldo pendiente'); await click(tree, 'Siguiente');
+  }
+  await renderer.act(async () => tree.root.findAllByType('input')[0].props.onChange({ target: { value: '10' } }));
+  await click(tree, 'Siguiente');
+  await changeGameSelect(tree, 'Tarotista que atiende u origen de la llamada', 'CALL');
+  await click(tree, 'Siguiente');
+}
+
+test('CALL linked to a team worker sends its explicit ID and keeps the CALL marker and consumed minutes', async () => {
+  const h = await mount({ balance: 20 });
+  await openCallSelection(h.tree);
+  await changeField(h.tree, 'call-team-tarotista', worker);
+  assert.equal(h.tree.root.findAllByProps({ id: 'call-manual-name' }).length, 0);
+  assert.match(contents(h.tree), /Josefa CALL.*vinculada a su panel.*mantiene la tarifa CALL/);
+  await click(h.tree, 'Siguiente'); await click(h.tree, 'Registrar llamada');
+  const [payload] = h.posts();
+  assert.equal(payload.tarotista_worker_id, worker); assert.equal(payload.tarotista_manual_call, 'Josefa CALL');
+  assert.equal(payload.collaborator_source, null); assert.equal(payload.minutos_1, 10); assert.equal(payload.codigo_1, 'FREE');
+  assert.equal(payload.minutos_2, 0); assert.equal(payload.cliente_compra_minutos, false);
+  assert.equal(payload.operation_id, operation); assert.equal(h.posts().length, 1);
+  await h.unmount();
+});
+
+test('CALL returning to manual mode clears the worker link and does not infer it from a typed name', async () => {
+  const h = await mount({ balance: 20 });
+  await openCallSelection(h.tree);
+  await changeField(h.tree, 'call-team-tarotista', worker);
+  await changeField(h.tree, 'call-team-tarotista', '');
+  assert.equal(h.tree.root.findByProps({ id: 'call-manual-name' }).props.value, '');
+  await click(h.tree, 'Siguiente'); assert.match(contents(h.tree), /Completa esta pregunta/);
+  await changeField(h.tree, 'call-manual-name', '  Josefa call  ');
+  await click(h.tree, 'Siguiente'); await click(h.tree, 'Registrar llamada');
+  assert.equal(h.posts()[0].tarotista_worker_id, null); assert.equal(h.posts()[0].tarotista_manual_call, 'Josefa call');
+  await h.unmount();
+});
+
+test('CALL external manual registration remains compatible without selecting a team worker', async () => {
+  const h = await mount({ balance: 20 });
+  await openCallSelection(h.tree);
+  await changeField(h.tree, 'call-manual-name', 'Call400');
+  await click(h.tree, 'Siguiente'); await click(h.tree, 'Registrar llamada');
+  assert.equal(h.posts()[0].tarotista_worker_id, null); assert.equal(h.posts()[0].tarotista_manual_call, 'Call400');
+  await h.unmount();
+});
+
+test('CALL team selection filters invalid or inactive IDs and distinguishes equal display names by UUID', async () => {
+  const twin = '00000000-0000-4000-8000-000000000019';
+  const inactive = '00000000-0000-4000-8000-000000000029';
+  const h = await mount({ balance: 20, tarotistas: [{ id: worker, display_name: 'Josefa' }, { id: twin, display_name: 'Josefa' }, { id: inactive, display_name: 'Inactiva', is_active: false }, { id: 'CALL', display_name: 'Manual' }] });
+  await openCallSelection(h.tree);
+  assert.deepEqual(h.tree.root.findByProps({ id: 'call-team-tarotista' }).findAllByType('option').map(option => option.props.value), ['', worker, twin]);
+  await changeField(h.tree, 'call-team-tarotista', twin);
+  await click(h.tree, 'Siguiente'); await click(h.tree, 'Registrar llamada');
+  assert.equal(h.posts()[0].tarotista_worker_id, twin);
+  await h.unmount();
+});
+
+test('CALL selection removed or deactivated after review cannot silently become a manual call', async () => {
+  for (const tarotistas of [[], [{ id: worker, display_name: 'Josefa', is_active: false }]]) {
+    const h = await mount({ balance: 20 });
+    await openCallSelection(h.tree); await changeField(h.tree, 'call-team-tarotista', worker); await click(h.tree, 'Siguiente');
+    await renderer.act(async () => h.tree.update(React.createElement(h.Component, { ...h.props, tarotistas })));
+    await click(h.tree, 'Registrar llamada');
+    assert.equal(h.posts().length, 0); assert.match(contents(h.tree), /Selecciona una tarotista activa del equipo/);
+    await h.unmount();
+  }
+});
+
+test('CALL changing to ordinary worker clears the CALL state and leaves the ordinary payload intact', async () => {
+  const h = await mount({ balance: 20 });
+  await openCallSelection(h.tree); await changeField(h.tree, 'call-team-tarotista', worker);
+  await click(h.tree, 'Atrás'); await changeGameSelect(h.tree, 'Tarotista que atiende u origen de la llamada', worker);
+  await click(h.tree, 'Siguiente'); await click(h.tree, 'Registrar llamada');
+  assert.equal(h.posts()[0].tarotista_worker_id, worker); assert.equal(h.posts()[0].tarotista_manual_call, null);
+  assert.equal(h.posts()[0].collaborator_source, null);
+  await h.unmount();
+});
+
+test('CALL changing to CALL MARIO preserves its independent real worker and collaborator source', async () => {
+  const h = await mount({ balance: 20 });
+  await openCallSelection(h.tree); await changeField(h.tree, 'call-team-tarotista', worker);
+  await click(h.tree, 'Atrás'); await changeGameSelect(h.tree, 'Tarotista que atiende u origen de la llamada', 'CALL_MARIO');
+  await click(h.tree, 'Siguiente');
+  await changeGameSelect(h.tree, 'Tarotista real que atendió la llamada de CALL MARIO', worker);
+  await click(h.tree, 'Siguiente'); await click(h.tree, 'Registrar llamada');
+  assert.equal(h.posts()[0].tarotista_worker_id, worker); assert.equal(h.posts()[0].tarotista_manual_call, null);
+  assert.equal(h.posts()[0].collaborator_source, 'CALL_MARIO');
+  await h.unmount();
+});
+
+test('CALL worker selection resets on another client and cannot leak into a new manual registration', async () => {
+  const h = await mount({ balance: 20 });
+  await openCallSelection(h.tree); await changeField(h.tree, 'call-team-tarotista', worker);
+  await renderer.act(async () => h.tree.update(React.createElement(h.Component, { ...h.props, cliente: { id: otherClient, nombre: 'Otra simulada' } })));
+  await openCallSelection(h.tree);
+  assert.equal(h.tree.root.findByProps({ id: 'call-team-tarotista' }).props.value, '');
+  await changeField(h.tree, 'call-manual-name', 'Call400');
+  await click(h.tree, 'Siguiente'); await click(h.tree, 'Registrar llamada');
+  assert.equal(h.posts()[0].cliente_id, otherClient); assert.equal(h.posts()[0].tarotista_worker_id, null);
+  await h.unmount();
+});
+
+test('CALL team purchase retains payment fields and retries the same operation and attribution after an uncertain save', async () => {
+  let attempts = 0;
+  const h = await mount({ post: () => { if (++attempts === 1) throw Error('Network unavailable'); return jsonResponse({ ok: true, duplicate_prevented: true }); } });
+  await openCallSelection(h.tree, true); await changeField(h.tree, 'call-team-tarotista', worker); await click(h.tree, 'Siguiente');
+  await renderer.act(async () => h.tree.root.findByType('select').props.onChange({ target: { value: 'TPV' } }));
+  await click(h.tree, 'Siguiente');
+  await renderer.act(async () => h.tree.root.findByType('input').props.onChange({ target: { value: '22' } }));
+  await click(h.tree, 'Siguiente'); await click(h.tree, 'Siguiente');
+  await click(h.tree, 'Registrar llamada'); await click(h.tree, 'Registrar llamada');
+  assert.equal(h.posts().length, 2); assert.deepEqual(h.posts()[0], h.posts()[1]);
+  const payload = h.posts()[0];
+  assert.equal(payload.tarotista_worker_id, worker); assert.equal(payload.tarotista_manual_call, 'Josefa CALL');
+  assert.equal(payload.importe, 22); assert.equal(payload.forma_pago, 'TPV'); assert.equal(payload.clasificacion, 'nada');
+  assert.equal(payload.cliente_compra_minutos, true); assert.equal(payload.operation_id, operation);
+  await h.unmount();
+});
 
 const giftButton = tree => tree.root.findAllByType('button').find(button => button.findAllByType('strong').some(strong => text(strong) === 'Regalo para conocer a una tarotista nueva'));
 const initialButton = tree => tree.root.findAllByType('button').find(button => button.findAllByType('strong').some(strong => text(strong) === 'Regalo de primera consulta'));

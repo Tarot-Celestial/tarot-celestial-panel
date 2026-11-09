@@ -16,6 +16,11 @@ const actor=tarotist?'tarotista':'supervisor',name=tarotist?'Analia · Prueba':'
 const record={id:'call-fixture',first_name:'Lucía',blocks:[{code:'FREE',minutes:10},{code:'CLIENTE',minutes:20}],total:30,revision:1,occurred_at:iso(6),appeal:null};
 const seed=[{id:'m1',sender_worker_id:'central',sender_display_name:'María · Prueba',text:'Buenos días, Analia ☀️ ¿Lista para empezar?',created_at:iso(18)},{id:'m2',sender_worker_id:'tarotista',sender_display_name:'Analia · Prueba',text:'¡Buenos días! Sí, ya estoy preparada 💜',created_at:iso(17)},{id:'m3',sender_worker_id:'central',sender_display_name:'María · Prueba',text:'Consulta registrada',kind:'consultation',consultation:record,created_at:iso(6)},{id:'m4',sender_worker_id:'supervisor',sender_display_name:'Alex · Prueba',text:'Gracias, equipo. Aquí podéis revisar los minutos y avisarnos si hay algo que corregir.',created_at:iso(4)},{id:'m5',sender_worker_id:'tarotista',sender_display_name:'Analia · Prueba',text:'Perfecto, todo correcto. Gracias ✨',created_at:iso(3)}];
 const qa={messages:{t0:seed.map(m=>({...m,thread_id:'t0'}))},profiles:{tarotista:{worker_id:'tarotista',avatar_kind:'character',character:'moon',revision:1},central:{worker_id:'central',avatar_kind:'character',character:'flower',revision:1},supervisor:{worker_id:'supervisor',avatar_kind:'character',character:'owl',revision:1}},preferences:{},attachments:{},requests:[],pauses:[]};window.__staffChatFixture=qa;
+if(params.get('history')==='1'){
+ const older=Array.from({length:125},(_,i)=>({id:'history-'+String(i+1).padStart(3,'0'),thread_id:'t0',sender_worker_id:i%2?'tarotista':'central',sender_display_name:i%2?'Analia · Prueba':'María · Prueba',text:'Mensaje de historial '+String(i+1).padStart(3,'0')+' · Datos ficticios para comprobar la lectura de varios días.',created_at:new Date(now-(130-i)*3600000).toISOString()}));
+ qa.messages.t0=[...older,...qa.messages.t0];
+ qa.messages.t1=seed.slice(0,2).map(m=>({...m,thread_id:'t1',text:'Conversación corta de prueba · '+m.text}));
+}
 function ownAppearance(thread){return{ok:true,profile:qa.profiles[actor]||{worker_id:actor,avatar_kind:'initials',revision:0},profiles:qa.profiles,preference:qa.preferences[thread]||{wallpaper:'aurora',background_url:null,revision:0}};}
 class ChatRequestError extends Error{constructor(code,status=400){super(code);this.code=code;this.status=status;}}
 async function request(url,init={}){
@@ -27,7 +32,12 @@ async function request(url,init={}){
    else qa.preferences[thread]={wallpaper:file?'custom':body.wallpaper,background_url:file?URL.createObjectURL(file):null,revision:revision+1};
   }return ownAppearance(thread);
  }
- if(parsed.pathname==='/api/chat/messages'&&!body)return{ok:true,messages:qa.messages[parsed.searchParams.get('thread_id')]||[],has_more:false,next_cursor:null};
+ if(parsed.pathname==='/api/chat/messages'&&!body){
+  const all=qa.messages[parsed.searchParams.get('thread_id')]||[],before=parsed.searchParams.get('before');
+  const end=before?all.findIndex(m=>'v1|'+m.created_at+'|'+m.id===before):all.length,start=Math.max(0,end-40);
+  if(end<0)throw new ChatRequestError('CURSOR_INVALID');
+  return{ok:true,messages:all.slice(start,end),has_more:start>0,next_cursor:start>0?'v1|'+all[start].created_at+'|'+all[start].id:null};
+ }
  if(parsed.pathname==='/api/chat/messages'){const message={...body,id:crypto.randomUUID(),sender_worker_id:actor,sender_display_name:name,created_at:new Date().toISOString(),attachment:body.attachment_id?qa.attachments[body.attachment_id]:null};(qa.messages[body.thread_id]??=[]).push(message);return{ok:true,message};}
  if(parsed.pathname==='/api/chat/media/read')return{ok:true,url:qa.attachments[parsed.searchParams.get('attachment_id')]?.previewUrl,expires_in:60};
  if(parsed.pathname==='/api/chat/threads')return{ok:true,thread:{id:'t'+contacts.findIndex(c=>c.id===body.contact_worker_id)}};
@@ -59,8 +69,9 @@ function require(name,from='/'){
 }
 ${definitions}
 const Panel=require('/src/components/chat/StaffDirectChatPanel.tsx').default;
-function App(){const [,redraw]=React.useState(0);const value={me:{id:actor,role:tarotist?'tarotista':'admin',display_name:name,can_admin:!tarotist},mode:tarotist?'tarotista':'admin',contacts,threads:contacts.map((contact,i)=>({id:'t'+i,contact,central_worker_id:tarotist?contact.id:'central',central_display_name:'María · Prueba',tarotist_worker_id:tarotist?'tarotista':contact.id,unread_count:i===1?2:0,last_message_preview:i===0?'Perfecto, todo correcto. Gracias ✨':'Iniciar conversación'})),loading:false,error:'',live:true,sound:false,volume:60,audioReady:true,notificationPermission:'default',refresh:async()=>redraw(x=>x+1),setSound:()=>{},setVolume:()=>{},testSound:async()=>{},enableNotifications:async()=>{},setVisibleThread:()=>{},incoming:null,openRequest:null};
- return h('main',null,h('div',{className:'fixtureNotice'},h('div',null,h('h1',null,'Chat del equipo · Vista previa local'),'Datos ficticios. Ningún envío, consulta, archivo o permiso sale de esta prueba.'),h('div',{className:'fixtureTools'},h('a',{href:'/chat?role=admin'},'Ver administración'),h('a',{href:'/chat?role=tarotista'},'Ver tarotista'))),h(ctx.Provider,{value},h(Panel,{compact:params.get('compact')==='1'})));}
+function App(){const [,redraw]=React.useState(0),[incoming,setIncoming]=React.useState(null);const value={me:{id:actor,role:tarotist?'tarotista':'admin',display_name:name,can_admin:!tarotist},mode:tarotist?'tarotista':'admin',contacts,threads:contacts.map((contact,i)=>({id:'t'+i,contact,central_worker_id:tarotist?contact.id:'central',central_display_name:'María · Prueba',tarotist_worker_id:tarotist?'tarotista':contact.id,unread_count:i===1?2:0,last_message_preview:i===0?'Perfecto, todo correcto. Gracias ✨':'Iniciar conversación'})),loading:false,error:'',live:true,sound:false,volume:60,audioReady:true,notificationPermission:'default',refresh:async()=>redraw(x=>x+1),setSound:()=>{},setVolume:()=>{},testSound:async()=>{},enableNotifications:async()=>{},setVisibleThread:()=>{},incoming,openRequest:null};
+ function receiveBatch(){const stamp=Date.now(),batch=Array.from({length:85},(_,i)=>({id:crypto.randomUUID(),thread_id:'t0',sender_worker_id:'tarotista',sender_display_name:'Analia · Prueba',text:'Nuevo mensaje simulado '+(i+1)+' de 85',created_at:new Date(stamp+i).toISOString()}));qa.messages.t0.push(...batch);setIncoming(batch.at(-1));}
+ return h('main',null,h('div',{className:'fixtureNotice'},h('div',null,h('h1',null,'Chat del equipo · Vista previa local'),'Datos ficticios. Ningún envío, consulta, archivo o permiso sale de esta prueba.'),h('div',{className:'fixtureTools'},h('a',{href:'/chat?role=admin&history=1'},'Historial de 130 mensajes'),h('a',{href:'/chat?role=tarotista&history=1'},'Ver tarotista'),params.get('history')==='1'?h('button',{onClick:receiveBatch},'Simular 85 mensajes nuevos'):null)),h(ctx.Provider,{value},h(Panel,{compact:params.get('compact')==='1'})));}
 ReactDOM.createRoot(document.getElementById('root')).render(h(App));
 </script></html>`;
 };
