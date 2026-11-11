@@ -611,6 +611,8 @@ export default function ClienteDashboardPage() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
+      cache: "no-store",
+      keepalive: true,
     });
 
     const json = await res.json().catch(() => null);
@@ -620,14 +622,28 @@ export default function ClienteDashboardPage() {
     }
 
     const updated = json.cliente as Cliente | undefined;
-    if (!updated?.id || updated.id !== cliente?.id || updated.onboarding_completado !== true) {
+    if (!json.persistence_confirmed || !updated?.id || updated.id !== cliente?.id || updated.onboarding_completado !== true) {
       throw new Error("No se ha confirmado el perfil completo. Inténtalo de nuevo.");
     }
-    // Commit the saved profile before closing, invalidating reads started before
-    // the write. Refresh balances separately without delaying wizard completion.
+
+    // Confirmación desde una petición nueva: nunca cerrar el formulario solo
+    // porque la escritura respondió OK si otro inicio de sesión no la vería.
+    const verification = await fetch(`/api/cliente/perfil?verify=onboarding&fresh=${Date.now()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    const verified = await verification.json().catch(() => null);
+    if (!verification.ok || !verified?.ok || verified.cliente_id !== updated.id ||
+      verified.onboarding_completado !== true || verified.fecha_nacimiento_confirmada !== true) {
+      throw new Error("El perfil todavía no se ha podido verificar. Vuelve a pulsar Completar mi perfil.");
+    }
+
+    // Commit the confirmed profile before closing, invalidating reads started
+    // before the write. Refresh balances separately without delaying the UI.
     dataRevisionRef.current += 1;
     setCliente((current) => current?.id === updated.id ? { ...current, ...updated } : current);
     setShowOnboarding(false);
+    setMsg("✅ Tu perfil ha quedado guardado y verificado. Ya puedes volver a entrar sin repetir el registro.");
     void loadData();
 
   } catch (e: any) {
