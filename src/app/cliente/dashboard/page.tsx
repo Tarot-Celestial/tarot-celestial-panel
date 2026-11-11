@@ -395,7 +395,54 @@ export default function ClienteDashboardPage() {
   }, [loadData, loadOracle, loadRouletteSummary]);
 
   useEffect(() => {
-    setShowOnboarding(Boolean(cliente && !cliente.onboarding_completado));
+    if (!cliente?.id || cliente.onboarding_completado === true) {
+      setShowOnboarding(false);
+      return;
+    }
+
+    // /me includes wallet, rank and notification calculations. A delayed or
+    // stale dashboard response must never make a customer repeat a profile
+    // that has already been saved. Check the independent, uncached profile
+    // endpoint before opening the first-time wizard.
+    let active = true;
+    const clientId = cliente.id;
+    setShowOnboarding(false);
+
+    async function checkSavedOnboarding() {
+      try {
+        const { data } = await sb.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) throw new Error("NO_AUTH");
+
+        const response = await fetch(`/api/cliente/perfil?verify=onboarding&fresh=${Date.now()}`, {
+          headers: { Authorization: `Bearer ${token}`, "Cache-Control": "no-cache" },
+          cache: "no-store",
+          signal: AbortSignal.timeout(10000),
+        });
+        const verified = await response.json().catch(() => null);
+        if (!response.ok || !verified?.ok || verified.cliente_id !== clientId ||
+          typeof verified.onboarding_completado !== "boolean") {
+          throw new Error("ONBOARDING_VERIFICATION_FAILED");
+        }
+        if (!active) return;
+
+        if (verified.onboarding_completado) {
+          setCliente((current) => current?.id === clientId ? { ...current, onboarding_completado: true } : current);
+          setShowOnboarding(false);
+        } else {
+          setShowOnboarding(true);
+        }
+      } catch {
+        if (!active) return;
+        // If verification is unavailable, do not ask for the same personal
+        // data again. A reload can safely retry without changing the profile.
+        setShowOnboarding(false);
+        setMsg("No hemos podido comprobar si tu perfil ya está completo. Actualiza la página para volver a intentarlo.");
+      }
+    }
+
+    void checkSavedOnboarding();
+    return () => { active = false; };
   }, [cliente?.id, cliente?.onboarding_completado]);
 
   useEffect(() => {
