@@ -30,6 +30,10 @@ function cleanDate(value: unknown): { value: string | null; error: string | null
   return { value: text, error: null };
 }
 
+function hasField(value: unknown, field: string): boolean {
+  return Boolean(value && typeof value === "object" && Object.prototype.hasOwnProperty.call(value, field));
+}
+
 function isInternalEmail(value: unknown) {
   return String(value || "").toLowerCase().endsWith("@auth.tarotcelestial.local");
 }
@@ -46,6 +50,25 @@ export async function GET(req: Request) {
     const gate = await clientFromRequest(req);
     if (!gate.uid) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401, headers });
     if (!gate.cliente) return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404, headers });
+
+    // Consulta mínima e independiente de la cartera para verificar una
+    // finalización desde otra petición (o tras volver a iniciar sesión).
+    if (new URL(req.url).searchParams.get("verify") === "onboarding") {
+      const { data: saved, error } = await gate.admin
+        .from("crm_clientes")
+        .select("id,onboarding_completado,fecha_nacimiento")
+        .eq("id", gate.cliente.id)
+        .eq("auth_user_id", gate.uid)
+        .maybeSingle();
+      if (error) throw error;
+      if (!saved) return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404, headers });
+      return NextResponse.json({
+        ok: true,
+        cliente_id: saved.id,
+        onboarding_completado: saved.onboarding_completado === true,
+        fecha_nacimiento_confirmada: Boolean(saved.fecha_nacimiento),
+      }, { headers });
+    }
 
     const [{ data: freshCliente, error: freshClienteError }, { data: authData }, snapshotResult] = await Promise.all([
       gate.admin.from("crm_clientes").select("*").eq("id", gate.cliente.id).maybeSingle(),
@@ -111,35 +134,60 @@ export async function POST(req: Request) {
     const nombre = cleanText(body?.nombre, 80);
     if (!nombre) return NextResponse.json({ ok: false, error: "Introduce tu nombre." }, { status: 400, headers });
 
-    const patch = {
+    const completingOnboarding = body?.onboarding_completado === true;
+    if (completingOnboarding && !birthDate.value) {
+      return NextResponse.json({ ok: false, error: "Selecciona una fecha de nacimiento válida para finalizar el perfil." }, { status: 400, headers });
+    }
+
+    // No borrar datos que el formulario no envía. El asistente inicial no
+    // incluye el país, pero antes se sustituía por null en cada guardado.
+    const patch: Record<string, unknown> = {
       nombre,
-      apellido: cleanText(body?.apellido, 100),
-      email: email.value,
-      pais: cleanText(body?.pais, 80),
-      fecha_nacimiento: birthDate.value,
-      onboarding_completado: Boolean(gate.cliente.onboarding_completado || (nombre && birthDate.value)),
       updated_at: new Date().toISOString(),
     };
+    if (hasField(body, "apellido")) patch.apellido = cleanText(body.apellido, 100);
+    if (hasField(body, "email")) patch.email = email.value;
+    if (hasField(body, "pais")) patch.pais = cleanText(body.pais, 80);
+    if (hasField(body, "fecha_nacimiento")) patch.fecha_nacimiento = birthDate.value;
+    if (gate.cliente.onboarding_completado || (nombre && birthDate.value)) patch.onboarding_completado = true;
+
+    const selectFields = "id,nombre,apellido,email,pais,fecha_nacimiento,telefono,telefono_normalizado,onboarding_completado,created_at,updated_at,avatar_path,rango_actual,puntos,minutos_free_pendientes,minutos_normales_pendientes";
     const { data: updated, error } = await gate.admin
       .from("crm_clientes")
       .update(patch)
       .eq("id", gate.cliente.id)
-      .select("id,nombre,apellido,email,pais,fecha_nacimiento,telefono,telefono_normalizado,onboarding_completado,created_at,updated_at,avatar_path,rango_actual,puntos,minutos_free_pendientes,minutos_normales_pendientes")
+      .eq("auth_user_id", gate.uid)
+      .select(selectFields)
       .maybeSingle();
     if (error) throw error;
     if (!updated?.id) return NextResponse.json({ ok: false, error: "No se ha podido actualizar tu perfil." }, { status: 500, headers });
+
+    // PostgREST confirma la escritura; una segunda lectura independiente
+    // verifica que también será visible cuando se abra una sesión nueva.
+    const { data: confirmed, error: confirmationError } = await gate.admin
+      .from("crm_clientes")
+      .select(selectFields)
+      .eq("id", gate.cliente.id)
+      .eq("auth_user_id", gate.uid)
+      .maybeSingle();
+    if (confirmationError) throw confirmationError;
+    if (!confirmed?.id || (completingOnboarding &&
+      (confirmed.onboarding_completado !== true || confirmed.fecha_nacimiento !== birthDate.value))) {
+      console.error("[cliente-perfil:verification]", { confirmed: Boolean(confirmed?.id), completed: confirmed?.onboarding_completado === true });
+      return NextResponse.json({ ok: false, error: "El perfil no ha quedado confirmado. Inténtalo de nuevo." }, { status: 409, headers });
+    }
 
     const currentAuth = await gate.admin.auth.admin.getUserById(gate.uid);
     const { error: authError } = await gate.admin.auth.admin.updateUserById(gate.uid, {
       user_metadata: {
         ...(currentAuth.data?.user?.user_metadata || {}),
-        crm_email: email.value,
-        display_name: [nombre, patch.apellido].filter(Boolean).join(" "),
+        crm_email: confirmed.email || null,
+        display_name: [confirmed.nombre, confirmed.apellido].filter(Boolean).join(" "),
       },
     });
     if (authError) console.warn("[cliente-perfil:auth-metadata]", authError.message);
 
-    return NextResponse.json({ ok: true, cliente: updated }, { headers });
+    return NextResponse.json({ ok: true, cliente: confirmed, persistence_confirmed: true }, { headers });
   } catch (error: any) {
     console.error("[cliente-perfil:post]", { code: error?.code, message: error?.message });
     const duplicate = String(error?.code || "") === "23505";
