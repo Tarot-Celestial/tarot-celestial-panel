@@ -35,6 +35,7 @@ import { tcToast } from "@/lib/tc-toast";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import styles from "./DashboardPanel.module.css";
 import { backgroundFetch } from "@/lib/background-fetch";
+import { reservasFreshUrl } from "@/lib/reservas-sync";
 
 const sb = supabaseBrowser();
 
@@ -355,8 +356,8 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         }),
-        request(`/api/crm/reservas/listar?brand=${activeBrand}`, {
-          headers: { Authorization: `Bearer ${token}` },
+        request(reservasFreshUrl(`/api/crm/reservas/listar?brand=${activeBrand}`), {
+          headers: { Authorization: `Bearer ${token}`, "Cache-Control": "no-cache" },
           cache: "no-store",
         }),
         request(`/api/crm/diario/listar?mode=hoy&brand=${activeBrand}`, {

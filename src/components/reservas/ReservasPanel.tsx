@@ -3,6 +3,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import { reservaClosed, reservaDate, reservaDay, reservaInView, reservaTiming } from "@/lib/reservas";
+import { reservaMutationInSnapshot, reservasFreshUrl } from "@/lib/reservas-sync";
 import styles from "./ReservasPanel.module.css";
 const sb = supabaseBrowser();
 type Row = { id: string; numero_reserva?: number; cliente_id: string; cliente_nombre: string; telefono_normalizado: string; tarotista_id: string; tarotista_nombre: string; tarotista_nombre_manual: string; fecha_reserva: string; estado: string; nota: string; updated_at: string | null; deleted_at?: string | null };
@@ -32,7 +33,6 @@ export default function ReservasPanel({ mode = "admin", embedded = false }: { mo
   const [focusId,setFocusId] = useState("");
   const [zone,setZone] = useState("");
   const serial = useRef(0), savingRef = useRef(false);
-  const deletedIds = useRef(new Set<string>());
   const dialog = useRef<HTMLDialogElement>(null);
   const cancelDelete = useRef<HTMLButtonElement>(null);
   const dialogTitleId = useId(), deleteDescriptionId = useId();
@@ -41,22 +41,31 @@ export default function ReservasPanel({ mode = "admin", embedded = false }: { mo
     if (!data.session?.access_token) throw new Error("Tu sesión ha caducado. Vuelve a iniciar sesión.");
     return data.session.access_token;
   }
+  const fetchSnapshot = useCallback(async (): Promise<Row[]> => {
+    const res = await fetch(reservasFreshUrl(`/api/crm/reservas/listar?brand=${brand}`), {
+      headers: { Authorization: `Bearer ${await token()}`, "Cache-Control": "no-cache", Pragma: "no-cache" },
+      cache: "no-store",
+    });
+    const result = await res.json();
+    if (!res.ok || result.ok !== true || !Array.isArray(result.reservas)) {
+      throw new Error(result.error || "No se pudieron cargar las reservas.");
+    }
+    return result.reservas.filter((row: Row) => !row.deleted_at);
+  }, [brand]);
   const load = useCallback(async (silent = false, preserveError = false) => {
     if (savingRef.current) return;
     const id = ++serial.current;
     if (!silent) setBusy(true);
     try {
-      const res = await fetch(`/api/crm/reservas/listar?brand=${brand}`, { headers: { Authorization: `Bearer ${await token()}` }, cache: "no-store" });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || "No se pudieron cargar las reservas.");
+      const snapshot = await fetchSnapshot();
       if (id === serial.current) {
-        setRows((result.reservas || []).filter((row: Row) => !row.deleted_at && !deletedIds.current.has(row.id)));
+        setRows(snapshot);
         setLastSync(new Date().toISOString());
         if (!preserveError) setError("");
       }
     } catch (e: any) { if (id === serial.current) setError(e.message); }
     finally { if (id === serial.current) setBusy(false); }
-  },[brand]);
+  },[fetchSnapshot]);
   useEffect(() => {
     setZone("Europe/Madrid");
     setBrand(getActiveBrand());
@@ -79,7 +88,6 @@ export default function ReservasPanel({ mode = "admin", embedded = false }: { mo
       const id = String(detail?.id || detail?.reserva?.id || "");
       const reserva = detail?.reserva as Row | undefined;
       if (id && (detail.deleted || reserva?.deleted_at)) {
-        deletedIds.current.add(id);
         serial.current++;
         setBusy(false);
         setRows(prev => prev.filter(row => row.id !== id));
@@ -87,7 +95,6 @@ export default function ReservasPanel({ mode = "admin", embedded = false }: { mo
         refresh();
         return;
       }
-      if (id && deletedIds.current.has(id)) return;
       if (reserva?.id) {
         setRows((prev) => {
           const index = prev.findIndex((row) => row.id === reserva.id);
@@ -144,27 +151,43 @@ export default function ReservasPanel({ mode = "admin", embedded = false }: { mo
   async function save(event:React.FormEvent) {
     event.preventDefault(); if (!edit || savingRef.current) return;
     savingRef.current=true;serial.current++;setBusy(false);setSaving(true);setError("");
-    let refreshAfter = false;
+    let refreshAfter = false, verified = false;
     try {
-      const res=await fetch("/api/crm/reservas/actualizar",{method:"POST",headers:{Authorization:`Bearer ${await token()}`,"Content-Type":"application/json"},body:JSON.stringify({id:edit.row.id,version:edit.row.updated_at,action:edit.action,motivo:reason,fecha_reserva:newDate?new Date(newDate).toISOString():undefined,...(edit.action==="eliminar"?{confirmed:true}:{})})});
+      const res=await fetch("/api/crm/reservas/actualizar",{method:"POST",cache:"no-store",headers:{Authorization:`Bearer ${await token()}`,"Content-Type":"application/json"},body:JSON.stringify({id:edit.row.id,version:edit.row.updated_at,action:edit.action,motivo:reason,fecha_reserva:newDate?new Date(newDate).toISOString():undefined,...(edit.action==="eliminar"?{confirmed:true}:{})})});
       const result=await res.json();
-      if(!res.ok) {
+      if(!res.ok || result.ok !== true) {
         if(res.status===409) {setEdit(null);refreshAfter=true;}
         throw new Error(result.error || "No se pudo guardar.");
       }
-      if(edit.action==="eliminar") {
-        deletedIds.current.add(edit.row.id);
-        setRows(prev=>prev.filter(row=>row.id!==edit.row.id));
-        setFocusId(current=>current===edit.row.id?"":current);
-        window.dispatchEvent(new CustomEvent("tc-reservation-changed",{detail:{id:edit.row.id,reserva:result.reserva,deleted:true}}));
-        setNotice("Reserva eliminada de la agenda. Su registro interno se conserva.");
-      } else {
-        setRows(prev=>prev.map(r=>r.id===result.reserva.id?result.reserva:r));
-        window.dispatchEvent(new CustomEvent("tc-reservation-changed",{detail:{id:result.reserva.id,reserva:result.reserva}}));
-        setNotice("Reserva actualizada correctamente.");
+      if (!result.reserva?.id || result.reserva.id !== edit.row.id || (edit.action === "eliminar" && !result.reserva.deleted_at)) {
+        throw new Error("El servidor no ha confirmado el cambio. Actualiza la agenda antes de continuar.");
       }
-      setEdit(null);refreshAfter=true;
-    }catch(e:any){setError(e.message);}finally{savingRef.current=false;setSaving(false);if(refreshAfter)void load(true,true);}
+      setEdit(null);
+      refreshAfter = true;
+      // No mostramos éxito por un cambio solo en pantalla: comprobamos una nueva
+      // lectura independiente, incluso si la reserva se ha eliminado.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const snapshot = await fetchSnapshot();
+          if (!reservaMutationInSnapshot(edit.action, result.reserva, snapshot)) continue;
+          verified = true;
+          serial.current++;
+          setRows(snapshot);
+          setLastSync(new Date().toISOString());
+          setError("");
+          if (edit.action === "eliminar") setFocusId(current => current === edit.row.id ? "" : current);
+          setNotice(edit.action === "eliminar" ? "Reserva eliminada y verificada en la agenda. Su registro interno se conserva." : "Cambio guardado y verificado en la agenda.");
+          window.dispatchEvent(new CustomEvent("tc-reservation-changed", { detail: { id: edit.row.id, reserva: result.reserva, deleted: edit.action === "eliminar" } }));
+          break;
+        } catch {
+          // Si la lectura falla, las siguientes lecturas utilizan una URL nueva.
+        }
+      }
+      if (!verified) {
+        setNotice("");
+        setError("El servidor recibió el cambio, pero no se pudo comprobar en una lectura nueva. No lo damos por confirmado; actualiza la agenda.");
+      }
+    }catch(e:any){setError(e.message);}finally{savingRef.current=false;setSaving(false);if(refreshAfter && !verified)void load(true,true);}
   }
   return <section className={`${styles.panel} ${embedded?"":"tc-card"}`}>
     <header className={styles.header}><div><span className={styles.eyebrow}>AGENDA DE ATENCIÓN</span><h2>Reservas</h2><p>Las reservas de hoy y las próximas primero. Las pendientes antiguas siguen disponibles en Atrasadas e Historial.</p></div><div className={styles.actions}>

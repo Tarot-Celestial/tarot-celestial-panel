@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { usePanelInteraction } from "@/components/attendance/PanelInteractionContext";
 import { reservationAlertDate, reservationAlertDue, reservationAlertKey, reservationAlertOpen, sameReservationAlert } from "@/lib/reservation-alerts";
+import { reservasFreshUrl } from "@/lib/reservas-sync";
 import { BellRing, CalendarClock, CheckCircle2, ChevronRight, Radio, X } from "lucide-react";
 import ReservationAdvanceNotice from "./ReservationAdvanceNotice";
 import styles from "./ReservasGlobalWatcher.module.css";
@@ -68,7 +69,7 @@ export default function ReservasGlobalWatcher({ enabled = true, advanceNotice = 
       controllers.add(controller);
       const timeout = window.setTimeout(() => controller.abort(), 12_000);
       try {
-        const response = await fetch(url, { headers: { Authorization: `Bearer ${data.session.access_token}` }, cache: "no-store", signal: controller.signal });
+        const response = await fetch(reservasFreshUrl(url), { headers: { Authorization: `Bearer ${data.session.access_token}`, "Cache-Control": "no-cache" }, cache: "no-store", signal: controller.signal });
         const body = await response.json();
         if (disposed || generation !== version) return null;
         if (!response.ok || !body.ok) throw new Error("No se pudo sincronizar la agenda.");
