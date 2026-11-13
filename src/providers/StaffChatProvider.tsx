@@ -15,7 +15,7 @@ export type StaffChatAttachment = { id: string; kind: 'image' | 'audio'; mime_ty
 export type StaffChatMessage = { id: string; thread_id: string; sender_worker_id: string; sender_display_name: string; text: string; created_at: string; updated_at?: string | null; kind?: 'text' | 'consultation' | 'pause' | 'appeal'; consultation?: StaffConsultation | null; read_at?: string | null; client_message_id?: string | null; pending?: boolean; failed?: boolean; attachment?: StaffChatAttachment | null };
 export type StaffChatThread = { id: string; central_worker_id?: string | null; central_display_name?: string; tarotist_worker_id?: string | null; last_message_at?: string | null; last_message_preview?: string | null; unread_count: number; contact?: StaffChatContact | null; legacy?: boolean; latest_incoming?: StaffChatMessage | null };
 type Actor = { id: string; role: 'central' | 'tarotista' | 'admin'; display_name: string; can_admin?: boolean };
-type Overview = { me: Actor | null; contacts: StaffChatContact[]; threads: StaffChatThread[] };
+type Overview = { me: Actor | null; contacts: StaffChatContact[]; threads: StaffChatThread[]; hiddenContactIds: string[] };
 type Notice = StaffChatMessage;
 type ChatContextValue = Overview & {
   mode: Actor['role']; unreadTotal: number; loading: boolean; error: string; live: boolean;
@@ -26,7 +26,7 @@ type ChatContextValue = Overview & {
   incoming: StaffChatMessage | null; notice: Notice | null; dismissNotice: () => void;
   openRequest: { threadId: string; version: number } | null; requestOpen: (threadId: string) => void;
 };
-const EMPTY: Overview = { me: null, contacts: [], threads: [] };
+const EMPTY: Overview = { me: null, contacts: [], threads: [], hiddenContactIds: [] };
 const Context = createContext<ChatContextValue | null>(null);
 
 export function StaffChatProvider({ children }: { children: ReactNode }) {
@@ -156,7 +156,10 @@ export function StaffChatProvider({ children }: { children: ReactNode }) {
         if (!data?.me?.id || !['central', 'tarotista', 'admin'].includes(data.me.role) || !Array.isArray(data.contacts) || !Array.isArray(data.threads)) throw new Error('Chat temporalmente no disponible.');
         const checkedAt = Date.parse(data.presence_checked_at || '');
         if (Number.isFinite(checkedAt)) presenceOffset.current = checkedAt - Date.now();
-        const next: Overview = { me: data.me, contacts: data.contacts, threads: data.threads };
+        const next: Overview = {
+          me: data.me, contacts: data.contacts, threads: data.threads,
+          hiddenContactIds: Array.isArray(data.hidden_contact_ids) ? data.hidden_contact_ids.filter((id: unknown): id is string => typeof id === 'string') : [],
+        };
         const previous = overviewRef.current;
         overviewRef.current = next; setOverview(next); setError('');
         if (hydrated.current) {

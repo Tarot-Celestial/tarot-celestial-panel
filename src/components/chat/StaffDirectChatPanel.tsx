@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { Bell, ChevronDown, ChevronLeft, MessageCircle, Palette, RefreshCw, Search, Volume2, VolumeX } from "lucide-react";
+import { Bell, ChevronDown, ChevronLeft, Eye, EyeOff, MessageCircle, Palette, RefreshCw, Search, Settings2, Volume2, VolumeX } from "lucide-react";
 import { useAttendance } from "@/hooks/useAttendance";
 import { usePanelSessionAccess } from "@/hooks/usePanelSessionAccess";
 import { chatRequest } from "@/lib/staff-chat-client";
@@ -14,7 +14,8 @@ import StaffPanelCallButton from "./StaffPanelCallButton";
 import StaffChatOperations, { StaffChatConsultationCard } from "./StaffChatOperations";
 import styles from "./StaffDirectChatPanel.module.css";
 
-const FILTERS = ["todos", "conectados", "no-leidos"] as const;
+const FILTERS = ["todos", "conectados", "no-leidos", "ocultos"] as const;
+const EMPTY_HIDDEN_CONTACTS: string[] = [];
 type Page = { messages: StaffChatMessage[]; has_more: boolean; next_cursor: string | null };
 type ThreadHistory = { messages: StaffChatMessage[]; hasMore: boolean; cursor: string | null; loaded: boolean; scrollTop: number | null; latestFetched?: StaffChatMessage };
 type ScrollAnchor = { height: number; top: number; id: string | null; offset: number };
@@ -62,7 +63,7 @@ function mergeMessages(current: StaffChatMessage[], incoming: StaffChatMessage[]
 }
 
 export default function StaffDirectChatPanel({ compact = false, directConversations = false }: { compact?: boolean; directConversations?: boolean }) {
-  const { me, mode, contacts, threads, loading, error: sharedError, live, sound, volume, audioReady, notificationPermission, refresh, setSound, setVolume, testSound, enableNotifications, setVisibleThread, incoming, openRequest } = useStaffChat();
+  const { me, mode, contacts, threads, hiddenContactIds, loading, error: sharedError, live, sound, volume, audioReady, notificationPermission, refresh, setSound, setVolume, testSound, enableNotifications, setVisibleThread, incoming, openRequest } = useStaffChat();
   const attendance = useAttendance();
   const { connected, verificationPending } = usePanelSessionAccess(attendance);
   const surfaceId = useId();
@@ -74,6 +75,8 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
   const [selectedContactId, setSelectedContactId] = useState("");
   const [selectedThreadId, setSelectedThreadId] = useState("");
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [visibilityBusy, setVisibilityBusy] = useState<string | null>(null);
   const { appearance, error: appearanceError, refresh: refreshAppearance, setAppearance } = useStaffChatAppearance(meId, selectedThreadId);
   const [messages, setMessages] = useState<StaffChatMessage[]>([]);
   const [search, setSearch] = useState("");
@@ -128,6 +131,7 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
 
   const selectedThread = threads.find(thread => thread.id === selectedThreadId);
   const selectedContact = contacts.find(contact => contact.id === selectedContactId) || selectedThread?.contact || null;
+  const hiddenContacts = useMemo(() => new Set(hiddenContactIds || EMPTY_HIDDEN_CONTACTS), [hiddenContactIds]);
   const threadByContact = useMemo(() => {
     const map = new Map<string, (typeof threads)[number]>();
     for (const thread of visibleThreads) if (thread.contact?.id && !map.has(thread.contact.id)) map.set(thread.contact.id, thread);
@@ -136,10 +140,12 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
   const contactThreads = useMemo(() => visibleThreads.filter(thread => thread.contact?.id === selectedContactId), [visibleThreads, selectedContactId]);
   const sortedContacts = useMemo(() => contacts.map(contact => ({ contact, thread: threadByContact.get(contact.id) })).filter(({ contact, thread }) => {
     if (search.trim() && !contact.display_name.toLowerCase().includes(search.trim().toLowerCase())) return false;
+    if (filter === "ocultos") return hiddenContacts.has(contact.id);
+    if (hiddenContacts.has(contact.id)) return false;
     if (filter === "conectados") return presence(contact.state).key === "online";
     if (filter === "no-leidos") return Number(thread?.unread_count || 0) > 0;
     return true;
-  }).sort((a, b) => Number(Boolean(b.thread?.unread_count)) - Number(Boolean(a.thread?.unread_count)) || ["online", "break", "offline"].indexOf(presence(a.contact.state).key) - ["online", "break", "offline"].indexOf(presence(b.contact.state).key) || a.contact.display_name.localeCompare(b.contact.display_name)), [contacts, filter, search, threadByContact]);
+  }).sort((a, b) => Number(Boolean(b.thread?.unread_count)) - Number(Boolean(a.thread?.unread_count)) || ["online", "break", "offline"].indexOf(presence(a.contact.state).key) - ["online", "break", "offline"].indexOf(presence(b.contact.state).key) || a.contact.display_name.localeCompare(b.contact.display_name)), [contacts, filter, search, threadByContact, hiddenContacts]);
 
   const updateThreadMessages = useCallback((threadId: string, incoming: StaffChatMessage[]) => {
     const history = histories.current.get(threadId) || { messages: [], hasMore: false, cursor: null, loaded: false, scrollTop: null };
@@ -179,6 +185,7 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
     histories.current.clear(); drafts.current.clear(); openingContacts.current.clear(); knownThreads.current.clear();
     outbox.current.clear(); pendingSends.current.clear(); readAck.current.clear(); readInFlight.current.clear(); handledOpen.current = null; handledIncoming.current.clear();
     chooseThread("", "", true);
+    setVisibilityBusy(null);
   }, [meId, chooseThread]);
   useEffect(() => {
     const syncFocus = () => setFocused(document.visibilityState === "visible" && document.hasFocus());
@@ -199,10 +206,11 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
       return;
     }
     if (!selectedContactId && !openRequest && contacts.length) {
-      const first = visibleThreads.find(thread => thread.contact)?.contact || contacts[0];
-      chooseThread(threadByContact.get(first.id)?.id || "", first.id);
+      const belongsToTab = (id: string) => hiddenContacts.has(id) === (filter === "ocultos");
+      const first = visibleThreads.find(thread => thread.contact && belongsToTab(thread.contact.id))?.contact || contacts.find(contact => belongsToTab(contact.id));
+      if (first) chooseThread(threadByContact.get(first.id)?.id || "", first.id);
     }
-  }, [openRequest, threads, visibleThreads, contacts, selectedContactId, threadByContact, chooseThread, mode, meId]);
+  }, [openRequest, threads, visibleThreads, contacts, hiddenContacts, selectedContactId, threadByContact, chooseThread, mode, meId, filter]);
 
   const loadMessages = useCallback(async (before?: string) => {
     const selected = selection.current, actor = actorRef.current;
@@ -383,6 +391,23 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
     }
   }
 
+  async function changeContactVisibility(contactId: string, hidden: boolean) {
+    if (!meId || visibilityBusy) return;
+    const actor = meId;
+    setVisibilityBusy(contactId);
+    setError("");
+    try {
+      await chatRequest("/api/chat/visibility", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contact_worker_id: contactId, hidden }) });
+      if (!mounted.current || actorRef.current !== actor) return;
+      if (selection.current.contactId === contactId) chooseThread("", "", true);
+      await refresh();
+    } catch (reason) {
+      if (mounted.current && actorRef.current === actor) setError(reason instanceof Error ? reason.message : "No se pudo cambiar la visibilidad del chat.");
+    } finally {
+      if (mounted.current && actorRef.current === actor) setVisibilityBusy(null);
+    }
+  }
+
   async function send(retry?: StaffChatMessage) {
     const text = (retry ? retry.text : composer).trim(), threadId = retry?.thread_id || selectedThreadId;
     const media = retry?.client_message_id ? mediaOutbox.current.get(retry.client_message_id) : mediaDrafts.current.get(draftKey(selectedThreadId, selectedContactId));
@@ -434,18 +459,23 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
 
   return <section ref={shellRef} className={`${styles.shell} ${compact ? styles.compact : ""}`} aria-label="Chat del equipo">
     <header className={styles.top}>
-      <div><span className={styles.eyebrow}>COMUNICACIÓN INTERNA</span><h2>Chat del equipo</h2><p>Conversaciones entre administración, centrales y tarotistas.</p></div>
+      <div className={styles.topTitle}><span className={styles.eyebrow}>COMUNICACIÓN INTERNA</span><h2>Chat del equipo</h2><p>Conversaciones entre administración, centrales y tarotistas.</p></div>
+      <div className={styles.topActions}>
+        <span className={`${styles.live} ${live ? styles.liveOn : ""}`}>● {live ? "En vivo" : "Reconectando"}</span>
+        <button type="button" onClick={() => { void refresh(); void loadMessages(); void refreshAppearance(); }} aria-label="Actualizar chat" title="Actualizar chat"><RefreshCw size={16}/></button>
+        <button type="button" onClick={() => setSettingsOpen(value => !value)} aria-expanded={settingsOpen} aria-controls={`${surfaceId}-settings`} aria-label={settingsOpen ? "Cerrar ajustes del chat" : "Abrir ajustes del chat"} title="Ajustes de sonido, notificaciones y perfil"><Settings2 size={17}/><span>Ajustes</span></button>
+      </div>
+    </header>
+    {settingsOpen && <div id={`${surfaceId}-settings`} className={styles.settingsPanel}>
       <div className={styles.controls}>
         <button type="button" onClick={() => setAppearanceOpen(true)} disabled={!meId} aria-label="Personalizar mi perfil y chat" title="Mi perfil y fondos"><Palette size={17}/><span>Personalizar</span></button>
-        <span className={`${styles.live} ${live ? styles.liveOn : ""}`}>● {live ? "Chat en vivo" : "Reconectando"}</span>
-        <button type="button" onClick={() => { void refresh(); void loadMessages(); void refreshAppearance(); }} aria-label="Actualizar chat" title="Actualizar chat"><RefreshCw size={16}/></button>
         <button type="button" onClick={() => setSound(!sound)} aria-label={sound ? "Silenciar mensajes" : "Activar sonido de mensajes"} aria-pressed={sound} title="Sonido de mensajes">{sound ? <Volume2 size={17}/> : <VolumeX size={17}/>}</button>
         <label className={styles.volume}>Volumen <input aria-label="Volumen de mensajes" type="range" min="0" max="100" value={volume} onChange={event => setVolume(Number(event.target.value))}/><output>{volume}%</output></label>
         <button type="button" onClick={() => void testSound()} className={styles.testSound}>Probar sonido</button>
         <small className={styles.audioState}>{!sound || volume === 0 ? "Avisos silenciados" : audioReady ? "Sonido listo" : "Pulsa Probar sonido para activarlo"}</small>
         <button type="button" onClick={() => void enableNotifications()} disabled={notificationPermission === "denied" || notificationPermission === "unsupported"} aria-label={notificationLabel} title={notificationLabel}><Bell size={17}/><span>{notificationLabel}</span></button>
       </div>
-    </header>
+    </div>}
     {mode === "admin" && <div className={styles.viewSwitch} aria-label="Vista del chat">
       <button type="button" aria-pressed={directOnly} onClick={() => { setDirectOnly(true); chooseThread("", "", true); }}>Mis conversaciones</button>
       <button type="button" aria-pressed={!directOnly} onClick={() => { setDirectOnly(false); chooseThread("", "", true); }}>Supervisar equipo</button>
@@ -458,15 +488,22 @@ export default function StaffDirectChatPanel({ compact = false, directConversati
       <aside className={styles.contacts} aria-label="Contactos del equipo">
         <div className={styles.myProfile}><span className={styles.avatar}><StaffChatAvatar name={me?.display_name || "Mi perfil"} profile={appearance.profile}/></span><div><b>{me?.display_name || "Mi perfil"}</b><small>Tu espacio de equipo</small></div><button type="button" onClick={() => setAppearanceOpen(true)} disabled={!meId} aria-label="Editar mi foto y fondo"><Palette size={17}/></button></div>
         <div className={styles.search}><Search size={16}/><input aria-label="Buscar contacto" value={search} onChange={event => setSearch(event.target.value)} placeholder={`Buscar ${mode === "admin" ? "central o tarotista" : mode === "tarotista" ? "central o administración" : "tarotista o administración"}…`}/></div>
-        <div className={styles.filters}>{FILTERS.map(item => <button key={item} type="button" className={filter === item ? styles.activeFilter : ""} aria-pressed={filter === item} onClick={() => setFilter(item)}>{item === "no-leidos" ? "No leídos" : item[0].toUpperCase() + item.slice(1)}</button>)}</div>
+        <div className={styles.filters}>{FILTERS.map(item => <button key={item} type="button" className={filter === item ? styles.activeFilter : ""} aria-pressed={filter === item} onClick={() => {
+          if (item !== filter && (item === "ocultos" || filter === "ocultos")) chooseThread("", "", true);
+          setFilter(item);
+        }}>{item === "no-leidos" ? "No leídos" : item[0].toUpperCase() + item.slice(1)}</button>)}</div>
         <div className={styles.contactList}>{loading && !contacts.length ? <div className={styles.empty}>Cargando contactos…</div> : sortedContacts.map(({ contact, thread }) => {
           const state = presence(contact.state);
-          return <button key={contact.id} type="button" className={`${styles.contact} ${selectedContactId === contact.id ? styles.activeContact : ""}`} aria-pressed={selectedContactId === contact.id} onClick={() => void openContact(contact.id)}>
-            <span className={`${styles.avatar} ${styles[`team${String(contact.team || "").toLowerCase()}`] || ""}`}><StaffChatAvatar name={contact.display_name} profile={appearance.profiles[contact.id]}/></span>
-            <span className={styles.contactText}><b>{contact.display_name}</b><small><i className={styles[state.key]}/> {state.label}{contact.team ? ` · ${contact.team}` : ""}</small><em>{thread?.last_message_preview || "Iniciar conversación"}</em></span>
-            {thread?.unread_count ? <span className={styles.badge} aria-label={`${thread.unread_count} mensajes no leídos`}>{thread.unread_count}</span> : null}
-          </button>;
-        })}{!loading && !sortedContacts.length ? <div className={styles.empty}>No hay contactos que coincidan.</div> : null}</div>
+          const isHidden = hiddenContacts.has(contact.id);
+          return <div key={contact.id} className={`${styles.contactRow} ${isHidden ? styles.hiddenContactRow : ""}`}>
+            <button type="button" className={`${styles.contact} ${selectedContactId === contact.id ? styles.activeContact : ""}`} aria-pressed={selectedContactId === contact.id} onClick={() => void openContact(contact.id)}>
+              <span className={`${styles.avatar} ${styles[`team${String(contact.team || "").toLowerCase()}`] || ""}`}><StaffChatAvatar name={contact.display_name} profile={appearance.profiles[contact.id]}/></span>
+              <span className={styles.contactText}><b>{contact.display_name}</b><small><i className={styles[state.key]}/> {state.label}{contact.team ? ` · ${contact.team}` : ""}</small><em>{thread?.last_message_preview || "Iniciar conversación"}</em></span>
+              {thread?.unread_count ? <span className={styles.badge} aria-label={`${thread.unread_count} mensajes no leídos`}>{thread.unread_count}</span> : null}
+            </button>
+            <button type="button" className={styles.visibilityAction} disabled={visibilityBusy !== null} aria-label={`${isHidden ? "Mostrar" : "Ocultar"} chat con ${contact.display_name}`} title={isHidden ? "Recuperar conversación" : "Ocultar de mi lista (sin borrar mensajes)"} onClick={() => void changeContactVisibility(contact.id, !isHidden)}>{isHidden ? <Eye size={17}/> : <EyeOff size={17}/>}</button>
+          </div>;
+        })}{!loading && !sortedContacts.length ? <div className={styles.empty}>{filter === "ocultos" ? "No hay chats ocultos." : "No hay contactos que coincidan."}</div> : null}</div>
       </aside>
       <div className={styles.conversation} aria-label="Conversación">{selectedContact ? <>
         <div className={styles.chatHeader}><button type="button" className={styles.back} onClick={() => setMobileConversation(false)}><ChevronLeft size={18}/> Volver</button><span className={styles.avatar}><StaffChatAvatar name={selectedContact.display_name} profile={appearance.profiles[selectedContact.id]}/></span><div><b>{selectedContact.display_name}</b><small>{selectedContact.role === "central" ? "Central" : selectedContact.role === "admin" ? "Administración" : "Tarotista"} · <i className={styles[selectedPresence.key]}/> {selectedPresence.label}</small></div>

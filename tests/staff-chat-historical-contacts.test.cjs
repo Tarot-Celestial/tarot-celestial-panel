@@ -11,6 +11,7 @@ function fixture(options = {}) {
     chat_threads: [thread(101, 1, 2), thread(102, 1, 5), thread(103, 7, 6), thread(104, 4, 2), thread(105, null, 2), thread(106, null, 2), thread(107, 1, 9), thread(108, 1, 8), thread(109, 7, 5), thread(110, null, 5), thread(111, 1, 10)],
     attendance_panel_sessions: [2, 4, 5, 9].map(n => ({ worker_id: id(n), ended_at: null, expires_at: new Date(Date.now() + 600000).toISOString() })),
     attendance_state: [{ worker_id: id(5), status: 'bathroom' }],
+    staff_chat_hidden_contacts: [],
   };
   const reads = [], writes = [], gates = [], rpcCalls = [], auth = [];
   class Query {

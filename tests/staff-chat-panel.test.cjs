@@ -24,7 +24,7 @@ function harness(options = {}) {
   const attendance = { online: true, status: 'working', sessionId: 'session-fixture', expiresAt: new Date(Date.now() + 3600000).toISOString(), error: null };
   const context = {
     me: { id: 'me', role: 'central', display_name: 'Central Simulada' }, mode: 'central', contacts: [contact('a'), contact('b')],
-    threads: ['a', 'b'].map(id => ({ id: `t${id}`, contact: contact(id), unread_count: 2 })), unreadTotal: 4, loading: false, error: '', live: true,
+    threads: ['a', 'b'].map(id => ({ id: `t${id}`, contact: contact(id), unread_count: 2 })), hiddenContactIds: [], unreadTotal: 4, loading: false, error: '', live: true,
     sound: true, volume: 100, audioReady: false, notificationPermission: 'default', incoming: null, openRequest: null,
     refresh: async () => { refreshes++; }, setSound: value => { context.sound = value; }, setVolume: value => { context.volume = value; }, testSound: async () => {}, enableNotifications: async () => {}, setVisibleThread: (surface, thread) => calls.push({ surface, thread }),
     ...options.context,
@@ -67,6 +67,11 @@ function harness(options = {}) {
     if (url === '/api/chat/messages') {
       const media = requests.filter(item => item.url === '/api/chat/media/upload').at(-1)?.body;
       return { message: message('m5', request.body.thread_id, { ...request.body, sender_worker_id: 'me', attachment: request.body.attachment_id ? { id: request.body.attachment_id, kind: media?.kind || 'image', mime_type: media?.mime_type || 'image/png', file_name: media?.file_name || 'fixture.png', size_bytes: media?.size_bytes || 4 } : null }) };
+    }
+    if (url === '/api/chat/visibility') {
+      if (request.body.hidden) context.hiddenContactIds = [...context.hiddenContactIds, request.body.contact_worker_id];
+      else context.hiddenContactIds = context.hiddenContactIds.filter(id => id !== request.body.contact_worker_id);
+      return { ok: true };
     }
     if (url === '/api/chat/threads') return { thread: { id: `t${request.body.contact_worker_id}` } };
     return { ok: true };
@@ -696,4 +701,61 @@ test('a consultation UPDATE refreshes its existing card without adding a new mes
   h.context.incoming={...row,consultation:{...row.consultation,total:20}};h.pages.ta=[h.context.incoming];await h.rerender();
   assert.equal(h.view.root.findAllByProps({'data-consultation-id':'call-1'}).length,1);assert.equal(text(h.view.root.findByProps({'data-consultation-id':'call-1'})),'Ana 20');
  }finally{await h.dispose();}
+});
+
+test('the compact chat keeps sound and notification settings collapsed until requested', async () => {
+  const h = harness({ compact: true }); await h.mount();
+  try {
+    assert.ok(button(h, 'Abrir ajustes del chat'));
+    assert.equal(button(h, 'Probar sonido'), undefined);
+    assert.equal(h.view.root.findAllByProps({ 'aria-label': 'Volumen de mensajes' }).length, 0);
+    await flush(() => button(h, 'Abrir ajustes del chat').props.onClick());
+    assert.ok(button(h, 'Cerrar ajustes del chat'));
+    assert.ok(button(h, 'Probar sonido'));
+    assert.equal(h.view.root.findAllByProps({ 'aria-label': 'Volumen de mensajes' }).length, 1);
+    await flush(() => button(h, 'Cerrar ajustes del chat').props.onClick());
+    assert.equal(button(h, 'Probar sonido'), undefined);
+  } finally { await h.dispose(); }
+});
+
+test('a central can hide a contact without deleting messages, then restore it from Ocultos', async () => {
+  const h = harness(); await h.mount();
+  try {
+    await flush(() => button(h, 'Ocultar chat con a Simulada').props.onClick());
+    assert.ok(h.context.hiddenContactIds.includes('a'));
+    assert.equal(button(h, 'Ocultar chat con a Simulada'), undefined);
+    assert.ok(button(h, 'Ocultar chat con b Simulada'));
+    assert.ok(h.requests.some(r => r.url === '/api/chat/visibility' && r.body.contact_worker_id === 'a' && r.body.hidden === true));
+    assert.equal(h.requests.some(r => r.method === 'DELETE'), false);
+    await flush(() => button(h, 'Ocultos').props.onClick());
+    assert.ok(button(h, 'Mostrar chat con a Simulada'));
+    assert.equal(button(h, 'Ocultar chat con b Simulada'), undefined);
+    await flush(() => button(h, 'Mostrar chat con a Simulada').props.onClick());
+    assert.equal(h.context.hiddenContactIds.length, 0);
+    assert.ok(h.requests.some(r => r.url === '/api/chat/visibility' && r.body.hidden === false));
+    await flush(() => button(h, 'Todos').props.onClick());
+    assert.ok(button(h, 'Ocultar chat con a Simulada'));
+    assert.ok(button(h, 'Ocultar chat con b Simulada'));
+  } finally { await h.dispose(); }
+});
+
+test('a failed hide request keeps the existing conversation visible and reports the error', async () => {
+  const h = harness({ request: request => request.url === '/api/chat/visibility' ? Promise.reject(new Error('No se guardó la preferencia')) : undefined });
+  await h.mount();
+  try {
+    await flush(() => button(h, 'Ocultar chat con a Simulada').props.onClick());
+    assert.ok(button(h, 'Ocultar chat con a Simulada'));
+    assert.ok(text(h.view.toJSON()).includes('No se guardó la preferencia'));
+  } finally { await h.dispose(); }
+});
+
+test('two people with the same display name remain independently hideable', async () => {
+  const ana = { ...contact('a'), display_name: 'Ana' }, ana2 = { ...contact('b'), display_name: 'Ana' };
+  const h = harness({ context: { contacts: [ana, ana2], hiddenContactIds: ['a'] } }); await h.mount();
+  try {
+    assert.equal(h.view.root.findAllByProps({ 'aria-label': 'Ocultar chat con Ana' }).length, 1);
+    assert.equal(h.view.root.findAllByProps({ 'aria-label': 'Mostrar chat con Ana' }).length, 0);
+    await flush(() => button(h, 'Ocultos').props.onClick());
+    assert.equal(h.view.root.findAllByProps({ 'aria-label': 'Mostrar chat con Ana' }).length, 1);
+  } finally { await h.dispose(); }
 });
