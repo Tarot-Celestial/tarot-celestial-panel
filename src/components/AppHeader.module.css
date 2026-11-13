@@ -222,3 +222,6 @@
 :global(.tc-rank-panel) .operator b,:global(.tc-rank-panel) .count { color:var(--rank-accent); }
 :global(.tc-rank-panel) .route { color:#a7b4ca; }
 :global(.tc-rank-panel) .brainButton { color:var(--rank-accent); background:rgba(var(--rank-rgb),.07); border-color:var(--panel-border); }
+
+.accountingButton { margin-left: 0; color: #d8c6f2; border-color: rgba(183,155,223,.28); background: rgba(115,86,152,.13); }
+.accountingButton.activeTool { border-color: rgba(205,178,244,.58); background: rgba(149,112,196,.2); color: #e6d5ff; }
