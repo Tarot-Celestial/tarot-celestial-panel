@@ -139,50 +139,6 @@ export function currentRankBenefits(rank: string | null | undefined, policy?: im
 }
 
 
-const CRM_MONTH_TAGS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-
-export async function syncClientMonthTag(admin: any, clienteId: string) {
-  const monthName = CRM_MONTH_TAGS[new Date().getMonth()];
-
-  const { data: allTags } = await admin
-    .from("crm_etiquetas")
-    .select("id,nombre")
-    .in("nombre", CRM_MONTH_TAGS);
-
-  let currentTag = (allTags || []).find((x: any) => String(x?.nombre || "").toLowerCase() === monthName.toLowerCase());
-
-  if (!currentTag) {
-    const { data: created } = await admin
-      .from("crm_etiquetas")
-      .insert({ nombre: monthName })
-      .select("id,nombre")
-      .single();
-
-    currentTag = created;
-  }
-
-  const monthTagIds = (allTags || []).map((x: any) => String(x.id));
-
-  if (monthTagIds.length) {
-    await admin
-      .from("crm_cliente_etiquetas")
-      .delete()
-      .eq("cliente_id", clienteId)
-      .in("etiqueta_id", monthTagIds);
-  }
-
-  if (currentTag?.id) {
-    await admin
-      .from("crm_cliente_etiquetas")
-      .upsert({
-        cliente_id: clienteId,
-        etiqueta_id: currentTag.id,
-      }, {
-        onConflict: 'cliente_id,etiqueta_id'
-      });
-  }
-}
-
 export async function createClientNotification(
   admin: any,
   payload: {
@@ -229,11 +185,9 @@ export async function touchClientActivity(
   const { error: activityError } = await admin.from("crm_clientes").update(patch).eq("id", clienteId);
   if (activityError) throw activityError;
 
-  // El heartbeat se ejecuta cada 60 s. La etiqueta mensual solo necesita
-  // sincronizarse cuando contamos un acceso real, no en cada ping.
-  if (opts?.access) {
-    await syncClientMonthTag(admin, clienteId);
-  }
+  // Access/heartbeats do not qualify as a call, capture or completed purchase.
+  // The activity-month label is maintained by those database transactions.
+
 }
 
 export async function applyClientPurchase(
@@ -292,8 +246,6 @@ export async function applyClientPurchase(
 
   // No persistimos aquí el rango CRM para no sobrescribir el recálculo manual del panel.
   // El rango puede seguir mostrándose en vivo en la experiencia cliente sin tocar los KPIs de CRM.
-
-  await syncClientMonthTag(admin, params.clienteId);
 
   const nombre = [clienteActual?.nombre, clienteActual?.apellido].filter(Boolean).join(" ").trim() || "Cliente";
 

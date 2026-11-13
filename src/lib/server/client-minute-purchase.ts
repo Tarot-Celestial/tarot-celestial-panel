@@ -2,7 +2,6 @@ import {
   createClientNotification,
   monthRange,
   splitMinutes,
-  syncClientMonthTag,
   toNum,
 } from "@/lib/server/cliente-platform";
 import { getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
@@ -101,8 +100,6 @@ export async function applyConfiguredMinutePurchase(
   const monthlyPurchases = (monthPayments || []).length;
   const effectiveRankState = await rankState(admin, params.clienteId);
   const nextRank = effectiveRankState?.effective || null;
-
-  await syncClientMonthTag(admin, params.clienteId);
 
   const persistedSpinLevels = (grantedSpins || []).reduce((levels: Record<string, number>, spin: any) => {
     const level = String(spin.nivel);

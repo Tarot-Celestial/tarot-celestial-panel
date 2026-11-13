@@ -17,7 +17,7 @@ function load(file, mocks = {}, globals = {}) {
 const policy = load('src/lib/client-free-passes.ts');
 const config = load('src/lib/rank-benefit-config.ts');
 const source = read('src/lib/server/cliente-platform.ts');
-const fragment = source.slice(source.indexOf('export function currentRankBenefits('), source.indexOf('const CRM_MONTH_TAGS'));
+const fragment = source.slice(source.indexOf('export function currentRankBenefits('), source.indexOf('export async function createClientNotification('));
 const benefitExports = {};
 vm.runInNewContext(ts.transpileModule(fragment, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: benefitExports });
 

@@ -309,6 +309,8 @@ export default function CRMClientesPanel({
   const [crmWebFilter, setCrmWebFilter] = useState<"todos" | "registrados" | "no_registrados" | "onboarding_pendiente">("todos");
   const [crmLoading, setCrmLoading] = useState(false);
   const [crmRows, setCrmRows] = useState<any[]>([]);
+  const [crmNextCursor, setCrmNextCursor] = useState<string | null>(null);
+  const crmSearchQueryRef = useRef<string>("");
   const [crmFreshLeads, setCrmFreshLeads] = useState<any[]>([]);
   const [crmFreshLeadsLoading, setCrmFreshLeadsLoading] = useState(false);
   const [crmFreshLeadsMsg, setCrmFreshLeadsMsg] = useState("");
@@ -634,7 +636,7 @@ export default function CRMClientesPanel({
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
 
-      await loadEtiquetasCliente(targetId);
+      await Promise.all([loadEtiquetasCliente(targetId), loadCRMEtiquetas()]);
     } catch (e) {
       console.error("ERROR GUARDANDO ETIQUETAS CLIENTE", e);
       throw e;
@@ -783,6 +785,8 @@ export default function CRMClientesPanel({
         const j = await safeJson(r);
         if (searchRequest !== crmSearchRequestSeq.current || !j?._ok || !j?.ok) return;
         const clientes = Array.isArray(j?.clientes) ? j.clientes : [];
+        setCrmNextCursor(null);
+        crmSearchQueryRef.current = "";
         applyCrmSearchRows(clientes, snapshotVersion);
         setCrmMsg(`Resultados: ${clientes.length}`);
         if (clientes.length === 1 && mode !== "new") {
@@ -827,6 +831,8 @@ export default function CRMClientesPanel({
         });
         const j = await safeJson(r);
         if (searchRequest !== crmSearchRequestSeq.current || !j?._ok || !j?.ok) return;
+        setCrmNextCursor(null);
+        crmSearchQueryRef.current = "";
         applyCrmSearchRows(j.clientes || [], snapshotVersion);
         setCrmMsg(`Resultados: ${(j.clientes || []).length}`);
       } catch {
@@ -957,7 +963,8 @@ export default function CRMClientesPanel({
     await searchCRM(false, "");
   }
 
-  async function searchCRM(silent = false, forcedRank: "" | "bronce" | "plata" | "oro" | "diamante" = crmRankFilter) {
+  async function searchCRM(silent = false, forcedRank: "" | "bronce" | "plata" | "oro" | "diamante" = crmRankFilter, append = false) {
+    if (append && crmNextCursor === null) return;
     const q = crmQuery.trim();
     const telefono = crmPhoneFilter.trim();
     const etiqueta = crmTagFilter.trim();
@@ -974,7 +981,7 @@ export default function CRMClientesPanel({
       const token = await getTokenOrLogin();
       if (!token) return;
 
-      const params = new URLSearchParams();
+      let params = new URLSearchParams();
       if (q) params.set("q", q);
       if (telefono) params.set("telefono", telefono);
       if (etiqueta) {
@@ -988,6 +995,11 @@ export default function CRMClientesPanel({
   params.set("rango", forcedRank);
 }
       
+      if (append) {
+        params = new URLSearchParams(crmSearchQueryRef.current);
+        params.set("cursor", String(crmNextCursor));
+      }
+      const querySnapshot = append ? crmSearchQueryRef.current : params.toString();
       const url = `/api/crm/clientes/buscar?${params.toString()}`;
       const r = await fetch(url, {
   headers: { Authorization: `Bearer ${token}` },
@@ -999,8 +1011,13 @@ export default function CRMClientesPanel({
 
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
-      applyCrmSearchRows(j.clientes || [], snapshotVersion);
-      setCrmMsg(`Resultados: ${(j.clientes || []).length}`);
+      const received = Array.isArray(j.clientes) ? j.clientes : [];
+      const rows = append ? Array.from(new Map([...crmRows, ...received].map(row => [String(row.id), row])).values()) : received;
+      applyCrmSearchRows(rows, snapshotVersion);
+      crmSearchQueryRef.current = querySnapshot;
+      const next = j.has_more && typeof j.next_cursor === "string" && j.next_cursor ? j.next_cursor : null;
+      setCrmNextCursor(next);
+      setCrmMsg(`Resultados cargados: ${rows.length}${next !== null ? " · Hay más clientes; pulsa Cargar más clientes." : ""}`);
     } catch (e: any) {
       if (searchRequest !== crmSearchRequestSeq.current) return;
       // Preserve the last confirmed rows if a background read fails.
@@ -1158,6 +1175,10 @@ export default function CRMClientesPanel({
   }
 
   function clearCRMFilters() {
+    ++crmSearchRequestSeq.current;
+    setCrmLoading(false);
+    setCrmNextCursor(null);
+    crmSearchQueryRef.current = "";
     setCrmQuery("");
     setCrmTagFilter("");
     setCrmPhoneFilter("");
@@ -2923,7 +2944,7 @@ export default function CRMClientesPanel({
             } : previous);
           }
           // Releer también el saldo actual por si hubo otra operación posterior.
-          const refreshed = await openCRMFicha(targetId);
+          const [refreshed] = await Promise.all([openCRMFicha(targetId), loadCRMEtiquetas()]);
           if (visibleClientRef.current !== targetId) return;
           void searchCRM(true);
           setCrmFichaMsg(refreshed
@@ -2937,6 +2958,10 @@ export default function CRMClientesPanel({
         <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
           <div>
             <div className="tc-title">📋 Resultados CRM</div>
+            {crmNextCursor !== null ? <button type="button" className="tc-btn" disabled={crmLoading}
+              onClick={() => { void searchCRM(false, crmRankFilter, true); }}>
+              {crmLoading ? "Cargando…" : "Cargar más clientes"}
+            </button> : null}
             <div className="tc-sub" style={{ marginTop: 6 }}>Listado operativo con acceso rápido a ficha</div>
           </div>
           <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>

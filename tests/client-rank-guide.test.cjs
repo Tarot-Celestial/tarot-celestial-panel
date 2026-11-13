@@ -78,7 +78,7 @@ test('database errors never become a zero balance or invented package extras',as
 });
 test('rank descriptions preserve purchase benefits and scope new-tarotista gifts to one consultation',()=>{
  const source=fs.readFileSync(path.join(__dirname,'../src/lib/server/cliente-platform.ts'),'utf8');
- const fragment=source.slice(source.indexOf('export function currentRankBenefits('),source.indexOf('const CRM_MONTH_TAGS'));
+ const fragment=source.slice(source.indexOf('export function currentRankBenefits('),source.indexOf('export async function createClientNotification('));
  const exports={};
  vm.runInNewContext(ts.transpileModule(fragment,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports});
  const diamond=exports.currentRankBenefits('diamante').join(' ');

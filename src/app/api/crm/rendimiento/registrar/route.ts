@@ -11,60 +11,6 @@ import { purchaseBenefitText, summarizePurchaseBenefits } from "@/lib/purchase-b
 
 export const runtime = "nodejs";
 
-const MONTH_TAGS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-
-async function syncClienteMonthTag(admin: any, clienteId: string) {
-  const fecha = new Date();
-
-const monthName = `${MONTH_TAGS[fecha.getMonth()]} ${fecha.getFullYear()}`;
-
-  const { data: allTags } = await admin
-    .from("crm_etiquetas")
-    .select("id,nombre");
-
-  const monthTags = (allTags || []).filter((t: any) =>
-    MONTH_TAGS.some((m) =>   String(t?.nombre || '').toLowerCase().startsWith(m.toLowerCase()) )
-  );
-
-  let currentMonthTag = monthTags.find((t: any) =>
-    String(t?.nombre || '').toLowerCase() === monthName.toLowerCase()
-  );
-
-  if (!currentMonthTag) {
-    const { data: createdTag } = await admin
-      .from("crm_etiquetas")
-      .insert({ nombre: monthName })
-      .select("id,nombre")
-      .single();
-
-    currentMonthTag = createdTag;
-  }
-
-  const monthTagIds = monthTags
-    .map((t: any) => t.id)
-    .filter(Boolean);
-
-  if (monthTagIds.length > 0) {
-    await admin
-      .from("crm_cliente_etiquetas")
-      .delete()
-      .eq("cliente_id", clienteId)
-      .in("etiqueta_id", monthTagIds);
-  }
-
-  if (currentMonthTag?.id) {
-    await admin
-      .from("crm_cliente_etiquetas")
-      .upsert({
-        cliente_id: clienteId,
-        etiqueta_id: currentMonthTag.id,
-      }, {
-        onConflict: 'cliente_id,etiqueta_id'
-      });
-  }
-}
-
-
 function getEnv(name: string) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env var: ${name}`);
@@ -819,9 +765,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // A tag update must not turn an already committed linked call into a failed payment.
-    try { await syncClienteMonthTag(admin, clienteId); }
-    catch (error) { if (!existingPaymentId && !recuperado) throw error; console.error("[CRM] Llamada guardada; etiquetas pendientes", error); }
+    // Activity-month labels are maintained atomically by the persisted call/payment triggers.
 
     const [{ data: awardedSpins, error: spinsReadError }, { data: benefitEvents, error: benefitsReadError }, { data: coinMovements, error: coinsReadError }] = economicPayment?.id
       ? await Promise.all([
