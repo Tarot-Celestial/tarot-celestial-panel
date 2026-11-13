@@ -46,6 +46,7 @@ function harness(options={}){
    {id:id(100),thread_id:id(10),sender_worker_id:id(2),sender_display_name:'Tarotista fixture',body:'Fixture message',created_at:'2026-10-20T10:01:00.000Z',client_message_id:'existing-message'},
   ],
   chat_thread_reads:[],
+  staff_chat_hidden_contacts:[],
   attendance_panel_sessions:[],
   attendance_state:[],
   staff_chat_attachments:[],
@@ -66,6 +67,7 @@ function harness(options={}){
   insert(value){this.action='insert';this.value=value;return this;}
   update(value){this.action='update';this.value=value;return this;}
   upsert(value){this.action='upsert';this.value=value;return this;}
+  delete(){this.action='delete';return this;}
   async run(single=false){
    calls.push({table:this.table,action:this.action,or:this.rawOr,order:this.orders});
    if(options.failTable===this.table)return {data:null,error:{message:'synthetic unavailable'}};
@@ -76,7 +78,17 @@ function harness(options={}){
    }else if(this.action==='update'){
     for(const row of rows)Object.assign(row,this.value);writes.push({table:this.table,action:this.action,value:this.value});
    }else if(this.action==='upsert'){
-    writes.push({table:this.table,action:this.action,value:this.value});rows=[this.value];
+    writes.push({table:this.table,action:this.action,value:this.value});
+    if(this.table==='staff_chat_hidden_contacts'){
+     const existing=tables[this.table].find(row=>row.worker_id===this.value.worker_id&&row.contact_worker_id===this.value.contact_worker_id);
+     if(existing)Object.assign(existing,this.value);else tables[this.table].push({...this.value});
+    }
+    rows=[this.value];
+   }else if(this.action==='delete'){
+    const matches=new Set(rows);
+    tables[this.table]=tables[this.table].filter(row=>!matches.has(row));
+    writes.push({table:this.table,action:this.action});
+    rows=[];
    }
    for(const [key,ascending] of [...this.orders].reverse())rows.sort((a,b)=>compare(key,a[key],b[key])*(ascending?1:-1));
    rows=rows.slice(0,this.cap);
@@ -109,12 +121,42 @@ function harness(options={}){
  dependencies['@/lib/activity-codes']=load('src/lib/activity-codes.ts');
  dependencies['@/lib/staff-chat-operations']=load('src/lib/staff-chat-operations.ts');
  dependencies['@/lib/server/staff-chat-operations']=load('src/lib/server/staff-chat-operations.ts');
- const messages=load('src/app/api/chat/messages/route.ts'),threads=load('src/app/api/chat/threads/route.ts');
+ const messages=load('src/app/api/chat/messages/route.ts'),threads=load('src/app/api/chat/threads/route.ts'),visibility=load('src/app/api/chat/visibility/route.ts');
  dependencies['@/app/api/chat/messages/route']=messages;
  dependencies['@/app/api/chat/threads/route']=threads;
- return {tables,calls,writes,authCalls,connectionCalls,helper:dependencies['@/lib/server/staff-chat'],messages,threads,read:load('src/app/api/chat/read/route.ts'),legacy:{messages:load('src/app/api/central/chat/messages/route.ts'),threads:load('src/app/api/central/chat/threads/route.ts'),send:load('src/app/api/central/chat/send/route.ts'),open:load('src/app/api/central/chat/open/route.ts')}};
+ return {tables,calls,writes,authCalls,connectionCalls,helper:dependencies['@/lib/server/staff-chat'],messages,threads,visibility,read:load('src/app/api/chat/read/route.ts'),legacy:{messages:load('src/app/api/central/chat/messages/route.ts'),threads:load('src/app/api/central/chat/threads/route.ts'),send:load('src/app/api/central/chat/send/route.ts'),open:load('src/app/api/central/chat/open/route.ts')}};
 }
 function req(url,body,authorization='Bearer signed-fixture-token'){return new Request('https://panel.test'+url,{method:body===undefined?'GET':'POST',headers:authorization?{authorization,'content-type':'application/json'}:{},...(body===undefined?{}:{body:JSON.stringify(body)})});}
+
+test('hidden chat preferences belong only to the authenticated worker and never delete chat history',async()=>{
+ const h=harness();
+ const hide=await h.visibility.POST(req('/api/chat/visibility',{contact_worker_id:id(2),hidden:true}));
+ assert.equal(hide.status,200);
+ assert.deepEqual(plain((await (await h.threads.GET(req('/api/chat/threads'))).json()).hidden_contact_ids),[id(2)]);
+ assert.deepEqual(plain(h.tables.staff_chat_hidden_contacts),[{worker_id:id(1),contact_worker_id:id(2)}]);
+ assert.equal(h.tables.chat_threads.length,3);assert.equal(h.tables.chat_messages.length,1);
+ assert.equal(h.writes.some(w=>['chat_threads','chat_messages'].includes(w.table)),false);
+ const restore=await h.visibility.POST(req('/api/chat/visibility',{contact_worker_id:id(2),hidden:false}));
+ assert.equal(restore.status,200);assert.deepEqual(plain((await (await h.threads.GET(req('/api/chat/threads'))).json()).hidden_contact_ids),[]);
+ h.tables.staff_chat_hidden_contacts.push({worker_id:id(3),contact_worker_id:id(2)});
+ assert.deepEqual(plain((await (await h.threads.GET(req('/api/chat/threads'))).json()).hidden_contact_ids),[],'an admin preference is never returned to the central');
+});
+
+test('visibility changes require a signed-in worker and an authorized contact, including inactive history',async()=>{
+ const h=harness();
+ for(const [body,status] of [
+  [{contact_worker_id:id(1),hidden:true},403],
+  [{contact_worker_id:id(4),hidden:true},404],
+  [{contact_worker_id:id(5),hidden:true},404],
+  [{contact_worker_id:'not-a-uuid',hidden:true},400],
+  [{contact_worker_id:id(2),hidden:'yes'},400],
+ ])assert.equal((await h.visibility.POST(req('/api/chat/visibility',body))).status,status);
+ assert.equal((await h.visibility.POST(req('/api/chat/visibility',{contact_worker_id:id(2),hidden:true},null))).status,401);
+ assert.equal(h.tables.staff_chat_hidden_contacts.length,0);
+ const admin=harness({actor:3});
+ assert.equal((await admin.visibility.POST(req('/api/chat/visibility',{contact_worker_id:id(5),hidden:true}))).status,200,'admin can hide a former tarotista with supervised history');
+ assert.equal(admin.tables.staff_chat_hidden_contacts[0].worker_id,id(3));
+});
 
 function historyMessage(n,createdAt='2026-11-08T12:00:00.123456+00:00'){
  return {id:id(1000+n),thread_id:id(10),sender_worker_id:id(2),sender_display_name:'Tarotista fixture',body:'History '+n,created_at:createdAt,client_message_id:'history-'+n};

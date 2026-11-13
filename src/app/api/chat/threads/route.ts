@@ -17,9 +17,14 @@ export async function GET(req: Request) {
     let threadsQuery = db.from("chat_threads").select("id, central_worker_id, tarotist_worker_id, status, created_at, last_message_at, last_message_preview, title").order("last_message_at", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false });
     if (me.role === "central" && !me.can_admin) threadsQuery = threadsQuery.eq("central_worker_id", me.id);
     if (me.role === "tarotista") threadsQuery = threadsQuery.eq("tarotist_worker_id", me.id);
-    const [{ data: contacts, error: contactsError }, { data: threads, error: threadsError }] = await Promise.all([contactsQuery, threadsQuery]);
+    const [{ data: contacts, error: contactsError }, { data: threads, error: threadsError }, { data: hiddenContacts, error: hiddenContactsError }] = await Promise.all([
+      contactsQuery,
+      threadsQuery,
+      db.from("staff_chat_hidden_contacts").select("contact_worker_id").eq("worker_id", me.id),
+    ]);
     if (contactsError) throw contactsError;
     if (threadsError) throw threadsError;
+    if (hiddenContactsError) throw hiddenContactsError;
 
     const threadIds = (threads || []).map((thread: any) => String(thread.id));
     const participantIds = Array.from(new Set((threads || []).flatMap((thread: any) => [thread.central_worker_id, thread.tarotist_worker_id]).filter(Boolean).map(String)));
@@ -63,7 +68,7 @@ export async function GET(req: Request) {
         contactsById.set(contact.id, contact);
       }
     }
-    return NextResponse.json({ ok: true, mode: me.can_admin ? "admin" : me.role, me: { ...me, ...presence.states.get(me.id) }, presence_checked_at: presence.checkedAt, contacts: [...contactsById.values()], threads: normalizedThreads, unread_total: normalizedThreads.reduce((total: number, thread: any) => total + Number(thread.unread_count || 0), 0) }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ ok: true, mode: me.can_admin ? "admin" : me.role, me: { ...me, ...presence.states.get(me.id) }, presence_checked_at: presence.checkedAt, contacts: [...contactsById.values()], threads: normalizedThreads, hidden_contact_ids: (hiddenContacts || []).map((row: any) => String(row.contact_worker_id)), unread_total: normalizedThreads.reduce((total: number, thread: any) => total + Number(thread.unread_count || 0), 0) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const { code, status } = staffChatError(error);
     return NextResponse.json({ ok: false, error: code }, { status, headers: { "Cache-Control": "no-store" } });
