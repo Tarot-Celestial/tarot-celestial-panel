@@ -1,50 +1,16 @@
 import { NextResponse } from "next/server";
 import { calcClientRank, loadRolling30ClientTotals } from "@/lib/server/client-ranks";
 import { normalizeClientRank } from "@/lib/server/client-rank-effective";
-import { createClient } from "@supabase/supabase-js";
-import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { centralWorkspaceIdentity, centralWorkspaceAccessFailure } from "@/lib/server/central-workspace-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function json(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: { "Cache-Control": "private, no-store, max-age=0" } });
-}
-
-function getEnv(name: string) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
-}
-
-function adminClient() {
-  return createClient(getEnv("NEXT_PUBLIC_SUPABASE_URL"), getEnv("SUPABASE_SERVICE_ROLE_KEY"), {
-    auth: { persistSession: false },
-  });
-}
-
-async function uidFromBearer(req: Request) {
-  const auth = req.headers.get("authorization") || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!token) return null;
-  const sb = createClient(getEnv("NEXT_PUBLIC_SUPABASE_URL"), getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"), {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-    auth: { persistSession: false },
-  });
-  const { data, error } = getAuthUserFromRequest(req);
-  if (error) throw error;
-  return data.user?.id || null;
-}
-
-async function workerFromReq(req: Request) {
-  const uid = await uidFromBearer(req);
-  if (!uid) return null;
-  const admin = adminClient();
-  const { data, error } = await admin.from("workers").select("id, role").eq("user_id", uid).maybeSingle();
-  if (error) throw error;
-  return data || null;
 }
 
 function normalizePhoneDigits(phone: string) {
@@ -70,11 +36,7 @@ function clientWebMeta(cliente: any) {
 
 export async function GET(req: Request) {
   try {
-    const worker = await workerFromReq(req);
-    if (!worker) return json({ ok: false, error: "NO_AUTH" }, 401);
-    if (!["admin", "central"].includes(String(worker.role || ""))) {
-      return json({ ok: false, error: "FORBIDDEN" }, 403);
-    }
+    const { db: admin } = await centralWorkspaceIdentity(req);
 
     const { searchParams } = new URL(req.url);
     const q = String(searchParams.get("q") || "").trim();
@@ -84,29 +46,34 @@ export async function GET(req: Request) {
     const etiqueta = String(searchParams.get("etiqueta") || searchParams.get("tag") || "").trim().toLowerCase();
     const rango = String(searchParams.get("rango") || "").trim().toLowerCase();
     const webFilter = String(searchParams.get("web_filter") || "todos").trim().toLowerCase();
-    const brandFilter = "celestial";
 
-    const admin = adminClient();
-    let clienteIdsFiltro: string[] | null = null;
+    const pageSize = 120;
+    const cursor = searchParams.get("cursor") || "";
+    if (cursor && !UUID.test(cursor)) {
+      return json({ ok: false, error: "PAGINA_INVALIDA" }, 400);
+    }
+    let etiquetaIdsFiltro: string[] | null = null;
 
     if (etiqueta) {
       const { data: etiquetasData, error: tagsErr } = await admin.from("crm_etiquetas").select("id").ilike("nombre", etiqueta);
       if (tagsErr) throw tagsErr;
       const idsEtiqueta = (etiquetasData || []).map((e: any) => String(e.id));
       if (!idsEtiqueta.length) return json({ ok: true, clientes: [] });
-      const { data: rels, error: relErr } = await admin.from("crm_cliente_etiquetas").select("cliente_id").in("etiqueta_id", idsEtiqueta);
-      if (relErr) throw relErr;
-      clienteIdsFiltro = Array.from(new Set((rels || []).map((r: any) => String(r.cliente_id)).filter(Boolean)));
-      if (!clienteIdsFiltro.length) return json({ ok: true, clientes: [] });
+      etiquetaIdsFiltro = idsEtiqueta;
     }
 
     let query = admin
       .from("crm_clientes")
-      .select("id, nombre, apellido, telefono, telefono_normalizado, email, pais, notas, origen, updated_at, created_at, onboarding_completado, total_accesos, ultimo_acceso_at, ultima_actividad_at, minutos_free_pendientes, minutos_normales_pendientes, deuda_pendiente")
-      .order("updated_at", { ascending: false, nullsFirst: false })
-      .limit(120);
+      .select("id, nombre, apellido, telefono, telefono_normalizado, email, pais, notas, origen, updated_at, created_at, onboarding_completado, total_accesos, ultimo_acceso_at, ultima_actividad_at, minutos_free_pendientes, minutos_normales_pendientes, deuda_pendiente"
+        + (etiquetaIdsFiltro ? ",crm_cliente_etiquetas!inner(etiqueta_id)" : ""))
+      // IDs are immutable: purchases, calls and access heartbeats cannot move
+      // an existing client behind a page that Central already loaded.
+      .order("id", { ascending: true })
+      .range(0, pageSize);
 
-    if (clienteIdsFiltro) query = query.in("id", clienteIdsFiltro);
+    if (cursor) query = query.gt("id", cursor);
+
+    if (etiquetaIdsFiltro) query = query.in("crm_cliente_etiquetas.etiqueta_id", etiquetaIdsFiltro);
 
     const searchQ = q.replace(/[%]/g, " ").replace(/,/g, " ").trim();
     const qDigits = normalizeSpanishPhone(searchQ);
@@ -153,12 +120,21 @@ export async function GET(req: Request) {
 
     const { data, error } = await query;
     if (error) throw error;
-    let clientes = data || [];
+    const hasMore = (data || []).length > pageSize;
+    let clientes: any[] = (data || []).slice(0, pageSize).map((row: any) => {
+      const { crm_cliente_etiquetas: _filterRelations, ...cliente } = row;
+      return cliente;
+    });
+    const pagination = {
+      has_more: hasMore,
+      next_cursor: hasMore ? String(clientes[pageSize - 1].id) : null,
+      scanned_count: clientes.length,
+    };
 
     clientes = clientes.filter((c: any) => !String(c?.origen || "").toLowerCase().includes("orion"));
 
     const ids = clientes.map((c: any) => String(c.id)).filter(Boolean);
-    if (!ids.length) return json({ ok: true, clientes: [] });
+    if (!ids.length) return json({ ok: true, clientes: [], ...pagination });
 
     const sinceIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -237,8 +213,10 @@ export async function GET(req: Request) {
         return true;
       });
 
-    return json({ ok: true, clientes });
+    return json({ ok: true, clientes, ...pagination });
   } catch (e: any) {
+    const accessFailure = centralWorkspaceAccessFailure(e);
+    if (accessFailure) return accessFailure;
     return json({ ok: false, error: e?.message || "ERR" }, 500);
   }
 }

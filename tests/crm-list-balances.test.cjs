@@ -22,7 +22,7 @@ function apiFixture(role = 'central') {
   const admin = { from(table) {
     let projection = '*', selected = tables[table] || [];
     const q = {
-      select(value) { projection = value; return q; }, order() { return q; }, limit() { return q; },
+      select(value) { projection = value; return q; }, order() { return q; }, limit() { return q; }, range() { return q; },
       eq() { return q; }, in() { return q; }, lte() { return q; }, or() { return q; }, ilike() { return q; },
       maybeSingle: async () => ({ data: selected[0] || null, error: null }),
       then(resolve, reject) {
@@ -36,6 +36,13 @@ function apiFixture(role = 'central') {
     'next/server': { NextResponse: { json: (body, init = {}) => new Response(JSON.stringify(body), init) } },
     '@supabase/supabase-js': { createClient: () => admin },
     '@/lib/server/auth-fast': { getAuthUserFromRequest: () => ({ data: { user: { id: 'test-user' } }, error: null }) },
+    '@/lib/server/central-workspace-access': {
+      centralWorkspaceIdentity: async () => {
+        if (!['central', 'admin'].includes(role)) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
+        return { db: admin };
+      },
+      centralWorkspaceAccessFailure: error => error.status ? new Response(JSON.stringify({ ok: false, error: error.message }), { status: error.status }) : null,
+    },
     '@/lib/server/client-ranks': { calcClientRank: () => 'plata', loadRolling30ClientTotals: async () => new Map(rows.map(r => [r.id, { total: 120, compras: 2 }])) },
     '@/lib/server/client-rank-effective': { normalizeClientRank: x => x || null },
   };
@@ -70,7 +77,7 @@ async function mount(mode = 'central', initial = first) {
     const route = new URL(url, 'https://fixture.invalid').pathname;
     if (route === '/api/crm/clientes/buscar') {
       if (h.pendingSearch) { const pending = h.pendingSearch; h.pendingSearch = null; return pending.promise; }
-      return response({ ok: true, clientes: h.list });
+      return response({ ok: true, clientes: h.list, ...(h.pagination || {}) });
     }
     if (route === '/api/crm/clientes/ficha') {
       if (h.pendingFicha) { const pending = h.pendingFicha; h.pendingFicha = null; return pending.promise; }
@@ -123,6 +130,23 @@ for (const mode of ['admin', 'central']) test(`${mode} displays canonical list b
 test('missing balance data is displayed as unavailable, never as a fabricated zero', async () => {
   const h = await mount('central', { ...first, minutos_free_pendientes: undefined, minutos_normales_pendientes: null });
   assert.deepEqual(minutes(h.tree), ['—', '—']); await h.close();
+});
+
+test('CRM exposes and appends the next page without losing loaded balances or duplicating rows', async () => {
+  const h = await mount();
+  h.pagination = { has_more: true, next_cursor: otherId };
+  await renderer.act(async () => { await h.search(); });
+  const loadMore = h.tree.root.findAllByType('button').find(x => text(x) === 'Cargar más clientes');
+  assert.ok(loadMore);
+  h.list = [second, { ...first, id: '00000000-0000-4000-8000-000000000003', nombre: 'Cliente C', minutos_normales_pendientes: 30 }];
+  h.pagination = { has_more: false, next_cursor: null };
+  await renderer.act(async () => { await loadMore.props.onClick(); });
+  assert.deepEqual(minutes(h.tree), ['0', '25']);
+  assert.deepEqual(minutes(h.tree, 'Cliente C'), ['0', '30']);
+  assert.equal(h.tree.root.findAllByType('tr').filter(x => x.findAllByType('td').length).length, 3);
+  assert.ok(h.requests.some(x => new URL(x.url, 'https://fixture.invalid').searchParams.get('cursor') === otherId));
+  assert.equal(h.tree.root.findAllByType('button').some(x => text(x) === 'Cargar más clientes'), false);
+  await h.close();
 });
 
 test('a pending old search cannot overwrite the newer matching ficha balance', async () => {

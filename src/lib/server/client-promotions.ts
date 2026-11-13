@@ -2,7 +2,6 @@ import { rankState } from "@/lib/server/rank-benefits";
 import {
   createClientNotification,
   monthRange,
-  syncClientMonthTag,
   toNum,
 } from "@/lib/server/cliente-platform";
 
@@ -225,7 +224,6 @@ export async function applyPromotionMinutePurchase(
     monthlyPurchases = (monthPayments || []).length;
     const effectiveRankState = await rankState(admin, params.clienteId);
     nextRank = effectiveRankState?.effective || null;
-    await syncClientMonthTag(admin, params.clienteId);
   } catch (error) {
     console.error("[client-promotions/post-purchase-stats]", error);
   }
