@@ -78,21 +78,21 @@ and a retry that rewrites a payment timestamp without advancing its activity.
 The migration also restricts the existing server-only Oracle-question grant RPC
 to `service_role`. All current legitimate callers are server payment handlers;
 direct `anon`/`authenticated` execution would otherwise permit forged receipt
-metadata. Production application is gated on explicit approval of that permission
-restriction. Tests use a documented return-only stand-in to verify the ACL;
+metadata. The owner explicitly approved that restriction on November 14, 2026,
+and the complete migration has now been applied. Tests use a documented return-only stand-in to verify the ACL;
 they do not replace or claim to revalidate the unchanged grant implementation.
 
 ## Production data repair applied separately
 
-Automatic review rejected the combined migration because the existing RPC access
-restriction requires explicit approval. The user has been asked; that restriction
-and the three new web-purchase triggers remain unapplied.
+The historical data repair was completed first while the existing RPC access
+restriction awaited explicit approval. The complete migration followed after
+approval; both stages are recorded below.
 
 The authorized historical data repair was then applied separately with no DDL or
 permission changes, using the existing activity writer. Its exact SQL is retained
 in `outputs/crm-activity-month-data-only-repair.sql`. It includes confirmed payment
 attempts and verified Stripe credit purchases; the question ledger was excluded
-because it has no qualifying production rows and its access restriction is still
+because it had no qualifying production rows and its access restriction was then
 pending. The standalone repair was executed in the isolated fixture before the
 full migration; all 18 tests and the full client/history invariants still passed.
 
@@ -103,5 +103,20 @@ Production verification at `2026-11-13T23:05:52Z` (November 14 in Madrid):
   26 existing May assignments. Monthly totals match the table above.
 - No tracked activity older than the latest qualifying source event.
 - Existing Oracle-question RPC permissions unchanged; additional trigger absent.
-- The previously deployed calls, captures and CRM/web-purchase automation remains
-  active. Additional Oracle payment coverage awaits the explicit approval.
+- Calls, captures and CRM/web-purchase automation remained active throughout.
+
+## Complete migration applied after approval
+
+The complete migration succeeded on November 14. Production verification at
+`2026-11-14T03:51:55Z` (04:51 in Madrid) confirmed:
+
+- 485 qualifying clients; 0 incorrect month labels, missing states or stale states.
+- 128 clients have their latest activity in November and 61 in October; the other
+  monthly totals are unchanged. Legitimate activity continued between snapshots.
+- All three additional payment-attempt/Stripe-Oracle triggers are enabled.
+- The question-grant RPC denies execution to `anon` and `authenticated` and
+  retains execution for `service_role`; the existing grant body is unchanged.
+- The audit has 151 rows both immediately before and after this full replay:
+  no duplicate monthly correction was added.
+- Security advisors introduce no new findings; public executable-definer findings
+  decrease by one for each of `anon` and `authenticated`.
