@@ -9,7 +9,7 @@ function load(file, imports) {
   const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  vm.runInNewContext(code, { exports, require: name => imports[name], Response, URL, console: { error() {} } });
+  vm.runInNewContext(code, { exports, require: name => imports[name], Response, URL, Buffer, console: { error() {} } });
   return exports;
 }
 function fixture(options = {}) {
@@ -59,6 +59,7 @@ function fixture(options = {}) {
   });
   const imports = {
     'next/server': next, '@/lib/server/central-workspace-access': access,
+    '@/lib/server/crm-client-priority': load('src/lib/server/crm-client-priority.ts', { 'node:crypto': require('node:crypto') }),
     '@/lib/server/client-ranks': { calcClientRank: () => 'plata', loadRolling30ClientTotals: async () => new Map() },
     '@/lib/server/client-rank-effective': { normalizeClientRank: value => value },
   };
@@ -96,23 +97,23 @@ test('invalid tags never start a transaction and RPC failures are not reported a
   assert.equal(response.status, 500); assert.equal(body.ok, false); assert.doesNotMatch(body.error, /private database/);
 });
 
-test('November search exposes every one of 124 clients across explicit pages', async () => {
+test('unfiltered search exposes every one of 124 clients across explicit pages', async () => {
   const rows = Array.from({ length: 124 }, (_, n) => ({ id: id(n + 100), nombre: `Cliente ${n}`, origen: 'manual', minutos_free_pendientes: n, minutos_normales_pendientes: 4 }));
   const f = fixture({ rows });
-  const first = await (await f.get('etiqueta=Noviembre%202026')).json();
-  const second = await (await f.get('etiqueta=Noviembre%202026&cursor=' + first.next_cursor)).json();
+  const first = await (await f.get('')).json();
+  const second = await (await f.get('cursor=' + first.next_cursor)).json();
   assert.equal(first.clientes.length, 120); assert.equal(first.next_cursor, id(219)); assert.equal(first.has_more, true);
   assert.equal(second.clientes.length, 4); assert.equal(second.next_cursor, null); assert.equal(second.has_more, false);
   assert.equal(new Set([...first.clientes, ...second.clientes].map(r => r.id)).size, 124);
   assert.equal(second.clientes[3].minutos_free_pendientes, 123);
 });
 
-test('an empty filtered page does not hide later matches and the joined month filter reaches past 1000 clients', async () => {
+test('an empty unfiltered page does not hide later matches beyond 1000 clients', async () => {
   const rows = Array.from({ length: 1005 }, (_, n) => ({ id: id(n + 100), nombre: `Cliente ${n}`, origen: n < 120 ? 'orion' : 'manual' }));
   const f = fixture({ rows });
-  const first = await (await f.get('etiqueta=Noviembre%202026')).json();
+  const first = await (await f.get('')).json();
   assert.equal(first.clientes.length, 0); assert.equal(first.next_cursor, id(219));
-  const last = await (await f.get('etiqueta=Noviembre%202026&cursor=' + id(1059))).json();
+  const last = await (await f.get('cursor=' + id(1059))).json();
   assert.equal(last.clientes.length, 45); assert.equal(last.has_more, false);
   assert.ok(f.reads.some(r => r.table === 'crm_clientes' && r.comparisons.some(([key, value]) => key === 'id' && value === id(1059))));
 });
@@ -120,11 +121,11 @@ test('an empty filtered page does not hide later matches and the joined month fi
 test('concurrent activity and a removed earlier client do not skip or duplicate subsequent pages', async () => {
   const rows = Array.from({ length: 124 }, (_, n) => ({ id: id(n + 100), nombre: `Cliente ${n}`, origen: 'manual', updated_at: '2026-11-12T10:00:00Z' }));
   const f = fixture({ rows });
-  const first = await (await f.get('etiqueta=Noviembre%202026')).json();
+  const first = await (await f.get('')).json();
   rows[120].updated_at = '2026-11-13T23:00:00Z';
   rows[0].updated_at = '2026-11-13T22:00:00Z';
   rows.splice(1, 1);
-  const second = await (await f.get('etiqueta=Noviembre%202026&cursor=' + first.next_cursor)).json();
+  const second = await (await f.get('cursor=' + first.next_cursor)).json();
   assert.deepEqual(second.clientes.map(row => row.id), [id(220), id(221), id(222), id(223)]);
   assert.equal(new Set([...first.clientes, ...second.clientes].map(row => row.id)).size, 124);
   assert.ok(f.reads.filter(r => r.table === 'crm_clientes').every(r => JSON.stringify(r.orders) === JSON.stringify([['id', true]])));

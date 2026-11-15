@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { calcClientRank, loadRolling30ClientTotals } from "@/lib/server/client-ranks";
 import { normalizeClientRank } from "@/lib/server/client-rank-effective";
 import { centralWorkspaceIdentity, centralWorkspaceAccessFailure } from "@/lib/server/central-workspace-access";
+import { CRM_LIST_FIELDS, CrmPriorityError, loadPriorityClientPage } from "@/lib/server/crm-client-priority";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,7 +50,7 @@ export async function GET(req: Request) {
 
     const pageSize = 120;
     const cursor = searchParams.get("cursor") || "";
-    if (cursor && !UUID.test(cursor)) {
+    if (cursor && (etiqueta ? !cursor.startsWith("cp1.") : !UUID.test(cursor))) {
       return json({ ok: false, error: "PAGINA_INVALIDA" }, 400);
     }
     let etiquetaIdsFiltro: string[] | null = null;
@@ -58,30 +59,17 @@ export async function GET(req: Request) {
       const { data: etiquetasData, error: tagsErr } = await admin.from("crm_etiquetas").select("id").ilike("nombre", etiqueta);
       if (tagsErr) throw tagsErr;
       const idsEtiqueta = (etiquetasData || []).map((e: any) => String(e.id));
-      if (!idsEtiqueta.length) return json({ ok: true, clientes: [] });
+      if (!idsEtiqueta.length) return json({ ok: true, clientes: [], has_more: false, next_cursor: null, scanned_count: 0 });
       etiquetaIdsFiltro = idsEtiqueta;
     }
-
-    let query = admin
-      .from("crm_clientes")
-      .select("id, nombre, apellido, telefono, telefono_normalizado, email, pais, notas, origen, updated_at, created_at, onboarding_completado, total_accesos, ultimo_acceso_at, ultima_actividad_at, minutos_free_pendientes, minutos_normales_pendientes, deuda_pendiente"
-        + (etiquetaIdsFiltro ? ",crm_cliente_etiquetas!inner(etiqueta_id)" : ""))
-      // IDs are immutable: purchases, calls and access heartbeats cannot move
-      // an existing client behind a page that Central already loaded.
-      .order("id", { ascending: true })
-      .range(0, pageSize);
-
-    if (cursor) query = query.gt("id", cursor);
-
-    if (etiquetaIdsFiltro) query = query.in("crm_cliente_etiquetas.etiqueta_id", etiquetaIdsFiltro);
 
     const searchQ = q.replace(/[%]/g, " ").replace(/,/g, " ").trim();
     const qDigits = normalizeSpanishPhone(searchQ);
     const qParts = searchQ.split(" ").filter(Boolean);
-
+    let phoneCandidates: string[] = [];
     if (qDigits || telefonoDigits) {
       const phoneSearch = telefonoDigits || qDigits;
-      const phoneCandidates = Array.from(
+      phoneCandidates = Array.from(
         new Set(
           [
             phoneSearch,
@@ -91,45 +79,48 @@ export async function GET(req: Request) {
           ].filter(Boolean)
         )
       );
-
-      const phoneOrParts: string[] = [];
-      for (const candidate of phoneCandidates) {
-        phoneOrParts.push(`telefono_normalizado.eq.${candidate}`);
-        phoneOrParts.push(`telefono.eq.${candidate}`);
-      }
-
-      query = query.or(phoneOrParts.join(","));
-    } else if (searchQ) {
-      const orParts: string[] = [
-        `nombre.ilike.%${searchQ}%`,
-        `apellido.ilike.%${searchQ}%`,
-        `email.ilike.%${searchQ}%`,
-      ];
-
-      if (qParts.length >= 2) {
-        const first = qParts[0];
-        const second = qParts.slice(1).join(" ");
-        orParts.push(`and(nombre.ilike.%${first}%,apellido.ilike.%${second}%)`);
-        orParts.push(`and(nombre.ilike.%${second}%,apellido.ilike.%${first}%)`);
-      }
-
-      query = query.or(orParts.join(","));
     }
 
-    if (pais) query = query.ilike("pais", `%${pais}%`);
+    let clientes: any[];
+    let pagination: { has_more: boolean; next_cursor: string | null; scanned_count: number; sort_order?: string; sort_as_of?: string };
+    if (etiquetaIdsFiltro) {
+      const page = await loadPriorityClientPage(admin, {
+        tagIds: etiquetaIdsFiltro, search: searchQ, phoneCandidates, country: pais, webFilter, rank: rango,
+      }, cursor, pageSize);
+      ({ clientes, ...pagination } = page);
+    } else {
+      // The unfiltered directory retains its immutable UUID pagination.
+      let query = admin.from("crm_clientes").select(CRM_LIST_FIELDS)
+        .order("id", { ascending: true }).range(0, pageSize);
+      if (cursor) query = query.gt("id", cursor);
+      if (phoneCandidates.length) {
+        query = query.or(phoneCandidates.flatMap(candidate => [
+          `telefono_normalizado.eq.${candidate}`, `telefono.eq.${candidate}`,
+        ]).join(","));
+      } else if (searchQ) {
+        const orParts: string[] = [
+          `nombre.ilike.%${searchQ}%`, `apellido.ilike.%${searchQ}%`, `email.ilike.%${searchQ}%`,
+        ];
+        if (qParts.length >= 2) {
+          const first = qParts[0];
+          const second = qParts.slice(1).join(" ");
+          orParts.push(`and(nombre.ilike.%${first}%,apellido.ilike.%${second}%)`);
+          orParts.push(`and(nombre.ilike.%${second}%,apellido.ilike.%${first}%)`);
+        }
+        query = query.or(orParts.join(","));
+      }
+      if (pais) query = query.ilike("pais", `%${pais}%`);
 
-    const { data, error } = await query;
-    if (error) throw error;
-    const hasMore = (data || []).length > pageSize;
-    let clientes: any[] = (data || []).slice(0, pageSize).map((row: any) => {
-      const { crm_cliente_etiquetas: _filterRelations, ...cliente } = row;
-      return cliente;
-    });
-    const pagination = {
-      has_more: hasMore,
-      next_cursor: hasMore ? String(clientes[pageSize - 1].id) : null,
-      scanned_count: clientes.length,
-    };
+      const { data, error } = await query;
+      if (error) throw error;
+      const hasMore = (data || []).length > pageSize;
+      clientes = (data || []).slice(0, pageSize);
+      pagination = {
+        has_more: hasMore,
+        next_cursor: hasMore ? String(clientes[pageSize - 1].id) : null,
+        scanned_count: clientes.length,
+      };
+    }
 
     clientes = clientes.filter((c: any) => !String(c?.origen || "").toLowerCase().includes("orion"));
 
@@ -217,6 +208,7 @@ export async function GET(req: Request) {
   } catch (e: any) {
     const accessFailure = centralWorkspaceAccessFailure(e);
     if (accessFailure) return accessFailure;
+    if (e instanceof CrmPriorityError) return json({ ok: false, error: e.message }, e.status);
     return json({ ok: false, error: e?.message || "ERR" }, 500);
   }
 }

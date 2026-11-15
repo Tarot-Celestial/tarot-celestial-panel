@@ -15,6 +15,10 @@ const minutes = (tree, name) => row(tree, name).findAllByType('td').slice(6, 8).
 const compile = file => ts.transpileModule(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
 const component = compile('src/components/crm/CRMClientesPanel.tsx');
 const searchRoute = compile('src/app/api/crm/clientes/buscar/route.ts');
+const priorityHelper = {};
+vm.runInNewContext(compile('src/lib/server/crm-client-priority.ts'), {
+  exports: priorityHelper, require: name => name === 'node:crypto' ? require('node:crypto') : undefined, Buffer,
+});
 
 function apiFixture(role = 'central') {
   const rows = [first, second];
@@ -45,6 +49,7 @@ function apiFixture(role = 'central') {
     },
     '@/lib/server/client-ranks': { calcClientRank: () => 'plata', loadRolling30ClientTotals: async () => new Map(rows.map(r => [r.id, { total: 120, compras: 2 }])) },
     '@/lib/server/client-rank-effective': { normalizeClientRank: x => x || null },
+    '@/lib/server/crm-client-priority': priorityHelper,
   };
   const exports = {};
   vm.runInNewContext(searchRoute, { exports, require: x => deps[x], Response, URL, console, process: { env: { NEXT_PUBLIC_SUPABASE_URL: 'https://fixture.invalid', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'fixture', SUPABASE_SERVICE_ROLE_KEY: 'fixture' } } });
