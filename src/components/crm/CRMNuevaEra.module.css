@@ -16,5 +16,10 @@
 .passCount strong span { font-size:16px; color:#b7ac94; }
 .passCount>span { font-size:13px; }
 .feedback { font-size:12px; margin-top:8px; line-height:1.5; }
+.priorityOrder { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; margin-top:12px; font-size:12px; color:#f0d79f; }
+.priorityOrder>:global(.tc-sub) { flex-basis:100%; }
+.priorityTag { padding:3px 8px; border:1px solid #d8b87555; border-radius:8px; background:#d8b87512; overflow-wrap:anywhere; }
+.priorityMetrics { display:grid; gap:4px; margin-top:7px; font-size:11px; line-height:1.4; }
+.priorityPurchased { color:#f0d79f; font-weight:650; font-variant-numeric:tabular-nums; }
 @media(max-width:900px) { .overview { grid-template-columns:minmax(0,1fr); } .overview>div { position:static !important; } }
 @media(max-width:600px) { .root :global(.tc-grid-4),.root :global(.tc-grid-3),.root :global(.tc-grid-2) { grid-template-columns:minmax(0,1fr); } .root { gap:12px; } }

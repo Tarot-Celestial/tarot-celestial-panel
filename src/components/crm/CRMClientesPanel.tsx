@@ -130,6 +130,7 @@ function eur(n: any) {
   const x = Number(n) || 0;
   return x.toLocaleString("es-ES", { style: "currency", currency: "EUR" });
 }
+
 function rankMeta(rank: string | null | undefined) {
   const r = String(rank || "").toLowerCase();
   if (r === "diamante") {
@@ -310,6 +311,7 @@ export default function CRMClientesPanel({
   const [crmLoading, setCrmLoading] = useState(false);
   const [crmRows, setCrmRows] = useState<any[]>([]);
   const [crmNextCursor, setCrmNextCursor] = useState<string | null>(null);
+  const [crmPriorityTag, setCrmPriorityTag] = useState("");
   const crmSearchQueryRef = useRef<string>("");
   const [crmFreshLeads, setCrmFreshLeads] = useState<any[]>([]);
   const [crmFreshLeadsLoading, setCrmFreshLeadsLoading] = useState(false);
@@ -366,6 +368,7 @@ export default function CRMClientesPanel({
       ++crmRowSnapshotSeq.current;
       setCrmLoading(false);
       setCrmRows([]);
+      setCrmPriorityTag("");
       setCrmClienteSelId("");
       setCrmClienteFicha(null);
       setCrmMsg(`Vista cambiada a Tarot ${next === "orion" ? "Orion" : "Celestial"}. Cargando clientes de esta marca…`);
@@ -787,6 +790,7 @@ export default function CRMClientesPanel({
         const clientes = Array.isArray(j?.clientes) ? j.clientes : [];
         setCrmNextCursor(null);
         crmSearchQueryRef.current = "";
+        setCrmPriorityTag("");
         applyCrmSearchRows(clientes, snapshotVersion);
         setCrmMsg(`Resultados: ${clientes.length}`);
         if (clientes.length === 1 && mode !== "new") {
@@ -833,6 +837,7 @@ export default function CRMClientesPanel({
         if (searchRequest !== crmSearchRequestSeq.current || !j?._ok || !j?.ok) return;
         setCrmNextCursor(null);
         crmSearchQueryRef.current = "";
+        setCrmPriorityTag("");
         applyCrmSearchRows(j.clientes || [], snapshotVersion);
         setCrmMsg(`Resultados: ${(j.clientes || []).length}`);
       } catch {
@@ -1015,6 +1020,7 @@ export default function CRMClientesPanel({
       const rows = append ? Array.from(new Map([...crmRows, ...received].map(row => [String(row.id), row])).values()) : received;
       applyCrmSearchRows(rows, snapshotVersion);
       crmSearchQueryRef.current = querySnapshot;
+      setCrmPriorityTag(new URLSearchParams(querySnapshot).get("etiqueta") || "");
       const next = j.has_more && typeof j.next_cursor === "string" && j.next_cursor ? j.next_cursor : null;
       setCrmNextCursor(next);
       setCrmMsg(`Resultados cargados: ${rows.length}${next !== null ? " · Hay más clientes; pulsa Cargar más clientes." : ""}`);
@@ -1179,6 +1185,7 @@ export default function CRMClientesPanel({
     setCrmLoading(false);
     setCrmNextCursor(null);
     crmSearchQueryRef.current = "";
+    setCrmPriorityTag("");
     setCrmQuery("");
     setCrmTagFilter("");
     setCrmPhoneFilter("");
@@ -2963,6 +2970,13 @@ export default function CRMClientesPanel({
               {crmLoading ? "Cargando…" : "Cargar más clientes"}
             </button> : null}
             <div className="tc-sub" style={{ marginTop: 6 }}>Listado operativo con acceso rápido a ficha</div>
+            {crmPriorityTag ? (
+              <div className={era.priorityOrder}>
+                <span className={era.priorityTag}>{crmPriorityTag}</span>
+                <span>Orden: mayor gasto · más compras · actividad reciente</span>
+                <span className="tc-sub">Histórico de compras registradas. Los clientes sin compras quedan al final.</span>
+              </div>
+            ) : null}
           </div>
           <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
             <span className="tc-chip">Clientes: {crmRows.length}</span>
@@ -3009,10 +3023,30 @@ export default function CRMClientesPanel({
 
                 const webMeta = clientWebMeta(r);
                 const webBadge = clientWebBadge(r);
+                const hasPriority = Boolean(crmPriorityTag)
+                  && typeof r.prioridad_gasto_total === "number" && Number.isFinite(r.prioridad_gasto_total)
+                  && typeof r.prioridad_compras === "number" && Number.isInteger(r.prioridad_compras)
+                  && r.prioridad_gasto_total >= 0 && r.prioridad_compras >= 0;
+                const priorityActivity = r.prioridad_ultima_actividad_at ? new Date(r.prioridad_ultima_actividad_at) : null;
+                const priorityActivityLabel = priorityActivity && Number.isFinite(priorityActivity.getTime())
+                  ? priorityActivity.toLocaleString("es-ES", { timeZone: "Europe/Madrid", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
+                  : null;
 
                 return (
                   <tr key={r.id}>
-                    <td><b>{[r.nombre, r.apellido].filter(Boolean).join(" ") || "—"}</b></td>
+                    <td>
+                      <b>{[r.nombre, r.apellido].filter(Boolean).join(" ") || "—"}</b>
+                      {hasPriority ? (
+                        <div className={era.priorityMetrics}>
+                          <span className={r.prioridad_compras > 0 ? era.priorityPurchased : "tc-sub"}>
+                            {r.prioridad_compras > 0
+                              ? `${eur(r.prioridad_gasto_total)} · ${r.prioridad_compras} ${r.prioridad_compras === 1 ? "compra" : "compras"}`
+                              : "Sin compras confirmadas"}
+                          </span>
+                          {priorityActivityLabel ? <span className="tc-sub" title="Hora de España (Europe/Madrid)">Última actividad: {priorityActivityLabel}</span> : null}
+                        </div>
+                      ) : null}
+                    </td>
                     <td>{r.telefono || "—"}</td>
                     <td>{r.pais || "—"}</td>
                     <td>{etiquetasTexto || "—"}</td>
