@@ -30,6 +30,7 @@ function playNotificationSound(type: "parking" | "lead") {
 function shouldShowDock(pathname: string | null) {
   const path = pathname || "";
   if (path === "/admin/cerebro" || path.startsWith("/admin/cerebro/")) return false;
+  if (path === "/admin/contabilidad" || path.startsWith("/admin/contabilidad/")) return false;
   return path.startsWith("/admin") || path.startsWith("/panel-central") || path.startsWith("/panel-tarotista");
 }
 
