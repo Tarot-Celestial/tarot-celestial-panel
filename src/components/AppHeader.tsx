@@ -8,7 +8,7 @@ import TCToaster from "@/components/ui/TCToaster";
 import BrandSwitcher from "@/components/global/BrandSwitcher";
 import { tcToast } from "@/lib/tc-toast";
 import { useAttendance } from "@/hooks/useAttendance";
-import { ArrowLeft, Clock3, Network } from "lucide-react";
+import { ArrowLeft, Clock3, Landmark, Network } from "lucide-react";
 import styles from "./AppHeader.module.css";
 import { backgroundFetch } from "@/lib/background-fetch";
 import StaffTeamStatusStrip from '@/components/chat/StaffTeamStatusStrip';
@@ -29,6 +29,7 @@ type HeaderNotif = {
 function pathLabel(pathname: string) {
   if (!pathname) return "Panel";
   if (pathname === "/admin/cerebro") return "Cerebro Celestial";
+  if (pathname === "/admin/contabilidad") return "Contabilidad";
   if (pathname === "/admin") return "Admin";
   if (pathname === "/panel-central") return "Centrales";
   if (pathname === "/panel-tarotista") return "Tarotista";
@@ -419,14 +420,28 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
               </div>
 
               {canAdmin ? (
+                <>
                 <button
                   type="button"
                   className={styles.brainButton}
+                  aria-label={pathname === "/admin/cerebro" ? "Volver al panel" : "Cerebro Celestial"}
                   onClick={() => router.push(pathname === "/admin/cerebro" ? "/admin" : "/admin/cerebro")}
                 >
                   {pathname === "/admin/cerebro" ? <ArrowLeft size={16} /> : <Network size={16} />}
                   <span>{pathname === "/admin/cerebro" ? "Volver al panel" : "Cerebro Celestial"}</span>
                 </button>
+                <button
+                  type="button"
+                  className={`${styles.brainButton} ${styles.accountingButton} ${pathname === "/admin/contabilidad" ? styles.activeTool : ""}`}
+                  aria-label="Contabilidad"
+                  aria-current={pathname === "/admin/contabilidad" ? "page" : undefined}
+                  title="Contabilidad privada"
+                  onClick={() => router.push("/admin/contabilidad")}
+                >
+                  <Landmark size={16} />
+                  <span>Contabilidad</span>
+                </button>
+                </>
               ) : null}
             </div>
 
