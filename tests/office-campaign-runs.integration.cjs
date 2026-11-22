@@ -7,6 +7,7 @@ const { PGlite } = require("@electric-sql/pglite");
 
 const user = randomUUID(), actor = randomUUID(), promo = randomUUID(), pack = randomUUID();
 let db;
+const historical = [];
 const scalar = async (sql,args=[]) => (await db.query(sql,args)).rows[0].v;
 const rpc = (name,...args) => scalar("select public."+name+"("+args.map((_,i)=>"$"+(i+1)).join(",")+") v",args);
 const office = (body) => rpc("office_apply",user,JSON.stringify({ request_id:randomUUID(),...body }));
@@ -29,6 +30,29 @@ const deliverable = { title:"Pieza de prueba",body:"Texto comprobado",file_name:
   file_base64:Buffer.from("Entrega privada").toString("base64") };
 const migrations = ["20261122191931_office_celestial_workspace.sql","20261122195239_office_campaign_runs.sql","20261122195721_office_run_reconciliation.sql"];
 
+async function migrateDeliveryStatus() {
+  for (const [label,taskStatus,taskRevision,latestStatus] of [
+    ["entrega original","pendiente",1,null], ["edición editorial","en_curso",1,"pendiente"],
+    ["v2 ya aprobada","pendiente",1,"aprobado"], ["edición manual del encargo","pendiente",2,null],
+    ["cancelado","cancelado",1,null], ["completado","completado",1,null],
+  ]) {
+    const taskId=randomUUID(), series=randomUUID(), v1=randomUUID(), runId=randomUUID(), newest=latestStatus ? randomUUID() : v1;
+    await db.query(`insert into public.office_tasks(id,department_id,objective,expected_delivery,priority,status,time_zone,created_by,revision,updated_at)
+      values($1,'marketing','Prueba sintética','Borrador','media',$2,'Europe/Madrid',$3,$4,'2026-01-01')`,[taskId,taskStatus,actor,taskRevision]);
+    await db.query(`insert into public.office_versions(id,task_id,deliverable_id,version,title,body,status,created_by)
+      values($1,$2,$3,1,'Entrega sintética','Texto',$4,$5)`,[v1,taskId,series,latestStatus ? "cambios" : "pendiente",actor]);
+    if (latestStatus) await db.query(`insert into public.office_versions(id,task_id,deliverable_id,version,title,body,status,created_by)
+      values($1,$2,$3,2,'Edición','Nuevo texto',$4,$5)`,[newest,taskId,series,latestStatus,actor]);
+    await db.query(`insert into public.office_runs(id,task_id,task_revision,actor_id,actor_user_id,request_id,status,task_snapshot,result_version_id)
+      values($1,$2,1,$3,$4,$5,'review','{}',$6)`,[runId,taskId,actor,user,randomUUID(),v1]);
+    historical.push({ label,taskId,taskStatus,taskRevision,latestStatus,v1,newest });
+  }
+  const dir=path.join(__dirname,"../supabase/migrations");
+  const matching=fs.readdirSync(dir).filter(name=>/^\d+_office_tasks_delivery_review\.sql$/.test(name));
+  assert.equal(matching.length,1);
+  await db.exec(fs.readFileSync(path.join(dir,matching[0]),"utf8"));
+}
+
 before(async () => {
   db=new PGlite();
   await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
@@ -48,9 +72,21 @@ before(async () => {
   await db.query("insert into public.tc_client_promotions(id,name,status,active_until_disabled,updated_at,promotion_kind) values($1,'Promo de prueba','active',true,now(),'standard')",[promo]);
   await db.query("insert into public.tc_client_promotion_packages(id,promotion_id,name,price,currency,paid_minutes,free_minutes,is_active,updated_at) values($1,$2,'Paquete de prueba',15,'EUR',20,5,true,now())",[pack,promo]);
   for (const file of migrations) await db.exec(fs.readFileSync(path.join(__dirname,"../supabase/migrations",file),"utf8"));
+  await migrateDeliveryStatus();
   await db.exec("set role service_role");
 });
 after(async()=>{ if(db) await db.close(); });
+
+test("historical delivery backfill uses the current pending version and preserves manual changes and terminal tasks",async () => {
+  for (const x of historical) {
+    const expected=x.taskRevision===1 && ["pendiente","en_curso"].includes(x.taskStatus) && x.latestStatus!=="aprobado";
+    const t=(await db.query("select status,revision,updated_at>'2026-01-01' as touched from public.office_tasks where id=$1",[x.taskId])).rows[0];
+    assert.deepEqual(t,{status:expected ? "en_revision" : x.taskStatus,revision:x.taskRevision+Number(expected),touched:expected},x.label);
+    const events=(await db.query("select details from public.office_events where task_id=$1 and kind='task_review_requested'",[x.taskId])).rows;
+    assert.equal(events.length,Number(expected),x.label);
+    if (expected) { assert.equal(events[0].details.version_id,x.newest); assert.equal(events[0].details.run_version_id,x.v1); }
+  }
+});
 
 test("market approval is explicit, currency-specific and is invalidated by a price edit or expiry",async () => {
   assert.equal(await scope(),false); assert.equal(await setScope(),true); assert.equal(await scope(),true);
@@ -83,6 +119,7 @@ test("leased stages persist evidence, usage, one private deliverable and a reque
   const third=await claim(id);
   const result=await finish(third,"ok",{ asset:"Pieza privada" },{},deliverable);
   assert.equal(result.status,"review"); assert.ok(result.result_version_id);
+  assert.deepEqual((await db.query("select status,revision from public.office_tasks where id=$1",[taskId])).rows[0],{status:"en_revision",revision:2});
   assert.deepEqual(await finish(third,"ok",{}, {},deliverable),result);
   assert.equal(await scalar("select count(*)::int v from public.office_versions where task_id=$1",[taskId]),1);
   const row=await state(id);
@@ -99,6 +136,7 @@ test("leased stages persist evidence, usage, one private deliverable and a reque
   const versions=(await db.query("select deliverable_id,version,status from public.office_versions where task_id=$1 order by version",[taskId])).rows;
   assert.equal(versions[0].deliverable_id,versions[1].deliverable_id); assert.equal(versions[1].version,2);
   assert.equal(versions[0].status,"cambios"); assert.equal(versions[1].status,"pendiente");
+  assert.equal(await scalar("select count(*)::int v from public.office_events where task_id=$1 and kind='task_review_requested'",[taskId]),1);
   await assert.rejects(enqueue(taskId,randomUUID(),result.result_version_id),/OFFICE_CONFLICT/);
 });
 

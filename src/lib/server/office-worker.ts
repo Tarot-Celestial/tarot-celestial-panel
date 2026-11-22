@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { renderOfficeArtwork } from "./office-artwork";
-import { officeCreativeStep, OfficeCreativeError, validateOfficeSources } from "./office-creative";
+import { officeArtworkAlt, officeCreativeStep, OfficeCreativeError, officePublicCaption, validateOfficeSources } from "./office-creative";
 
-type CreativeCopy = { headline: string; lines: string[]; caption: string; alt: string };
+type CreativeCopy = { headline: string; lines: string[]; caption: string };
 type Review = { id: string; deliverable_id: string; version: number; title: string; body: string; review_note: string | null };
 type Run = {
   id: string; task_id: string; step: number; lease_token: string; revision_id: string | null;
@@ -22,11 +22,13 @@ async function loadInputs(db: SupabaseClient, run: Run) {
 async function makeDelivery(db: SupabaseClient, run: Run, task: Awaited<ReturnType<typeof loadInputs>>["task"], revision: Review | null) {
   const brief = run.outputs["0"];
   const copy = run.outputs["1"];
-  if (!brief || !copy?.caption || !copy.alt) throw new Error("Faltan el briefing o los textos de Marketing.");
+  const caption = copy?.caption && officePublicCaption(copy.caption);
+  if (!brief || !copy || !caption) throw new Error("Faltan el briefing o los textos de Marketing.");
   const bytes = await renderOfficeArtwork(copy);
+  const alt = officeArtworkAlt(copy, bytes.readUInt32BE(16), bytes.readUInt32BE(20));
   await validateOfficeSources(db, task, brief);
   const filename = "tarot-celestial-instagram-v" + (1 + (revision?.version || 0)) + ".png";
-  const body = [copy.caption, "Texto de la imagen", copy.headline, ...copy.lines, "Texto alternativo", copy.alt].join("\n\n");
+  const body = [caption, "Texto de la imagen", copy.headline, ...copy.lines, "Texto alternativo", alt].join("\n\n");
   return {
     title: copy.headline, body, file_name: filename, file_type: "image/png", file_base64: bytes.toString("base64"),
     deliverable_id: revision?.deliverable_id || null, base_version: revision?.version || 0,

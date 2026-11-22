@@ -54,7 +54,8 @@ function fixture(config = {}) {
   }
   const provider=load('src/lib/server/office-creative');
   const step=(i,details=task,brief,revision)=>provider.officeCreativeStep({db,run:{step:i,task_revision:details.revision,outputs:{'0':brief},source_snapshot:brief?.source_snapshot},task:details,revision});
-  return {step,calls,tables,db,validate:provider.validateOfficeSources};
+  return {step,calls,tables,db,validate:provider.validateOfficeSources, publicCaption:provider.officePublicCaption,
+    worker:()=>load('src/lib/server/office-worker')};
 }
 const expected = status => error => error.status === status;
 
@@ -100,11 +101,62 @@ test('missing currency, missing market, expired approval and distinct currencies
   const copy=await f.step(1,promo,atlas.output);
   assert.match(copy.output.caption,/18 EUR · 20 min \+ 7 min de regalo/);assert.equal(copy.output.lines.length,2);
   assert.doesNotMatch(copy.output.caption,/USD/);
+  assert.match(copy.output.alt,/Cartel vertical de Tarot Celestial \(1080 × 1350 px\)/);
+  for (const [i,line] of copy.output.lines.entries()) assert.ok(copy.output.alt.includes(`0${i+1}. ${line}`));
+  assert.doesNotMatch(copy.output.alt,/USD|tres preguntas|logo/);
   enabled=false;
   await assert.rejects(f.validate(f.db,promo,atlas.output),expected('waiting_input'));
   await assert.rejects(f.step(0,promo),expected('waiting_input'));
   enabled=true;f.tables.office_promotion_scopes[0].source_fingerprint='v2';
   await assert.rejects(f.validate(f.db,promo,atlas.output),expected('waiting_input'));
+});
+
+test('el caption empieza con la voz pública y conserva el texto editorial después de cualquier encabezado interno', async()=>{
+  const header='Borrador interno para revisión de Álex';
+  const publicText='¿Qué situación te gustaría entender mejor?\n\nEscribe una frase para ti.';
+  const f=fixture({copy:{...creative,caption:(header+':\n\n'+publicText).normalize('NFD'),alt:'Imagen cuadrada con una baraja.'}});
+  const atlas=await f.step(0);
+  const {output}=await f.step(1,task,atlas.output);
+  assert.equal(output.caption,publicText);
+  assert.match(f.calls[1].instructions,/caption listo para copiar en Instagram/);
+  assert.equal(f.calls[1].text.format.schema.properties.alt,undefined);
+  assert.match(output.alt,/Cartel vertical/);
+  assert.ok(output.alt.includes(creative.headline));
+  for(const line of output.lines) assert.ok(output.alt.includes(line));
+  assert.doesNotMatch(output.alt,/cuadrada|baraja/);
+  for(const separator of ['. ', ' — ', '\n']) assert.equal(f.publicCaption(header+separator+publicText),publicText);
+  for(const original of [publicText, 'Anota «'+header+'» en tu cuaderno.', header+'andra.', header+' sobre el cierre.']) {
+    assert.equal(f.publicCaption(original),original);
+  }
+  const empty=fixture({copy:{...creative,caption:header+'.'}});
+  await assert.rejects(empty.step(1,task,(await empty.step(0)).output),expected('failed'));
+});
+
+test('una entrega pendiente usa los textos renderizados y las dimensiones del PNG, incluso con texto alternativo antiguo',async()=>{
+  const f=fixture();
+  const brief=(await f.step(0)).output;
+  const copy={...creative,caption:'Borrador interno para revisión de Álex.\n\n'+creative.caption,alt:'Diseño cuadrado con cinco cartas.'};
+  let saved;
+  const db={
+    from(table){
+      if(table!=='office_tasks') return f.db.from(table);
+      return {select(){return this;},eq(){return this;},single:async()=>({data:{...task,department_id:'marketing'},error:null})};
+    },
+    async rpc(name,args){
+      if(name==='office_run_claim') return {data:{id:'run',task_id:task.id,lease_token:'lease',step:2,outputs:{0:brief,1:copy}},error:null};
+      if(name==='office_run_finish_step'){saved=args;return {data:{status:'review'},error:null};}
+      return f.db.rpc(name,args);
+    },
+  };
+  await f.worker().processOfficeRun(db,'run');
+  assert.equal(saved.p_status,'ok');
+  const bytes=Buffer.from(saved.p_delivery.file_base64,'base64');
+  const width=bytes.readUInt32BE(16),height=bytes.readUInt32BE(20);
+  const [captionAndImage,alt]=saved.p_delivery.body.split('\n\nTexto alternativo\n\n');
+  assert.ok(captionAndImage.startsWith(creative.caption+'\n\nTexto de la imagen'));
+  assert.equal(width,1080);assert.equal(height,1350);
+  assert.equal(alt,[`Cartel vertical de Tarot Celestial (${width} × ${height} px). «${copy.headline}».`,
+    ...copy.lines.map((line,i)=>`0${i+1}. ${line}`)].join('\n'));
 });
 
 test('no fabricated content or retries on missing key, quota exhaustion, transport uncertainty or the request-size limit',async()=>{
