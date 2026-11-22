@@ -18,7 +18,8 @@ function dateLabel(value: string | null) {
 const sources: Record<string, string> = {
   crm_cliente_pagos: "Pagos del CRM", rendimiento_llamadas: "Compra registrada en llamada",
   cliente_payment_attempts: "Pago del panel de clientes", stripe_oracle_credits: "Stripe · créditos del Oráculo",
-  stripe_oracle_questions: "Stripe · preguntas del Oráculo",
+  stripe_oracle_questions: "Stripe · preguntas del Oráculo", stripe_chat: "Stripe · compra de chat",
+  stripe_chat_credits: "Stripe · créditos de chat",
 };
 const statuses: Record<string, string> = {
   pending: "Pendiente", confirmed: "Confirmada", completed: "Completada", cancelled: "Cancelada",

@@ -16,6 +16,7 @@ type SnapshotResponse = AccountingSnapshot & { ok: true; updatedAt: string };
 type AccessResponse = { ok: true; configured: boolean; unlocked: boolean; expiresAt?: string };
 
 export default function AccountingPage() {
+  const [officeReturn, setOfficeReturn] = useState<string | null>(null);
   const [authorized, setAuthorized] = useState(false);
   const [checking, setChecking] = useState(true);
   const [configured, setConfigured] = useState(true);
@@ -33,6 +34,16 @@ export default function AccountingPage() {
   const epoch = useRef(0);
   const accessEpoch = useRef(0);
   const authIdentity = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!window.location.search) return;
+    const params = new URLSearchParams(window.location.search);
+    const area = params.get("oficina") || "";
+    const month = params.get("mes") || "";
+    if (["finanzas", "inteligencia", "estrategia"].includes(area) && /^(?:19|20|21)\d{2}-(?:0[1-9]|1[0-2])$/.test(month)) {
+      setOfficeReturn("/admin/oficina?" + new URLSearchParams({ departamento: area, mes: month }));
+    }
+  }, []);
 
   const clearFinancialAccess = useCallback(() => {
     epoch.current += 1;
@@ -125,6 +136,7 @@ export default function AccountingPage() {
     try {
       const session = await accountingRequest<AccessResponse>("/session", { method: "POST", body: JSON.stringify({ password }) });
       if (principalEpoch !== accessEpoch.current) return;
+      if (session.unlocked && officeReturn) { window.location.assign(officeReturn); return; }
       setConfigured(session.configured); setUnlocked(session.unlocked); setExpiresAt(session.expiresAt || null);
     } catch (cause) { if (principalEpoch === accessEpoch.current) handleError(cause); }
     finally { setUnlocking(false); setPassword(""); }
@@ -134,7 +146,14 @@ export default function AccountingPage() {
     if (locking) return;
     const principalEpoch = accessEpoch.current;
     setLocking(true); setError(null);
-    try { await accountingRequest("/session", { method: "DELETE", body: "{}" }); if (principalEpoch === accessEpoch.current) clearFinancialAccess(); }
+    try {
+      await accountingRequest("/session", { method: "DELETE", body: "{}" });
+      if (typeof BroadcastChannel !== "undefined") {
+        const channel = new BroadcastChannel("tc-accounting-access");
+        channel.postMessage("locked"); channel.close();
+      }
+      if (principalEpoch === accessEpoch.current) clearFinancialAccess();
+    }
     catch (cause) { if (principalEpoch === accessEpoch.current) handleError(cause); }
     finally { setLocking(false); }
   }
@@ -176,6 +195,7 @@ export default function AccountingPage() {
   if (!authorized || checking) return <div className={styles.page}><div className={styles.loading}>{error ? <><p role="alert">{error}</p><button type="button" className={styles.primary} onClick={() => setAccessAttempt(value => value + 1)}>Reintentar acceso</button><a className={styles.textButton} href="/admin"><ArrowLeft size={16} />Volver al panel</a></> : <><LoaderCircle size={27} className={styles.spin} /><p>Verificando el acceso privado…</p></>}</div></div>;
 
   return <div className={styles.page}><AppHeader />
+    {officeReturn && <a className={styles.backLink} href={officeReturn}><ArrowLeft size={16} />Volver al informe mensual de Oficina</a>}
     {!unlocked ? <main className={styles.gateShell}><a className={styles.backLink} href="/admin"><ArrowLeft size={16} />Volver al panel</a><section className={styles.gate}>
       <div className={styles.gateMark}><Vault size={45} strokeWidth={1.2} /><span><LockKeyhole size={15} /></span></div>
       <p className={styles.eyebrow}>CONTABILIDAD · ACCESO PRIVADO</p><h1>Bienvenido, Alex<span className={styles.goldPeriod}>.</span></h1><p className={styles.gateSubtitle}>Todo lo que entra. Todo lo que sale.<br />Y lo que guardamos para el futuro.</p>

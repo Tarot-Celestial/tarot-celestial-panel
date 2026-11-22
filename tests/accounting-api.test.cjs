@@ -11,6 +11,7 @@ const optionId = '10000000-0000-4000-8000-000000000003';
 const income = () => ({ id: entryId, kind: 'income', account: 'celestial', currency: 'EUR', amount_cents: 1099, occurred_on: '2026-11-12', category_id: optionId, method_id: optionId, description: 'Ingreso de prueba' });
 const names = {
   snapshot: 'src/app/api/admin/contabilidad/route.ts',
+  month: 'src/app/api/admin/contabilidad/informe-mensual/route.ts',
   entry: 'src/app/api/admin/contabilidad/movimientos/route.ts',
   void: 'src/app/api/admin/contabilidad/movimientos/anular/route.ts',
   option: 'src/app/api/admin/contabilidad/opciones/route.ts',
@@ -35,14 +36,15 @@ function fixture(options = {}) {
     if (cache.has(file)) return cache.get(file);
     const exports = {}; cache.set(file, exports);
     const source = ts.transpileModule(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-    vm.runInNewContext(source, { exports, Error, Date, JSON, Array, Object, Number, String, Uint8Array, TextDecoder, Request, Response, console: { error() {} }, require(name) {
+    vm.runInNewContext(source, { exports, Error, Date, JSON, Array, Object, Number, String, Uint8Array, TextDecoder, Request, Response, URL, console: { error() {} }, require(name) {
       if (name === '@/lib/server/accounting-access') return {
         accountingJson: json,
         accountingWriteGuard: req => options.originDenied ? json({ ok: false, error: 'Origen no autorizado.' }, 403) : null,
         requireAccountingAccess: async () => {
           accessCalls++;
           if (options.throwAuth) throw new Error('private-auth-detail');
-          return options.denied ? { ok: false, response: json({ ok: false, error: 'Acceso denegado.' }, options.denied) } : { ok: true, admin, authUserId: uid };
+          return options.denied ? { ok: false, response: json({ ok: false, error: 'Acceso denegado.' }, options.denied) } :
+            { ok: true, admin, authUserId: uid, expiresAt: new Date(Date.now() + (options.expired ? -1000 : 60000)).toISOString() };
         },
       };
       if (name.startsWith('@/')) return load(`src/${name.slice(2)}.ts`);
@@ -54,7 +56,12 @@ function fixture(options = {}) {
     method: kind === 'snapshot' ? 'GET' : 'POST', headers: { Authorization: 'Bearer fake', 'Content-Type': 'application/json', Origin: 'http://localhost' },
     ...(kind === 'snapshot' ? {} : { body: raw ? body : JSON.stringify(body) }),
   });
-  return { calls, get accessCalls() { return accessCalls; }, load, request, async invoke(kind, body, raw) { const module = load(names[kind]); return (kind === 'snapshot' ? module.GET : module.POST)(request(kind, body, raw)); } };
+  return { calls, get accessCalls() { return accessCalls; }, load, request, async invoke(kind, body, raw) {
+    const module = load(names[kind]);
+    if (kind === 'month') return module.GET(new Request('http://localhost/api/admin/contabilidad/informe-mensual?mes=' +
+      (typeof body === 'string' ? encodeURIComponent(body) : '2024-11')));
+    return (kind === 'snapshot' ? module.GET : module.POST)(request(kind, body, raw));
+  } };
 }
 
 test('all financial endpoints require both admin session and accounting unlock before any DB call', async () => {
@@ -82,6 +89,41 @@ test('snapshot has fresh no-store data and no arbitrary row limit or caller-supp
   assert.equal(body.entries.length, 1100); assert.ok(body.updatedAt);
   assert.equal(f.calls[0].name, 'accounting_snapshot'); assert.equal(f.calls[0].input.p_actor, uid);
   assert.match(response.headers.get('cache-control'), /no-store/);
+});
+
+test('Office monthly book preserves accounts, opening, vault, categories and currencies; excludes private entry fields', async () => {
+  const base = { ...income(), occurred_on: '2024-11-10', amount_cents: 2000, description: 'PRIVATE_NOTE', reference: 'PRIVATE_REF' };
+  const entries = [
+    base, { ...base, occurred_on: '2024-10-31', kind: 'opening_balance', amount_cents: 10000 },
+    { ...base, kind: 'transfer', to_account: 'leonaris', amount_cents: 500 },
+    { ...base, kind: 'vault_deposit', amount_cents: 125 }, { ...base, kind: 'expense', amount_cents: 50, category_id: null },
+    { ...base, account: 'leonaris', currency: 'USD', amount_cents: 790 },
+    { ...base, amount_cents: 99999, voided_at: '2024-11-10' }, { ...base, occurred_on: '2024-12-01' },
+  ];
+  const f = fixture({ data: { entries, categories: [{ id: optionId, name: 'Consultas', kind: 'income', active: false }] } });
+  const response = await f.invoke('month');
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  const rows = body.report.accounts;
+  const celestial = rows.find(r => r.account === 'celestial' && r.currency === 'EUR');
+  assert.deepEqual([celestial.income, celestial.expense, celestial.net, celestial.opening, celestial.available,
+    celestial.vault, celestial.transferOut], [2000, 50, 1950, 10000, 11325, 125, 500]);
+  const leonaris = rows.find(r => r.account === 'leonaris' && r.currency === 'EUR');
+  assert.deepEqual([leonaris.income, leonaris.transferIn, leonaris.available], [0, 500, 500]);
+  assert.equal(rows.find(r => r.account === 'leonaris' && r.currency === 'USD').income, 790);
+  assert.equal(body.report.categories.find(r => r.account === 'celestial' && r.kind === 'income').amount, 2000);
+  assert.equal(body.report.through, '2024-11-30');
+  assert.match(body.expiresAt, /Z$/);
+  assert.doesNotMatch(JSON.stringify(body), /PRIVATE_NOTE|PRIVATE_REF|created_by|entries/);
+  assert.equal(f.calls.length, 1); assert.equal(f.calls[0].name, 'accounting_snapshot'); assert.equal(f.calls[0].input.p_actor, uid);
+});
+
+test('Office monthly book fails closed on invalid period, snapshot errors and session expiry', async () => {
+  for (const month of ['2024-00', '2024-13', '2199-12', '']) {
+    const f = fixture(); assert.equal((await f.invoke('month', month)).status, 400); assert.equal(f.calls.length, 0);
+  }
+  assert.equal((await fixture({ expired: true }).invoke('month')).status, 423);
+  assert.equal((await fixture({ data: {} }).invoke('month')).status, 503);
 });
 
 test('entry validates all money and cross-account fields before DB access', async () => {

@@ -127,15 +127,16 @@ export async function readAccountingSession(req: Request, gate: AdminGate): Prom
 }
 
 /** This guard must protect every accounting data endpoint, including GET. */
-export async function requireAccountingAccess(req: Request): Promise<AdminGate | RejectedGate> {
+export async function requireAccountingAccess(req: Request): Promise<(AdminGate & { expiresAt: string }) | RejectedGate> {
   try {
     const gate = await requireAccountingAdmin(req);
     if (!gate.ok) return gate;
     if (!accountingPasswordConfigured()) return { ok: false, response: accountingJson({ ok: false,
       code: "ACCOUNTING_NOT_CONFIGURED", error: "El acceso a contabilidad aún no está configurado en el servidor." }, 503) };
-    if (!(await readAccountingSession(req, gate))) return { ok: false, response: accountingJson({ ok: false,
+    const session = await readAccountingSession(req, gate);
+    if (!session) return { ok: false, response: accountingJson({ ok: false,
       code: "ACCOUNTING_LOCKED", error: "Desbloquea Contabilidad con su contraseña para continuar." }, 423) };
-    return gate;
+    return { ...gate, expiresAt: session.expiresAt };
   } catch {
     return { ok: false, response: accountingJson({ ok: false, code: "ACCOUNTING_ACCESS_UNAVAILABLE",
       error: "No se pudo verificar el acceso a contabilidad. Vuelve a intentarlo." }, 503) };

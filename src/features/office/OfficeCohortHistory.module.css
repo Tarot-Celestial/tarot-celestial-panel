@@ -1,0 +1,10 @@
+.chart { border: 1px solid var(--line); border-radius: 14px; background: #18161e; padding: 16px clamp(12px, 2vw, 24px); }
+.chart h3 { display: flex; align-items: baseline; gap: 12px; margin: 0 0 15px; font-size: 16px; }
+.chart h3 span { font-size: 13px; color: var(--muted); font-weight: 400; }
+.months { display: grid; grid-template-columns: repeat(12, minmax(0,1fr)); gap: 4px; }
+.months button { display: grid; place-items: center; gap: 5px; min-width: 0; padding: 6px 2px; background: transparent; color: #d0c6d7; border: 1px solid transparent; border-radius: 6px; }
+.months button:is(:hover,[aria-pressed="true"]) { background: #2a242c; border-color: #80724e; color: #ffe6ae; }
+.plot { height: 48px; width: min(100%, 36px); border-bottom: 1px solid #69616c; display: flex; align-items: flex-end; }
+.plot i { display: block; width: 100%; background: #8aa7ac; border-radius: 4px 4px 0 0; }
+.months button[aria-pressed="true"] i { background: #e6c589; }
+@media (max-width: 640px) { .months { grid-template-columns: repeat(6,minmax(0,1fr)); } .plot { height: 28px; } }
