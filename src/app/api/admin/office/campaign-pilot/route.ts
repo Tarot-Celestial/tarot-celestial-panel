@@ -171,7 +171,6 @@ export async function GET(req: Request) {
           worker: text(worker && typeof worker === "object" && "display_name" in worker ? worker.display_name : null, 100),
           file_sha256: c.file_sha256
         } satisfies PilotSpend);
-        reason = null;
       }
     }
     const zone = spend?.zone || live.zone || "Europe/Madrid",

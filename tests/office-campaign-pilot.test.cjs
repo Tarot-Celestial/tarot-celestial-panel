@@ -43,7 +43,7 @@ test("Insights exige la campaña, cuenta, divisa y fecha exactas; diferencia cer
 });
 
 const actor="12345678-0000-4000-8000-000000000000";
-function makeRoute({allowed=true,imported=null,liveSpend=null,liveCurrency=null,empty=false,wrongFunnel=false}={}) {
+function makeRoute({allowed=true,imported=null,liveSpend=null,liveCurrency=null,liveReason="no_access",liveAccount="99",empty=false,wrongFunnel=false}={}) {
   const calls=[],catalog=empty?[]:[{id,name:"Campaña de prueba"}];
   const row={country:null,contacts:3,replied:1,first_buyers:2,buyers_after_reply:1,phone_routed:1,oracle_routed:0,
     without_reply_or_purchase:1,median_reply_minutes:5,matured_contacts:2,buyers_within_7d:1,recorded_consultations:1};
@@ -56,7 +56,7 @@ function makeRoute({allowed=true,imported=null,liveSpend=null,liveCurrency=null,
       unattributed_first_purchases:5,amounts:[{currency:"EUR",receipts:3,first_count:2,first_gross:20,gross:25,confirmed:25,refund_flagged:0}],buyers:[],has_more:false}};
   },from:()=>{const chain={select:()=>chain,eq:()=>chain,order:()=>chain,limit:()=>chain,maybeSingle:async()=>({data:imported})};return chain;}};
   const helpers=load(spendFile);
-  const api=load(routeFile,{"@/lib/countries":load("src/lib/countries.ts"),"@/lib/server/office-campaign-spend":{...helpers,readPilotSpend:async()=>({spend:liveSpend,reason:"no_access",account:"99",zone,currency:liveCurrency})},
+  const api=load(routeFile,{"@/lib/countries":load("src/lib/countries.ts"),"@/lib/server/office-campaign-spend":{...helpers,readPilotSpend:async()=>({spend:liveSpend,reason:liveSpend?null:liveReason,account:liveAccount,zone,currency:liveCurrency})},
     "@/lib/server/office-access":{officeAccess:async()=>allowed?{ok:true,authUserId:actor,admin:db}:{ok:false,response:new Response(null,{status:403})},
       officeUuid:v=>typeof v==="string"&&/^[\da-f-]{36}$/.test(v),officeDatabaseError:()=>new Response(null,{status:500}),
       officeError:(error,status)=>Response.json({error},{status}),officeJson:x=>Response.json(x)}});
@@ -85,6 +85,43 @@ test("importación requiere atestación administrativa y nunca adopta el actor d
   assert.equal((await post()).status,400);assert.equal(f.calls.length,0);
   body.set("attested","true");assert.equal((await post()).status,200);
   assert.equal(f.calls[0].args.p_actor,actor);assert.equal(f.calls[0].args.p_spend,"20.12");
+});
+test("el CSV conserva gasto y CPA, y la Oficina distingue acceso a Insights de incidencias del proveedor",async()=>{
+  const account="1416816065835618";
+  const imported={account_id:account,currency:"EUR",account_zone:zone,from_day:"2024-04-01",through_day:"2024-04-17",
+    spend:45,file_sha256:"a".repeat(64),recorded_at:"2024-04-18T00:00:00Z"};
+  async function view(reason,accountId=account){
+    const f=makeRoute({imported:{...imported,account_id:accountId},liveReason:reason,liveAccount:null});
+    const response=await f.get();
+    assert.equal(response.status,200);
+    const report=await response.json();
+    assert.equal(report.spend.source,"ads_manager_csv");
+    assert.equal(report.spend.amount,45);
+    assert.equal(report.spend_reason,reason);
+    assert.equal(report.cpa,45);
+    const win={location:{href:"http://test.local/admin/oficina?campana="+id},addEventListener(){},removeEventListener(){}};
+    const View=load("src/features/office/OfficeCampaignPilot.tsx",{
+      "./OfficeCampaignConversion":{default:()=>null},"./office-client":{officeRequest:async()=>report}
+    },{window:win}).default;
+    let tree;
+    await act(async()=>{tree=create(React.createElement(View,{month,onMonthChange(){}}));});
+    const rendered=JSON.stringify(tree.toJSON());
+    await act(async()=>tree.unmount());
+    assert.match(rendered,/exportación de Ads Manager/);
+    assert.match(rendered,/Registrar gasto desde Ads Manager/);
+    return rendered;
+  }
+  for(const reason of ["no_access","not_connected"]){
+    const rendered=await view(reason);
+    assert.match(rendered,/TarotPubli/);
+    assert.match(rendered,/ads_read/);
+  }
+  for(const reason of ["provider_unavailable","unverified_period","no_period_total"]){
+    assert.doesNotMatch(await view(reason),/ads_read/);
+  }
+  const anotherAccount=await view("no_access","81");
+  assert.match(anotherAccount,/la cuenta 81/);
+  assert.doesNotMatch(anotherAccount,/TarotPubli/);
 });
 test("el enlace mantiene campaña y mes al volver atrás y el formulario no sube archivos automáticamente",async()=>{
   let href="http://test.local/admin/oficina?departamento=campanas&mes=2024-04&campana=202",tree;
