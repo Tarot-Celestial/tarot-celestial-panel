@@ -28,6 +28,7 @@ import { useClientRewards } from "@/hooks/useClientRewards";
 import RouletteBenefit from "@/components/cliente/RouletteBenefit";
 import RankDailyBonus from "@/components/cliente/RankDailyBonus";
 import type { RouletteLevel, RouletteSummary } from "@/lib/ruleta";
+import { REFERRALS_CHANGED } from "@/lib/client-referrals";
 import { announceLeoCelestial } from "@/lib/leo-celestial-events";
 import rewardStyles from "./reward.module.css";
 
@@ -366,6 +367,16 @@ export default function ClienteDashboardPage() {
     window.addEventListener("focus", refresh);
     return () => { channel?.close(); window.removeEventListener("focus", refresh); };
   }, [loadOracle]);
+
+  useEffect(() => {
+    const refresh = () => {
+      if (!document.hidden) void Promise.allSettled([loadWalletState(), loadData(), loadOracle(), loadRouletteSummary()]);
+    };
+    let channel: BroadcastChannel | null = null;
+    try { channel = new BroadcastChannel(REFERRALS_CHANGED); channel.addEventListener("message", refresh); } catch { /* Other balance signals remain active. */ }
+    window.addEventListener(REFERRALS_CHANGED, refresh);
+    return () => { channel?.close(); window.removeEventListener(REFERRALS_CHANGED, refresh); };
+  }, [loadWalletState, loadData, loadOracle, loadRouletteSummary]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

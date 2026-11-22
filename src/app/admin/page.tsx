@@ -69,6 +69,7 @@ const ClientRouletteAdminPanel = nextDynamic(() => import("@/components/admin/Cl
 const ClientBalancesPanel = nextDynamic(() => import("@/components/admin/ClientBalancesPanel"), { ssr:false });
 const ClientRitualsAdminPanel = nextDynamic(() => import("@/components/admin/ClientRitualsAdminPanel"), { ssr:false });
 const ClientRunesAdminPanel = nextDynamic(() => import("@/components/admin/ClientRunesAdminPanel"), { ssr:false });
+const ClientReferralRewardsAdminPanel = nextDynamic(() => import("@/components/admin/ClientReferralRewardsAdminPanel"), { ssr:false });
 const ManualInvoiceModal = nextDynamic(() => import("@/components/admin/ManualInvoiceModal"), { ssr:false });
 const BonusAdminPanel = nextDynamic(() => import("@/components/bonuses/BonusAdminPanel"), { ssr:false });
 const TarotistaRanksAdminPanel = nextDynamic(() => import("@/components/admin/TarotistaRanksAdminPanel"), { ssr:false });
@@ -2894,6 +2895,7 @@ function AdminPage() {
           {tab === "client-balances" && <ClientBalancesPanel />}
           {tab === "rituales-clientes" && <ClientRitualsAdminPanel />}
           {tab === "runas-clientes" && <ClientRunesAdminPanel />}
+          {tab === "premios-referidos-clientes" && <ClientReferralRewardsAdminPanel />}
 
           {tab === "bonos-tarotistas" && <BonusAdminPanel />}
           {tab === "rangos-tarotistas" && <TarotistaRanksAdminPanel />}

@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import RegistrarLlamadaModal from "@/components/crm/RegistrarLlamadaModal";
 import ClienteSidebar from "@/components/crm/ClienteSidebar";
+import ClientReferralsPanel, { CRMReferralProgress, useCRMReferrals } from "@/components/crm/ClientReferralsPanel";
 import ClienteTimeline from "@/components/crm/ClienteTimeline";
 import PurchaseBenefitReceipt from "@/components/crm/PurchaseBenefitReceipt";
 import PayPalCrmPaymentModal from "@/components/crm/PayPalCrmPaymentModal";
@@ -410,6 +411,7 @@ export default function CRMClientesPanel({
 
   const [crmClienteSelId, setCrmClienteSelId] = useState("");
   const [crmClienteFicha, setCrmClienteFicha] = useState<any>(null);
+  const crmReferrals = useCRMReferrals(String(crmClienteFicha?.id || ""));
   const [crmFichaLoading, setCrmFichaLoading] = useState(false);
   const [crmFichaMsg, setCrmFichaMsg] = useState("");
 
@@ -2336,6 +2338,7 @@ export default function CRMClientesPanel({
         )}
       </div>
 
+          {crmClienteFicha?.id && <CRMReferralProgress key={crmClienteFicha.id} clientName={[crmClienteFicha.nombre, crmClienteFicha.apellido].filter(Boolean).join(" ") || "Cliente"} state={crmReferrals} />}
         </div>
 
         <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
@@ -2369,6 +2372,8 @@ export default function CRMClientesPanel({
                 <ClienteSidebar
                   cliente={crmClienteFicha}
                   pagos={crmPagos}
+                  referralCount={crmReferrals.data?.summary.total ?? null}
+                  oracleCredits={crmReferrals.data?.summary.oracle_credits ?? null}
                   notas={crmNotes}
                   etiquetas={crmSelectedEtiquetaNames}
                   dialDisabled={!normalizeDialPhone(String(crmClienteFicha?.telefono || crmEditTelefono || ""))}
@@ -2433,6 +2438,8 @@ export default function CRMClientesPanel({
                   </button>
                 </div>
               </div>
+
+              <ClientReferralsPanel key={crmClienteFicha.id} clientId={crmClienteFicha.id} clientName={[crmClienteFicha.nombre, crmClienteFicha.apellido].filter(Boolean).join(" ") || "Cliente"} state={crmReferrals} />
 
 <div id="crm-notes-card" className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)", width: "100%", maxWidth: "100%", minWidth: 0, overflow: "hidden" }}>
                 <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
