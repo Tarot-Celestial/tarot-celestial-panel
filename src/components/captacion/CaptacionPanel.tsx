@@ -37,7 +37,7 @@ type Lead = {
   cliente?: { id?: string | null; nombre?: string | null; apellido?: string | null; telefono?: string | null; email?: string | null; origen?: string | null } | null;
 };
 
-type Props = { onOpenClient?: (clienteId: string) => void; onOpenWhatsApp?: () => void };
+type Props = { onOpenClient?: (clienteId: string) => void; onOpenWhatsApp?: () => void; officeLeadId?: string | null };
 type LiveState = "connecting" | "live" | "degraded";
 type MetaDiagnostics = {
   configuration: Record<string, boolean>;
@@ -128,7 +128,7 @@ function dateTimeInput(value?: string | null) {
   return local.toISOString().slice(0, 16);
 }
 
-export default function CaptacionPanel({ onOpenClient, onOpenWhatsApp }: Props) {
+export default function CaptacionPanel({ onOpenClient, onOpenWhatsApp, officeLeadId }: Props) {
   const [brand, setBrand] = useState<"celestial" | "orion">("celestial");
   const [items, setItems] = useState<Lead[]>([]);
   const [view, setView] = useState<ViewKey>("pendientes");
@@ -154,6 +154,7 @@ export default function CaptacionPanel({ onOpenClient, onOpenWhatsApp }: Props) 
   const [focusedLead, setFocusedLead] = useState<Lead | null>(null);
   const [focusRevision, setFocusRevision] = useState(0);
   const focusOpenedRef = useRef<string | null>(null);
+  const openComposerOnFocus = useRef(true);
   const requestRef = useRef<{ id: number; key: string; controller: AbortController; reading: boolean; firstPage: number } | null>(null);
   const sequenceRef = useRef(0);
   const pendingRefreshRef = useRef(false);
@@ -178,18 +179,23 @@ export default function CaptacionPanel({ onOpenClient, onOpenWhatsApp }: Props) 
   }, []);
 
   useEffect(() => {
-    const focus = (value: unknown) => {
+    const focus = (value: unknown, openComposer = true) => {
       if (typeof value !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) return;
+      openComposerOnFocus.current = openComposer;
       focusOpenedRef.current = null;
       setFocusId(value); setFocusedLead(null); setMessageLeadId(null);
       setView("todos"); setQuery(""); setOrigin("all"); setCampaign("all"); setWorker("all");
       try { sessionStorage.removeItem("tc-captacion-focus-lead"); } catch { /* Optional navigation handoff. */ }
     };
-    try { focus(sessionStorage.getItem("tc-captacion-focus-lead")); } catch { /* Direct navigation still works. */ }
+    if (officeLeadId) {
+      focus(officeLeadId, false);
+    } else {
+      try { focus(sessionStorage.getItem("tc-captacion-focus-lead")); } catch { /* Direct navigation still works. */ }
+    }
     const onFocus = (event: Event) => focus((event as CustomEvent)?.detail?.leadId);
     window.addEventListener("tc-captacion-focus-lead", onFocus);
     return () => window.removeEventListener("tc-captacion-focus-lead", onFocus);
-  }, []);
+  }, [officeLeadId]);
 
   useEffect(() => {
     if (!focusId) return;
@@ -211,15 +217,15 @@ export default function CaptacionPanel({ onOpenClient, onOpenWhatsApp }: Props) 
         const focusKey = `${brand}:${focusId}`;
         if (focusOpenedRef.current !== focusKey) {
           focusOpenedRef.current = focusKey;
-          setMessageLeadId(lead.id); setMobileColumn(phaseOf(lead));
-          document.getElementById?.("captacion-whatsapp")?.scrollIntoView({ block: "start", behavior: "auto" });
+          setMobileColumn(phaseOf(lead));
+          if (openComposerOnFocus.current) prepareWhatsApp(lead);
         }
       } catch (error) {
         if (!cancelled) { setFocusedLead(null); setMessageLeadId(null); setMessage(error instanceof Error ? error.message : "No se pudo abrir el contacto del aviso."); }
       } finally { window.clearTimeout(deadline); }
     })();
     return () => { cancelled = true; controller.abort(); window.clearTimeout(deadline); };
-  }, [focusId, brand, focusRevision]);
+  }, [focusId, brand, focusRevision, prepareWhatsApp]);
 
   useEffect(() => {
     setBrand(getActiveBrand());
@@ -394,10 +400,10 @@ export default function CaptacionPanel({ onOpenClient, onOpenWhatsApp }: Props) 
     setBusyId(lead.id);
     setMessage("");
     setItems((current) => current.map((item) => {
-      if (item.id !== lead.id) return item;
+      if (item.id !== lead.id || action === "captado") return item;
       if (action === "programar") return { ...item, next_contact_at: nextContactAt || item.next_contact_at, updated_at: now };
-      const nextState = action === "hizo_free" || action === "recontacto" ? "pend_cap" : action === "pendiente_free" || action === "no_contesta" ? "pend_free" : action === "captado" ? "captado" : action === "no_interesado" ? "no_interesado" : "nuevo";
-      return { ...item, estado: nextState, workflow_state: nextState, updated_at: now, last_contact_at: now, closed_at: ["captado", "no_interesado"].includes(nextState) ? now : null };
+      const nextState = action === "hizo_free" || action === "recontacto" ? "pend_cap" : action === "pendiente_free" || action === "no_contesta" ? "pend_free" : action === "no_interesado" ? "no_interesado" : "nuevo";
+      return { ...item, estado: nextState, workflow_state: nextState, updated_at: now, last_contact_at: now, closed_at: nextState === "no_interesado" ? now : null };
     }));
     try {
       const { data } = await sb.auth.getSession();
@@ -408,6 +414,7 @@ export default function CaptacionPanel({ onOpenClient, onOpenWhatsApp }: Props) 
         body: JSON.stringify({ lead_id: lead.id, action, next_contact_at: nextContactAt }),
       });
       const json = await response.json().catch(() => null);
+      if (json?.error === "CAPTURE_REQUIRES_COMPLETED_PURCHASE") throw new Error("Este contacto sigue pendiente de su primera compra confirmada en el CRM.");
       if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudo actualizar el lead");
       window.dispatchEvent(new Event("tc-captacion-changed"));
       if (currentKeyRef.current !== actionKey) return;
@@ -494,7 +501,9 @@ export default function CaptacionPanel({ onOpenClient, onOpenWhatsApp }: Props) 
   return <section className={styles.shell}>
     <header className={styles.command}>
       <div className={styles.heroRow}>
-        <div className={styles.titleBlock}><span className={styles.heroIcon}><Megaphone /></span><div><span className={styles.eyebrow}>CENTRO DE CONVERSIÓN</span><h2>Captación</h2><p>Entiende, prioriza y convierte cada oportunidad.</p></div></div>
+        <div className={styles.titleBlock}><span className={styles.heroIcon}><Megaphone /></span><div><span className={styles.eyebrow}>CENTRO DE CONVERSIÓN</span><h2>Captación</h2><p>La captación se confirma con la primera compra del cliente.</p>
+          {officeLeadId !== undefined && <a className={styles.officeLink} href={`/admin/oficina?departamento=captacion-reservas${focusedLead?.cliente_id ? `&cliente=${encodeURIComponent(focusedLead.cliente_id)}` : ""}`}>Ver captación en la Oficina <ExternalLink size={13} aria-hidden="true" /></a>}
+        </div></div>
         <div className={styles.heroActions}><span className={`${styles.live} ${styles[liveState]}`} title="Estado de la conexión con los cambios del panel; no confirma la llegada de contactos desde Meta."><i />{liveState === "live" ? "CAMBIOS EN DIRECTO" : liveState === "connecting" ? "CONECTANDO AL PANEL" : "ACTUALIZACIÓN PERIÓDICA"}</span><button type="button" onClick={() => void load(true)} disabled={loading}><RefreshCw className={loading ? styles.spin : ""} />{loading ? "Actualizando" : "Actualizar"}</button></div>
       </div>
       <p className={styles.readStatus} role="status">{loading ? "Cargando contactos…" : lastRefreshed ? `Datos leídos: ${formatDate(lastRefreshed)}.` : "Todavía no se han podido leer los contactos."} Las llegadas desde Meta dependen de la integración de entrada.</p>

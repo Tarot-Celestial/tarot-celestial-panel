@@ -9,12 +9,6 @@ export type ClientCaptureStatus = {
 
 type CaptureClient = { id: string };
 
-const HISTORICAL_PURCHASE_STATES = new Set([
-  "completed",
-  "refunded",
-  "partially_refunded",
-  "reversed",
-]);
 const COMPLETED_INTERACTION_STATES = new Set([
   "completed",
   "complete",
@@ -54,8 +48,17 @@ function validIso(value: unknown) {
   return date && Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
 
-function earliest(values: Array<string | null>) {
-  return values.filter((value): value is string => Boolean(value)).sort()[0] || null;
+async function firstPurchaseDates(admin: any, clientIds: string[]) {
+  const dates = new Map<string, string>();
+  for (const ids of chunks(clientIds)) {
+    const { data, error } = await admin.rpc("tc_crm_first_purchases_batch", { p_client_ids: ids });
+    if (error) throw error;
+    for (const row of data || []) {
+      const at = validIso(row.first_purchase_at);
+      if (at) dates.set(row.client_id, at);
+    }
+  }
+  return dates;
 }
 
 function latest(values: Array<string | null>) {
@@ -78,19 +81,18 @@ export async function loadClientCaptureStatusBatch(admin: any, clients: CaptureC
   const output = new Map<string, ClientCaptureStatus>();
   if (!clientIds.length) return output;
 
-  const [payments, calls, interactions] = await Promise.all([
-    loadRows(admin, "crm_cliente_pagos", "cliente_id,importe,estado,created_at", "cliente_id", clientIds),
+  const [purchaseDates, calls, interactions] = await Promise.all([
+    firstPurchaseDates(admin, clientIds),
     loadRows(
       admin,
       "rendimiento_llamadas",
-      "cliente_id,importe,cliente_compra_minutos,tiempo,usa_7_free,codigo_1,minutos_1,codigo_2,minutos_2,fecha_hora,created_at",
+      "cliente_id,tiempo,usa_7_free,codigo_1,minutos_1,codigo_2,minutos_2,fecha_hora,created_at",
       "cliente_id",
       clientIds,
     ),
     loadRows(admin, "crm_interacciones", "cliente_id,estado,created_at,cerrado_at", "cliente_id", clientIds),
   ]);
 
-  const paymentsByClient = new Map<string, any[]>();
   const callsByClient = new Map<string, any[]>();
   const interactionsByClient = new Map<string, any[]>();
   const group = (target: Map<string, any[]>, rows: any[]) => {
@@ -102,22 +104,14 @@ export async function loadClientCaptureStatusBatch(admin: any, clients: CaptureC
       target.set(clientId, current);
     }
   };
-  group(paymentsByClient, payments);
   group(callsByClient, calls);
   group(interactionsByClient, interactions);
 
   for (const clientId of clientIds) {
-    const clientPayments = paymentsByClient.get(clientId) || [];
     const clientCalls = callsByClient.get(clientId) || [];
     const clientInteractions = interactionsByClient.get(clientId) || [];
 
-    const paymentDates = clientPayments
-      .filter((row) => HISTORICAL_PURCHASE_STATES.has(String(row?.estado || "").toLowerCase()) && Number(row?.importe || 0) > 0)
-      .map((row) => validIso(row?.created_at));
-    const callPurchaseDates = clientCalls
-      .filter((row) => Boolean(row?.cliente_compra_minutos) && Number(row?.importe || 0) > 0)
-      .map((row) => validIso(row?.fecha_hora || row?.created_at));
-    const firstPurchaseAt = earliest([...paymentDates, ...callPurchaseDates]);
+    const firstPurchaseAt = purchaseDates.get(clientId) || null;
 
     let freeMinutesUsed = 0;
     const validCallDates: Array<string | null> = [];
