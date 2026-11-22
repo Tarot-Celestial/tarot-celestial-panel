@@ -1,11 +1,13 @@
 "use client";
 
-import { FormEvent, useEffect, useId, useState } from "react";
+import { FormEvent, useId, useState } from "react";
 import { Download, FileText } from "lucide-react";
 import type { OfficeSnapshot, OfficeTask, OfficeVersion } from "./model";
 import { OFFICE_FILE_LIMIT } from "./model";
 import { Feedback, reviewStatuses, useOfficeSave, workerName } from "./WorkControls";
-import { officeDownload, officeFile } from "./office-client";
+import { officeDownload } from "./office-client";
+import OfficeInstagram from "./OfficeInstagram";
+import OfficeMedia, { previewableMedia } from "./OfficeMedia";
 import { latestVersions } from "./office-versions";
 import { displayTime } from "./WorkTime";
 import styles from "./OfficeWork.module.css";
@@ -13,10 +15,10 @@ import styles from "./OfficeWork.module.css";
 async function fileData(file: File) {
   if (file.size > OFFICE_FILE_LIMIT || file.size === 0) throw new Error("El archivo debe contener datos y ocupar como máximo 2 MiB.");
   const types: Record<string, string> = {
-    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", pdf: "application/pdf", txt: "text/plain",
+    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", mp4: "video/mp4", pdf: "application/pdf", txt: "text/plain",
   };
   const mime = types[file.name.split(".").pop()?.toLowerCase() || ""];
-  if (!mime || (file.type && file.type !== mime)) throw new Error("Adjunta un PDF, PNG, JPEG, WebP o TXT válido.");
+  if (!mime || (file.type && file.type !== mime)) throw new Error("Adjunta un PDF, PNG, JPEG, WebP, MP4 o TXT válido.");
   const url = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
@@ -26,28 +28,12 @@ async function fileData(file: File) {
   return { file_name: file.name, file_type: mime, file_base64: url.slice(url.indexOf(",") + 1) };
 }
 
-function ImagePreview({ version }: { version: OfficeVersion }) {
+function MediaPreview({ version }: { version: OfficeVersion }) {
   const [open, setOpen] = useState(false);
-  const [url, setUrl] = useState("");
-  const [problem, setProblem] = useState("");
-  useEffect(() => {
-    setUrl("");
-    setProblem("");
-    if (!open) return;
-    const controller = new AbortController();
-    let objectUrl = "";
-    officeFile(version.id, controller.signal).then(blob => {
-      if (!controller.signal.aborted) {
-        objectUrl = URL.createObjectURL(blob);
-        setUrl(objectUrl);
-      }
-    }).catch(e => { if (!controller.signal.aborted) setProblem(e instanceof Error ? e.message : "No se pudo abrir la imagen."); });
-    return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [open, version.id]);
   const alt = version.body.split("\n\nTexto alternativo\n\n")[1]?.trim() || version.title;
   return <details className={styles.details} onToggle={e => setOpen(e.currentTarget.open)}>
-    <summary>Ver imagen de la versión {version.version}</summary>
-    {open && (url ? <img className={styles.preview} src={url} alt={alt} /> : <p role={problem ? "alert" : "status"}>{problem || "Cargando imagen…"}</p>)}
+    <summary>Ver {version.file_type === "video/mp4" ? "vídeo" : "imagen"} de la versión {version.version}</summary>
+    {open && version.file_type && <OfficeMedia versionId={version.id} type={version.file_type} alt={alt} />}
   </details>;
 }
 
@@ -65,7 +51,7 @@ export function VersionContent({ version, data }: { version: OfficeVersion; data
   return <div className={styles.stack} id={"office-version-" + version.id}>
     <p className={styles.meta}>Entregado por {workerName(data, version.created_by)} · {displayTime(version.created_at)} (Madrid)</p>
     {version.body && <p className={styles.body}>{version.body}</p>}
-    {version.file_type && ["image/png","image/jpeg","image/webp"].includes(version.file_type) && <ImagePreview key={version.id} version={version} />}
+    {previewableMedia(version.file_type) && <MediaPreview key={version.id} version={version} />}
     {version.file_name && <button className={styles.file} type="button" disabled={downloading} onClick={download}>
       <Download size={15} aria-hidden /> {downloading ? "Descargando…" : version.file_name}
     </button>}
@@ -100,12 +86,14 @@ export function WorkDeliverables({ task, data, reload }: DeliveryProps) {
         {!series && <button type="button" className={styles.button} onClick={() => add(v)}>Nueva versión</button>}
       </div>
       <VersionContent version={v} data={data} />
+      {task.department_id === "marketing" && ["aprobado","pendiente"].includes(v.status) && <OfficeInstagram key={v.id} version={v} current onApproved={reload} />}
       {v.version > 1 && <details className={styles.details}>
         <summary>Versiones anteriores</summary>
         {versions.filter(old => old.deliverable_id === v.deliverable_id && old.id !== v.id).sort((a, b) => b.version - a.version).map(old =>
           <article className={styles.record} key={old.id}>
             <h5>{old.title} · v{old.version}</h5><span className={styles.meta}>{old.status === "pendiente" ? "Sustituida antes de revisión" : reviewStatuses[old.status]}</span>
             <VersionContent version={old} data={data} />
+            {task.department_id === "marketing" && old.status === "aprobado" && <OfficeInstagram version={old} current={false} />}
           </article>
         )}
       </details>}
@@ -143,8 +131,8 @@ function VersionForm({ previous, task, reload, onSaved, onClose }: {
       <label><span id={id + "-title"}>Título</span><input aria-labelledby={id + "-title"} required autoFocus maxLength={200} value={title} onChange={e => setTitle(e.target.value)} /></label>
       <label><span id={id + "-body"}>Contenido de esta versión</span><textarea aria-labelledby={id + "-body"} rows={4} maxLength={32000} value={body} onChange={e => setBody(e.target.value)} /></label>
       <label><span id={id + "-file"}>Archivo de esta versión</span>
-        <input aria-labelledby={id + "-file"} type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt" onChange={e => setFile(e.target.files?.[0] || null)} aria-describedby={id + "-formats"} />
-        <small id={id + "-formats"}>PDF, PNG, JPEG, WebP o TXT · Hasta 2 MiB.
+        <input aria-labelledby={id + "-file"} type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.mp4,.txt" onChange={e => setFile(e.target.files?.[0] || null)} aria-describedby={id + "-formats"} />
+        <small id={id + "-formats"}>PDF, PNG, JPEG, WebP, MP4 o TXT · Hasta 2 MiB.
           {previous?.file_name && ` Para incluir «${previous.file_name}» en esta versión, vuelve a adjuntarlo.`}
         </small>
       </label>
@@ -183,6 +171,12 @@ export function WorkReviews({ data, reload, departmentId, onOpenTask }: { data: 
         <h3>{v.title}</h3>
         {task && <p className={styles.meta}>Encargo · {task.objective}</p>}
         <VersionContent version={v} data={data} />
+        {task?.department_id === "marketing" && ["aprobado","pendiente"].includes(v.status) &&
+          <OfficeInstagram version={v} current={current.get(v.deliverable_id)?.id === v.id} onApproved={async () => {
+            await reload();
+            setTab("history");
+            setNotice(`Aprobación de Instagram registrada para «${v.title}», versión ${v.version}.`);
+          }} />}
         {tab === "history" && onOpenTask && task?.department_id === "marketing" && v.status === "cambios" && current.get(v.deliverable_id)?.id === v.id &&
           <div><button type="button" className={styles.button} onClick={() => onOpenTask(v.task_id, v.id)}>Abrir corrección con Atlas</button></div>}
         {tab === "pending" && <ReviewForm version={v} reload={reload} onSaved={decision => {

@@ -34,6 +34,12 @@ export async function officeFile(versionId: string, signal?: AbortSignal) {
   return response.blob();
 }
 
+export async function officeInstagramPreview(versionId: string, sha: string, signal?: AbortSignal) {
+  const query = new URLSearchParams({ version_id: versionId, sha });
+  const response = await authorizedRequest("/api/admin/office/instagram/preview?" + query, { signal });
+  return response.blob();
+}
+
 export async function officeDownload(versionId: string, filename: string) {
   const url = URL.createObjectURL(await officeFile(versionId));
   const link = document.createElement("a");

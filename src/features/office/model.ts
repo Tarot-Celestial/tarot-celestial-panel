@@ -1,5 +1,5 @@
 export const OFFICE_FILE_LIMIT = 2 * 1024 * 1024;
-export const OFFICE_FILE_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/webp", "text/plain"] as const;
+export const OFFICE_FILE_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/webp", "video/mp4", "text/plain"] as const;
 
 export type OfficePriority = "baja" | "media" | "alta";
 export type OfficeStatus = "pendiente" | "en_curso" | "en_revision" | "completado" | "cancelado";

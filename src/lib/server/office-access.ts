@@ -71,13 +71,14 @@ function validFile(input: Input) {
   switch (type) {
     case "application/pdf": accepted = ext === "pdf" && sig("255044462d"); break;
     case "image/png": accepted = ext === "png" && sig("89504e470d0a1a0a"); break;
+    case "video/mp4": accepted = ext === "mp4" && bytes.length >= 16 && bytes.subarray(4,8).toString("ascii") === "ftyp"; break;
     case "image/jpeg": accepted = (ext === "jpeg" || ext === "jpg") && sig("ffd8ff"); break;
     case "image/webp": accepted = ext === "webp" && sig("52494646") && bytes.subarray(8,12).toString("ascii") === "WEBP"; break;
     case "text/plain":
       try { new TextDecoder("utf-8",{ fatal:true }).decode(bytes); accepted = ext === "txt" && !bytes.includes(0); } catch { /* Invalid UTF-8. */ }
       break;
   }
-  if (!accepted) throw new InputError("El contenido debe coincidir con la extensión PDF, PNG, JPG, WEBP o TXT.");
+  if (!accepted) throw new InputError("El contenido debe coincidir con la extensión PDF, PNG, JPG, WEBP, MP4 o TXT.");
   return true;
 }
 
