@@ -12,9 +12,9 @@ const captureChannels: Record<string, string> = { instagram: "Instagram", facebo
 const kinds: Record<string, string> = { message: "Mensaje", comment: "Comentario", form: "Formulario" };
 const states: Record<string, string> = { pending: "Por atender", claimed: "En revisión", dispatching: "Enviando", sent: "Enviado",
   expired: "Ventana cerrada", handoff: "Derivado a Comercial", blocked: "Bloqueado", failed: "Envío fallido", uncertain: "Entrega por comprobar",
-  opted_out: "Baja solicitada", purchased: "Compra registrada" };
+  opted_out: "Baja solicitada", purchased: "Compra registrada", recorded: "Formulario registrado" };
 const conversions: Record<string, string> = { unlinked: "Sin ficha vinculada", awaiting_proof: "Vínculo por confirmar",
-  awaiting_purchase: "Pendiente de compra", prior_customer: "Cliente previo", first_purchase: "Primera compra" };
+  awaiting_purchase: "Pendiente de compra", prior_customer: "Cliente previo", first_purchase: "Primera compra", linked_elsewhere: "Vinculado a una oportunidad anterior" };
 const purchaseSources: Record<string, string> = { stripe_oracle_credits: "Créditos del Oráculo", stripe_oracle_questions: "Preguntas del Oráculo",
   stripe_chat: "Chat", stripe_chat_credits: "Créditos de chat", crm_cliente_pagos: "Pago en el CRM", rendimiento_llamadas: "Compra en llamada",
   cliente_payment_attempts: "Pago del panel" };
@@ -36,20 +36,25 @@ export default function OfficeMetaCapture({ month, onMonthChange }: { month: str
 
 function CaptureReport({ month }: {month: string}) {
   const [pages, setPages] = useState<(string | null)[]>([null]);
+  const [search, setSearch] = useState("");
+  const [criteria, setCriteria] = useState({ status: "", q: "" });
   const cursor = pages[pages.length - 1];
-  const [result, setResult] = useState<{ cursor: string | null; report?: OfficeMetaReport; error?: string } | null>(null);
+  const [result, setResult] = useState<{ key: string; report?: OfficeMetaReport; error?: string } | null>(null);
+  const params = new URLSearchParams({ month });
+  if (cursor) params.set("cursor", cursor);
+  if (criteria.status) params.set("status", criteria.status);
+  if (criteria.q) params.set("q", criteria.q);
+  const key = params.toString();
   useEffect(() => {
     const abort = new AbortController();
-    const params = new URLSearchParams({ month });
-    if (cursor) params.set("cursor", cursor);
-    officeRequest<OfficeMetaReport>("/api/admin/office/meta-attribution?" + params, { signal: abort.signal })
-      .then(report => { if (!abort.signal.aborted) setResult({ cursor, report }); })
-      .catch(e => { if (!abort.signal.aborted) setResult({ cursor, error: e instanceof Error ? e.message : "No se pudo consultar el seguimiento." }); });
+    officeRequest<OfficeMetaReport>("/api/admin/office/meta-attribution?" + key, { signal: abort.signal })
+      .then(report => { if (!abort.signal.aborted) setResult({ key, report }); })
+      .catch(e => { if (!abort.signal.aborted) setResult({ key, error: e instanceof Error ? e.message : "No se pudo consultar el seguimiento." }); });
     return () => abort.abort();
-  }, [month, cursor]);
-  if (!result || result.cursor !== cursor) return <p className={s.notice} role="status">Consultando entradas y primeras compras…</p>;
-  if (!result.report) return <p className={s.notice} role="alert">{result.error}</p>;
+  }, [key]);
+  if (!result?.report) return result?.error ? <p className={s.notice} role="alert">{result.error}</p> : <p className={s.notice} role="status">Consultando entradas y primeras compras…</p>;
   const { totals, platforms, purchases, states: delivery, items, next_cursor } = result.report;
+  const updating = result.key !== key;
   return <>
     <section className={s.section}><h3 className={s.subheading}>De la consulta a la primera compra</h3>
       <p className={s.note}>Sigue a quienes entraron en el mes elegido. Una ficha vinculada cuenta como captada cuando el CRM acredita su primera compra después del contacto. La tirada gratuita queda fuera del recuento.</p>
@@ -62,7 +67,13 @@ function CaptureReport({ month }: {month: string}) {
     </section>
     <section className={s.section}><h3 className={s.subheading}>Seguimiento de oportunidades</h3>
       {delivery.length > 0 && <p className={s.note}>{delivery.map(x => (states[x.state] || x.state) + " (" + x.count + ")").join(" · ")}</p>}
-      {items.length ? <div className={s.scroll}><table className={s.table}><caption>Entradas del mes · hora de Madrid</caption><thead><tr><th>Entrada</th><th>Canal</th><th>Seguimiento</th><th>Compra</th></tr></thead>
+      <form className={s.controls} onSubmit={e => { e.preventDefault(); setPages([null]); setCriteria({ ...criteria, q: search.trim() }); }}>
+        <label>Nombre del contacto<input type="search" maxLength={100} value={search} onChange={e => setSearch(e.target.value)}/></label>
+        <button type="submit">Buscar</button>
+        <label>Estado del seguimiento<select value={criteria.status} onChange={e => { setPages([null]); setCriteria({ ...criteria, status: e.target.value }); }}>
+          <option value="">Todos los estados</option>{Object.entries(states).map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+      </form>
+      {updating ? <p className={s.note} role="status">Consultando oportunidades…</p> : items.length ? <div className={s.scroll}><table className={s.table}><caption>Entradas del mes · hora de Madrid</caption><thead><tr><th>Entrada</th><th>Canal</th><th>Seguimiento</th><th>Compra</th></tr></thead>
         <tbody>{items.map(row => <tr key={row.id}><td>{time.format(new Date(row.source_at))}</td><td>{row.display_name && <strong className={s.captureName}>{row.display_name}</strong>}{captureChannels[row.channel] || row.channel} · {kinds[row.kind] || row.kind}
           {row.lead_id && <div><a href={"/admin?tab=captacion&lead=" + encodeURIComponent(row.lead_id)}>Abrir contacto</a></div>}</td>
           <td>{states[row.status] || row.status}{row.provider_error && <small className={s.basis}>{row.provider_error}</small>}
@@ -70,8 +81,8 @@ function CaptureReport({ month }: {month: string}) {
           <td>{conversions[row.conversion] || row.conversion}{row.first_purchase_at && <small className={s.basis}>{time.format(new Date(row.first_purchase_at))}
             {row.first_purchase_source && " · " + (purchaseSources[row.first_purchase_source] || row.first_purchase_source)}
             {row.first_purchase_status?.includes("refund") || row.first_purchase_status === "reversed" ? " · Con devolución" : ""}</small>}</td></tr>)}</tbody></table></div>
-        : <p className={s.note}>No hay entradas registradas en este mes.</p>}
-      {(pages.length > 1 || next_cursor) && <nav className={s.controls} aria-label="Páginas de oportunidades"><button type="button" disabled={pages.length === 1} onClick={() => setPages(p => p.slice(0, -1))}>Anterior</button>
+        : <p className={s.note}>No hay entradas que coincidan con esta consulta.</p>}
+      {!updating && (pages.length > 1 || next_cursor) && <nav className={s.controls} aria-label="Páginas de oportunidades"><button type="button" disabled={pages.length === 1} onClick={() => setPages(p => p.slice(0, -1))}>Anterior</button>
         <span className={s.note}>Página {pages.length}</span><button type="button" disabled={!next_cursor} onClick={() => next_cursor && setPages(p => [...p, next_cursor])}>Siguiente</button></nav>}
     </section>
   </>;

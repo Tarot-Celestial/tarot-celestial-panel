@@ -122,12 +122,14 @@ execute function public.office_meta_inbound_proof();
 
 create index office_capture_month_recent on public.office_capture_opportunities(source_at desc,id desc);
 create function public.office_meta_attribution_report(p_actor uuid,p_month date,p_as_of timestamptz,
-  p_after_at timestamptz default null,p_after_id uuid default null) returns jsonb
+  p_after_at timestamptz default null,p_after_id uuid default null,p_status text default null,p_search text default null) returns jsonb
 language plpgsql stable security invoker set search_path='' as $$
 declare report jsonb; current_actor uuid:=public.office_actor(p_actor);
 begin
   if p_actor is null or current_actor is null or p_month is null or extract(day from p_month)<>1
     or p_as_of is null or p_as_of>clock_timestamp()+interval '5 seconds' or (p_after_at is null)<>(p_after_id is null)
+    or length(p_search)>100 or p_search ~ '[[:cntrl:]]' or (p_status is not null and p_status not in ('pending','claimed','dispatching','sent',
+      'expired','handoff','blocked','failed','uncertain','opted_out','purchased','recorded'))
     or p_month>date_trunc('month',p_as_of at time zone 'Europe/Madrid')::date then raise exception 'OFFICE_INVALID'; end if;
   with form_evidence as materialized (
     select coalesce(nullif(e.page_id,''),'form:'||nullif(e.form_id,''),'meta-leads') as account,
@@ -186,7 +188,8 @@ begin
       count(*) filter(where conversion='linked_elsewhere') as linked_elsewhere,
       count(*) filter(where conversion in ('unlinked','awaiting_proof','awaiting_purchase')) as pending from rows group by grouping sets((channel),())
   ), page as materialized (
-    select * from rows where p_after_id is null or (source_at,id)<(p_after_at,p_after_id) order by source_at desc,id desc limit 26
+    select * from rows where (p_after_id is null or (source_at,id)<(p_after_at,p_after_id)) and (p_status is null or status=p_status)
+      and (p_search is null or position(lower(p_search) in lower(coalesce(display_name,'')))>0) order by source_at desc,id desc limit 26
   )
   select jsonb_build_object('month',to_char(p_month,'YYYY-MM'),'as_of',p_as_of,
     'totals',(select to_jsonb(c)-'channel'-'all_platforms' from counts c where all_platforms=1),
@@ -199,9 +202,9 @@ begin
 end $$;
 revoke all on function public.office_meta_panel_issue(uuid,text,text),public.office_meta_panel_visit(text),
   public.office_meta_panel_challenge(text,text,uuid,uuid),public.office_meta_panel_confirm(uuid,text,text),
-  public.office_meta_attribution_report(uuid,date,timestamptz,timestamptz,uuid) from public,anon,authenticated,service_role;
+  public.office_meta_attribution_report(uuid,date,timestamptz,timestamptz,uuid,text,text) from public,anon,authenticated,service_role;
 revoke all on function public.office_meta_inbound_proof() from public,anon,authenticated,service_role;
 grant execute on function public.office_meta_panel_issue(uuid,text,text),public.office_meta_panel_visit(text),
   public.office_meta_panel_challenge(text,text,uuid,uuid),public.office_meta_panel_confirm(uuid,text,text),
-  public.office_meta_attribution_report(uuid,date,timestamptz,timestamptz,uuid) to service_role;
+  public.office_meta_attribution_report(uuid,date,timestamptz,timestamptz,uuid,text,text) to service_role;
 commit;

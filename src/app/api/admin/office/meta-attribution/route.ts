@@ -5,6 +5,7 @@ import type { OfficeMetaChannel,OfficeMetaCounts,OfficeMetaOpportunity,OfficeMet
 export const dynamic="force-dynamic";
 export const runtime="nodejs";
 const channels=new Set(["instagram","facebook","whatsapp","meta_form"]);
+const statuses=new Set(["pending","claimed","dispatching","sent","expired","handoff","blocked","failed","uncertain","opted_out","purchased","recorded"]);
 const conversions=new Set(["unlinked","awaiting_proof","awaiting_purchase","prior_customer","first_purchase","linked_elsewhere"]);
 type Row=Record<string,unknown>;
 function row(value:unknown):Row {
@@ -52,7 +53,11 @@ export async function GET(req:Request) {
     const current=parts.find(p=>p.type==="year")!.value+"-"+parts.find(p=>p.type==="month")!.value;
     const month=params.get("month")??current;
     if (!/^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(month) || month>current) return officeError("Selecciona un mes válido que ya haya comenzado.",400);
-    const scope=createHash("sha256").update(gate.authUserId+"|"+month).digest("base64url").slice(0,24);
+    const status=params.get("status") || null,search=(params.get("q") || "").trim().normalize("NFC") || null;
+    if ((status!==null && !statuses.has(status)) || (search!==null && (search.length>100 || /[\u0000-\u001f\u007f]/.test(search)))) {
+      return officeError("Revisa el estado y la búsqueda del informe.",400);
+    }
+    const scope=createHash("sha256").update(JSON.stringify([gate.authUserId,month,status,search])).digest("base64url").slice(0,24);
     const cursor=params.get("cursor");let snapshot=now.toISOString(),afterAt:string|null=null,afterId:string|null=null;
     if (cursor!==null) try {
       if (!/^[\w-]{1,360}$/.test(cursor)) throw new Error();
@@ -62,7 +67,7 @@ export async function GET(req:Request) {
       if (Date.parse(snapshot)>now.getTime() || Date.parse(afterAt)>Date.parse(snapshot)) throw new Error();
     } catch { return officeError("La página no corresponde a este informe.",400); }
     const {data,error}=await gate.admin.rpc("office_meta_attribution_report",{p_actor:gate.authUserId,p_month:month+"-01",
-      p_as_of:snapshot,p_after_at:afterAt,p_after_id:afterId});
+      p_as_of:snapshot,p_after_at:afterAt,p_after_id:afterId,p_status:status,p_search:search});
     if (error) return officeDatabaseError(error);
     const r=row(data),asOf=stamp(r.as_of);
     if (r.month!==month || Date.parse(asOf)!==Date.parse(snapshot) || typeof r.has_more!=="boolean") throw new Error("META_REPORT_INVALID");
