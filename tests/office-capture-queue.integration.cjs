@@ -36,6 +36,7 @@ before(async()=>{
  grant select on all tables in schema public to service_role;`);
  const directory=path.join(__dirname,"../supabase/migrations");
  await db.exec(fs.readFileSync(path.join(directory,fs.readdirSync(directory).find(f=>f.endsWith("_office_capture_opportunities.sql"))),"utf8"));
+ await db.exec(fs.readFileSync(path.join(directory,fs.readdirSync(directory).find(f=>f.endsWith("_office_capture_discovery_performance.sql"))),"utf8"));
  await q("insert into workers values($1,$2,true),($3,$4,true)",[id(1),id(2),id(3),id(4)]);
  await q("insert into office_capture_settings values(true,true,$1)",[id(2)]);
 });
@@ -109,4 +110,23 @@ test("form submission requires explicit WhatsApp permission on the matching CRM 
  assert.equal(await begin(job),null);assert.equal(await claim(),null);
  const priv=await q("select has_function_privilege('authenticated','public.office_capture_claim()','EXECUTE') f,has_table_privilege('anon','office_capture_inbound','SELECT') t");
  assert.deepEqual(priv[0],{f:false,t:false});
+});
+
+test("discovery pages verifiable receipts past unmatched events and retains the native tie-breaker",async()=>{
+ const timestamp=at(-120_000);
+ await q(`insert into tc_instagram_threads(id,account_id,kind,remote_id,recipient_id,remote_updated_at) values
+   ($1,'IG','message','older','peer',$4::timestamptz-interval '1 day'),
+   ($2,'IG','message','new-b','peer',$4),($3,'IG','message','new-a','peer',$4)`,[id(6),id(8),id(7),timestamp]);
+ await q("insert into tc_social_connections_v2 values('instagram','IG')");
+ await db.exec(`insert into tc_social_inbox_activity(provider,account_id,kind,remote_id,thread_remote_id,occurred_at)
+    select 'instagram','IG','message','unmatched-'||i,'different-peer',now()-interval '1 minute' from generate_series(1,280)i;
+   insert into tc_social_inbox_activity(provider,account_id,kind,remote_id,thread_remote_id,occurred_at)
+    select 'instagram','IG','message','verified-'||i,'peer',now()-interval '1 hour' - i*interval '1 second' from generate_series(1,260)i;`);
+ assert.equal((await discover()).processed,250);
+ assert.equal(await scalar("select thread_id from office_capture_opportunities"),id(7));
+ assert.equal(await scalar("select count(*)::int from office_capture_inbound"),250);
+ assert.equal((await discover()).processed,10);
+ assert.equal((await discover()).processed,0);
+ assert.equal(await scalar("select count(*)::int from office_capture_inbound"),260);
+ assert.equal(await scalar("select count(*)::int from office_capture_events where action='discovered'"),1);
 });
