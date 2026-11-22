@@ -47,7 +47,7 @@ async function syncComments(account: InstagramAccount, cursor: SyncCursor, deadl
         const when = verifiedInstagramDate(comment.timestamp);
         if (!graphId(comment.id) || !when || ownInstagramActor(account,comment.from)) continue;
         rows.push({kind:'comment',remote_id:comment.id,recipient_id:graphId(comment.from?.id)?comment.from.id:null,name:comment.from?.username || 'Comentario de Instagram',username:comment.from?.username || null,preview:String(comment.text||''),remote_created_at:when,remote_updated_at:when,permalink:post.permalink || null});
-        activity.push({kind:'comment',remoteId:comment.id,threadRemoteId:comment.id,occurredAt:when});
+        activity.push({kind:'comment',remoteId:comment.id,threadRemoteId:comment.id,occurredAt:when,text:comment.text});
       }
       await persistInstagramThreads(account,rows,activity);
       if (next(result)) pending.push({...post,after:next(result)});
@@ -100,7 +100,7 @@ async function syncMessages(account: InstagramAccount, cursor: SyncCursor, deadl
     }));
     const available=details.filter(Boolean),identity=resolveMessageIdentity(account,[],available);
     if(!identity.recipientId){queue.shift();cursor.pendingConversations=queue;continue;}
-    await recordSocialActivity('instagram',account.accountId,available.filter(message=>message.from?.id===identity.recipientId && verifiedInstagramDate(message.created_time)).map(message=>({kind:'message',remoteId:message.id,threadRemoteId:identity.recipientId!,occurredAt:verifiedInstagramDate(message.created_time)!})));
+    await recordSocialActivity('instagram',account.accountId,available.filter(message=>message.from?.id===identity.recipientId && verifiedInstagramDate(message.created_time)).map(message=>({kind:'message',remoteId:message.id,threadRemoteId:identity.recipientId!,occurredAt:verifiedInstagramDate(message.created_time)!,text:message.message})));
     queue.shift();cursor.pendingConversations=queue;
   }
 }
@@ -111,11 +111,12 @@ export async function ensureInstagramFresh(account?: InstagramAccount) {
   const cursor: SyncCursor=lease.cursor, deadline=Date.now()+35000;
   let firstError: string | null=null;
   try {
-    for (const [kind,run] of [['comment',syncComments],['message',syncMessages]] as const) {
+    // A slow comment sweep must not consume Messenger's entire execution budget.
+    await Promise.all(([['comment',syncComments],['message',syncMessages]] as const).map(async ([kind,run]) => {
       cursor[`${kind}Error`]=null;
       try { await run(connected,cursor,deadline); firstError ||= cursor[`${kind}Error`] || null; }
       catch(error) { const code=error instanceof InstagramError?error.code:'SERVICE_UNAVAILABLE';cursor[`${kind}Error`]=code;firstError ||= code; }
-    }
+    }));
   } finally { await finishSocialSync('instagram',connected.accountId,lease.token,cursor,firstError); }
   return cursor;
 }

@@ -2,7 +2,7 @@ import 'server-only';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export type SocialInboxProvider = 'instagram' | 'facebook';
-export type SocialInboxEvent = { kind: 'message' | 'comment'; remoteId: string; threadRemoteId: string; occurredAt: string };
+export type SocialInboxEvent = { kind: 'message' | 'comment'; remoteId: string; threadRemoteId: string; occurredAt: string; text?: string };
 const identifier = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_:.=\/-]{1,500}$/.test(value);
 const unavailable = () => new Error('SOCIAL_INBOX_UNAVAILABLE');
 
@@ -10,19 +10,36 @@ const unavailable = () => new Error('SOCIAL_INBOX_UNAVAILABLE');
 export async function recordSocialActivity(provider: SocialInboxProvider, accountId: string, events: SocialInboxEvent[]) {
   if (!identifier(accountId)) throw unavailable();
   const rows = new Map<string, Record<string, unknown>>();
+  const bodies = new Map<string, string>();
   for (const event of events) {
     const occurred = Date.parse(event.occurredAt);
     if (!['message', 'comment'].includes(event.kind) || !identifier(event.remoteId) || !identifier(event.threadRemoteId)
         || !Number.isFinite(occurred) || occurred > Date.now() + 60_000) continue;
-    rows.set(`${event.kind}:${event.remoteId}`, { provider, account_id: accountId, kind: event.kind,
+    const key = event.kind + ':' + event.remoteId;
+    if (typeof event.text === 'string' && event.text && !event.text.startsWith('[Contenido adjunto')) bodies.set(key,event.text.slice(0,4000));
+    rows.set(key, { provider, account_id: accountId, kind: event.kind,
       remote_id: event.remoteId, thread_remote_id: event.threadRemoteId, occurred_at: new Date(occurred).toISOString() });
   }
   const values = [...rows.values()];
   for (let offset = 0; offset < values.length; offset += 100) {
-    const result = await supabaseAdmin().from('tc_social_inbox_activity').upsert(values.slice(offset, offset + 100), {
+    const batch = values.slice(offset, offset + 100);
+    const db = supabaseAdmin();
+    const result = await db.from('tc_social_inbox_activity').upsert(batch, {
       onConflict: 'provider,account_id,kind,remote_id', ignoreDuplicates: true,
     });
     if (result.error) throw unavailable();
+    const privateRows = batch.flatMap(row=>{
+      const body=bodies.get(row.kind+':'+row.remote_id);
+      return body ? [{kind:row.kind,source_id:row.remote_id,thread_key:row.thread_remote_id,body}] : [];
+    });
+    if (privateRows.length) {
+      // Native inbox availability is independent of Office. A subsequent sync or
+      // opening the verified thread hydrates the same private evidence idempotently.
+      try {
+        const captured=await db.rpc('office_capture_record_social',{p_channel:provider,p_account:accountId,p_rows:privateRows});
+        if (captured.error) throw unavailable();
+      } catch { console.warn('office-capture-social-hydration-unavailable',{provider}); }
+    }
   }
 }
 

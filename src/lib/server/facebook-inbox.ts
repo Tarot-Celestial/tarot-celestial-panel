@@ -10,7 +10,7 @@ const THREADS = 'tc_facebook_threads';
 const SENDS = 'tc_facebook_sends';
 type Kind = 'message' | 'comment';
 type ThreadRow = { id: string; account_id: string; kind: Kind; remote_id: string; recipient_id: string | null; conversation_id: string | null; post_id: string | null; name: string; preview: string; remote_created_at: string | null; remote_updated_at: string; permalink: string | null; last_reply_at: string | null; private_reply_sent: boolean; is_deleted: boolean };
-type Incoming = { kind: Kind; remoteId: string; threadRemoteId: string; occurredAt: string };
+type Incoming = { kind: Kind; remoteId: string; threadRemoteId: string; occurredAt: string; text?: string };
 type TrackedPost = { id: string; permalink?: string; after?: string | null; registeredBy: string; registeredAt: string; lastCheckedAt?: string; complete?: boolean; error?: string | null };
 type SyncCursor = { posts?: string | null; conversations?: string | null; pendingPosts?: Array<{ id: string; permalink?: string; after?: string | null }>; trackedPosts?: TrackedPost[]; trackedPostIndex?: number; commentError?: string | null; messageError?: string | null; commentsCompleteAt?: string; accountVerified?: boolean };
 const cursorToken = (value: unknown) => typeof value === 'string' && /^[A-Za-z0-9_=+/-]{1,2048}$/.test(value) ? value : null;
@@ -59,7 +59,7 @@ async function syncMessages(account: FacebookAccount, cursor: SyncCursor, deadli
     rows.push({ kind: 'message', remote_id: peerId, recipient_id: peerId, conversation_id: conversation.id, name: person?.name || 'Conversación de Facebook',
       preview: latest?.message || 'Abrir conversación', remote_updated_at: facebookDate(conversation.updated_time)! });
     for (const message of messages) if (facebookId(message.id) && message.from?.id === peerId && facebookDate(message.created_time)) {
-      activity.push({ kind: 'message', remoteId: message.id, threadRemoteId: peerId, occurredAt: facebookDate(message.created_time)! });
+      activity.push({ kind: 'message', remoteId: message.id, threadRemoteId: peerId, occurredAt: facebookDate(message.created_time)!, text:message.message });
     }
   }
   await persist(account, rows, activity);
@@ -76,7 +76,7 @@ async function syncCommentPage(account: FacebookAccount, post: { id: string; per
     rows.push({ kind: 'comment', remote_id: commentId, recipient_id: facebookId(comment.from?.id) ? comment.from.id : null, post_id: post.id,
       name: comment.from?.name || 'Contacto de Facebook', preview: String(comment.message || ''), remote_created_at: when, remote_updated_at: when,
       permalink: comment.permalink_url || post.permalink || null });
-    activity.push({ kind: 'comment', remoteId: commentId, threadRemoteId: commentId, occurredAt: when });
+    activity.push({ kind: 'comment', remoteId: commentId, threadRemoteId: commentId, occurredAt: when, text:comment.message });
   }
   await persist(account, rows, activity);
   const after = next(result);
@@ -304,7 +304,7 @@ async function loadMessages(account: FacebookAccount, row: ThreadRow) {
       if (!fromMe && (!lastInbound || when > lastInbound)) lastInbound = when;
       messages.push({ id: message.id, text: String(message.message || '[Contenido adjunto: consúltalo en Facebook]'), fromMe, createdAt: when, senderName: message.from.name || (fromMe ? account.username : row.name) });
     }
-    await recordSocialActivity('facebook', account.accountId, messages.filter(m => !m.fromMe).map(m => ({ kind: 'message', remoteId: m.id, threadRemoteId: row.remote_id, occurredAt: m.createdAt })));
+    await recordSocialActivity('facebook', account.accountId, messages.filter(m => !m.fromMe).map(m => ({ kind: 'message', remoteId: m.id, threadRemoteId: row.remote_id, occurredAt: m.createdAt, text:m.text })));
   } else {
     const root = await facebookGraph(account, row.remote_id, { fields: 'id,message,created_time,from' });
     const replies = await facebookGraph(account, `${row.remote_id}/comments`, { fields: 'id,message,created_time,from', limit: '50' });
@@ -352,7 +352,17 @@ export async function facebookRead(userId: string, input: any) {
   return markSocialThreadRead(userId, 'facebook', account.accountId, [row.remote_id], through);
 }
 
-export async function facebookSend(userId: string, input: any) {
+export async function facebookOfficeHistory(threadId: string, expectedAccount: string) {
+  const account = facebookConnection();
+  if (account.accountId !== expectedAccount) throw new FacebookError('WRONG_ACCOUNT','La cuenta de la entrada ha cambiado.');
+  await verifyFacebookAccount(account);
+  const row = await threadForAccount(threadId,account);
+  const loaded = await loadMessages(account,row);
+  return { account, row, loaded };
+}
+
+export async function facebookSend(userId: string, input: any,
+  verify?: (account: FacebookAccount, row: ThreadRow, loaded: Awaited<ReturnType<typeof loadMessages>>) => Promise<void>) {
   const text = typeof input?.text === 'string' ? input.text.trim() : '';
   const requestId = String(input?.requestId || '');
   const mode = input?.replyMode === 'public' ? 'public' : 'private';
@@ -369,10 +379,13 @@ export async function facebookSend(userId: string, input: any) {
     throw new FacebookError(existing.data.status === 'failed' ? 'META_REJECTED' : 'SEND_UNCERTAIN', 'Este envío ya se ha intentado. Actualiza y comprueba la conversación antes de repetirlo.', 409);
   }
   const loaded = await loadMessages(account, row);
+  if (verify) await verify(account,row,loaded);
   if (row.kind === 'message' && loaded.incompleteHistory) throw new FacebookError('INCOMPLETE_HISTORY', 'Facebook no permite verificar todo el historial reciente. Actualiza o continúa desde Facebook antes de responder.', 409);
   if (row.kind === 'message' && !loaded.recipientId) throw new FacebookError('RECIPIENT_UNVERIFIED', 'No hemos podido verificar el destinatario. Actualiza o revisa la conversación en Facebook antes de responder.', 409);
   if (row.kind === 'message' && (!loaded.recipientId || !facebookReplyWindow(loaded.lastInbound, 24))) throw new FacebookError('REPLY_WINDOW_CLOSED', 'Espera a que la persona vuelva a escribir: han pasado 24 horas desde su último mensaje.', 409);
-  if (row.kind === 'comment' && mode === 'private') throw new FacebookError('PRIVATE_REPLY_UNAVAILABLE', 'La respuesta privada desde comentarios aún no está habilitada. Responde públicamente o continúa desde Facebook.', 409);
+  if (row.kind === 'comment' && mode === 'private' && (!verify || row.private_reply_sent || !facebookReplyWindow(row.remote_created_at,168))) {
+    throw new FacebookError('PRIVATE_REPLY_UNAVAILABLE', 'Facebook no ha confirmado una respuesta privada para este comentario.', 409);
+  }
   const claim = await db.rpc('tc_facebook_claim_send', { p_user: userId, p_thread: row.id, p_request: requestId, p_body: text, p_mode: mode, p_expected_reply: input.expectedLastReplyAt || null });
   if (claim.error) {
     const code = String(claim.error.message);
@@ -382,7 +395,8 @@ export async function facebookSend(userId: string, input: any) {
   try {
     const result = row.kind === 'comment' && mode === 'public'
       ? await facebookGraph(account, `${row.remote_id}/comments`, {}, { message: text })
-      : await facebookGraph(account, `${account.accountId}/messages`, {}, { recipient: { id: loaded.recipientId }, messaging_type: 'RESPONSE', message: { text } });
+      : await facebookGraph(account, `${account.accountId}/messages`, {}, {
+        recipient: row.kind === 'comment' ? { comment_id:row.remote_id } : { id: loaded.recipientId }, messaging_type: 'RESPONSE', message: { text } });
     const remoteId = result.message_id || result.id;
     if (!remoteId) throw new FacebookError('SEND_UNCERTAIN', 'Facebook no confirmó el identificador del envío. Comprueba la conversación.');
     const finish = await db.rpc('tc_facebook_finish_send', { p_request: requestId, p_status: 'sent', p_remote_id: String(remoteId), p_error: null });
