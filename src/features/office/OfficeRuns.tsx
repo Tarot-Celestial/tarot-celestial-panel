@@ -65,6 +65,7 @@ export default function OfficeRuns({ task, versions, reload, onEdit, retryId, st
   const [commandProblem, setCommandProblem] = useState(startError || "");
   const [paused, setPaused] = useState(false);
   const [chosen, setChosen] = useState(preferredVersion || "");
+  const [reconciliation, setReconciliation] = useState("");
   const update = () => setRefresh(x => x + 1);
   const requests = useRef(new Map<string, string>(retryId ? [["", retryId]] : []));
   const observed = useRef(new Set<string>());
@@ -109,14 +110,16 @@ export default function OfficeRuns({ task, versions, reload, onEdit, retryId, st
   const correction = corrections.find(v => v.id === chosen) || corrections[0];
   const unresolved = current?.status === "needs_reconciliation";
   const ready = runs !== null && !reading && !busy && !problem;
-  async function command(action: "start" | "cancel", version?: OfficeVersion) {
+  async function command(action: "start" | "cancel" | "resolve", version?: OfficeVersion) {
     if (locked.current || !ready) return;
     locked.current = true;
     setBusy(true);
     setCommandProblem("");
     try {
-      if (action === "cancel" && current) {
-        await officeRequest(officeRunsPath, { method: "POST", body: JSON.stringify({ action, run_id: current.id }) });
+      if (action !== "start" && current) {
+        await officeRequest(officeRunsPath, { method: "POST", body: JSON.stringify({ action, run_id: current.id,
+          ...(action === "resolve" ? { note: reconciliation.trim() } : {}) }) });
+        setReconciliation("");
       } else if (action === "start") {
         const key = version?.id || "";
         const requestId = requests.current.get(key) || crypto.randomUUID();
@@ -142,6 +145,11 @@ export default function OfficeRuns({ task, versions, reload, onEdit, retryId, st
     {problem && <p role="alert" className={styles.error}>{problem}</p>}
     {commandProblem && <p role="alert" className={styles.error}>{commandProblem}</p>}
     {active && <div><button className={styles.button} type="button" disabled={!ready} onClick={() => command("cancel")}>Cancelar ejecución</button></div>}
+    {unresolved && <form className={styles.subform} onSubmit={e => { e.preventDefault(); void command("resolve"); }}>
+      <label htmlFor={id + "-reconcile"}>Comprueba el intento y el consumo en OpenAI. Anota el resultado para poder cerrar esta ejecución.</label>
+      <textarea id={id + "-reconcile"} required maxLength={2000} value={reconciliation} onChange={e => setReconciliation(e.target.value)} />
+      <div><button className={styles.button} disabled={!ready || !reconciliation.trim()}>Registrar comprobación y cerrar</button></div>
+    </form>}
     {current?.status === "waiting_input" && <div><button className={styles.button} type="button" onClick={onEdit}>Completar datos del encargo</button></div>}
     {!active && !unresolved && runs && <>
       {correction && <div className={styles.subform}>

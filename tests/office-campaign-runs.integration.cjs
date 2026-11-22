@@ -27,7 +27,7 @@ const approvedOffer = async () => ({
 const brand = { sources:["manual de marca sintético"],promotion_id:null };
 const deliverable = { title:"Pieza de prueba",body:"Texto comprobado",file_name:"guion.txt",file_type:"text/plain",
   file_base64:Buffer.from("Entrega privada").toString("base64") };
-const migrations = ["20261122191931_office_celestial_workspace.sql","20261122195239_office_campaign_runs.sql"];
+const migrations = ["20261122191931_office_celestial_workspace.sql","20261122195239_office_campaign_runs.sql","20261122195721_office_run_reconciliation.sql"];
 
 before(async () => {
   db=new PGlite();
@@ -137,6 +137,32 @@ test("blocked, cancelled, expired and over-budget executions never emit a draft"
   assert.equal(await scalar("select count(*)::int v from public.office_versions where task_id=$1",[taskId]),0);
 });
 
+test("manual reconciliation needs an admin and note, fences pending callbacks, preserves receipts and never enqueues",async () => {
+  const taskId=await task(), id=await enqueue(taskId), first=await claim(id);
+  const note="Se revisó la actividad del proveedor y se cerró el intento de prueba.";
+  const resolve=(run,reason=note,who=user)=>rpc("office_run_resolve",who,run,reason);
+  await assert.rejects(resolve(id),/OFFICE_CONFLICT/);
+  const reported=await finish(first,"needs_reconciliation",{},{input_tokens:19,output_tokens:8});
+  const attemptBefore=await scalar("select to_jsonb(a) v from public.office_run_attempts a where lease_token=$1",[first.lease_token]);
+  await assert.rejects(resolve(id,note,randomUUID()),/OFFICE_FORBIDDEN/);
+  await assert.rejects(resolve(id," "),/OFFICE_INVALID/);
+  assert.equal(await resolve(id),true); assert.equal(await resolve(id),true);
+  assert.equal((await state(id)).usage.input_tokens,19);
+  assert.deepEqual(await finish(first,"ok",{source_snapshot:brand}),reported);
+  assert.deepEqual(await scalar("select to_jsonb(a) v from public.office_run_attempts a where lease_token=$1",[first.lease_token]),attemptBefore);
+  assert.equal(await scalar("select count(*)::int v from public.office_events where task_id=$1 and kind='campaign_reconciled'",[taskId]),1);
+  assert.equal(await scalar("select count(*)::int v from public.office_runs where task_id=$1",[taskId]),1);
+  const retry=await enqueue(taskId),lost=await claim(retry);
+  // Exercise the expired-lease path with a truly unconfirmed attempt.
+  await db.exec("reset role");
+  await db.query("update public.office_runs set status='needs_reconciliation' where id=$1",[retry]);
+  await db.exec("set role service_role"); await assert.rejects(resolve(retry),/OFFICE_CONFLICT/);
+  await db.exec("reset role"); await db.query("update public.office_runs set lease_until=now()-interval '1 second' where id=$1",[retry]);
+  await db.exec("set role service_role"); assert.equal(await resolve(retry),true);
+  assert.equal((await finish(lost,"ok",{source_snapshot:brand})).status,"cancelled");
+  assert.equal(await scalar("select count(*)::int v from public.office_versions where task_id=$1",[taskId]),0);
+});
+
 test("a source withdrawn after briefing, revoked admin and exhausted daily allowance stop processing",async () => {
   await setScope(); const id=await enqueue(await task());
   const offer=await approvedOffer();
@@ -166,6 +192,7 @@ test("browser roles cannot operate runs or approve markets through the Data API"
     await db.exec("reset role; set role "+role);
     await assert.rejects(claim(null),/permission denied/);
     await assert.rejects(setScope(),/permission denied/);
+    await assert.rejects(rpc("office_run_resolve",user,randomUUID(),"Revisión manual"),/permission denied/);
     await assert.rejects(db.query("select * from public.office_runs"),/permission denied/);
   }
   await db.exec("reset role; set role service_role");

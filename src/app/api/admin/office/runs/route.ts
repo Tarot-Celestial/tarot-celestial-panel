@@ -25,6 +25,12 @@ export async function POST(req: Request) {
     const auth = await officeAccess(req);
     if (!auth.ok) return auth.response;
     const body = await req.json().catch(() => null);
+    if (body?.action === "resolve" && officeUuid(body.run_id)) {
+      const note = typeof body.note === "string" ? body.note.trim() : "";
+      if (!note || note.length > 2000) return officeError("Registra el resultado de la comprobación para cerrar el intento.", 400);
+      const result = await auth.admin.rpc("office_run_resolve", { p_actor: auth.authUserId, p_run_id: body.run_id, p_note: note });
+      return result.error ? officeDatabaseError(result.error) : officeJson({ ok: true, id: body.run_id });
+    }
     if (body?.action === "cancel" && officeUuid(body.run_id)) {
       const result = await auth.admin.rpc("office_run_cancel", { p_actor: auth.authUserId, p_run_id: body.run_id });
       return result.error ? officeDatabaseError(result.error) : officeJson({ ok: true, id: body.run_id });
