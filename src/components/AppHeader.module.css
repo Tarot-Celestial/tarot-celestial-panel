@@ -225,3 +225,13 @@
 
 .accountingButton { margin-left: 0; color: #d8c6f2; border-color: rgba(183,155,223,.28); background: rgba(115,86,152,.13); }
 .accountingButton.activeTool { border-color: rgba(205,178,244,.58); background: rgba(149,112,196,.2); color: #e6d5ff; }
+.officeButton { margin-left: 0; color: #ebd5ab; }
+.officeButton.activeTool { border-color: #a58b55; background: #312a24; color: #ffe7b6; }
+@media (max-width: 620px) {
+  .identity:has(.officeButton) { flex-wrap: wrap; gap: 7px !important; }
+  .identity .officeButton, .identity .accountingButton { margin-left: 0; }
+  .identity:has(.officeButton) .identityText { flex: 1 1 80px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .officeButton, .officeButton:hover { transition: none; transform: none; }
+}

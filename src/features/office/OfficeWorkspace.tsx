@@ -1,0 +1,100 @@
+"use client";
+
+import { useRef, useState, type CSSProperties } from "react";
+import { Activity, ArrowUpRight, Boxes, CheckCheck, ChevronDown, ChevronRight, ClipboardList, Clock3, FileStack, Layers3, ListChecks, Network, Orbit, UsersRound } from "lucide-react";
+import { officeDepartments } from "./catalog";
+import OfficeMap from "./OfficeMap";
+import OfficeWork, { DepartmentOwner } from "./OfficeWork";
+import type { OfficeSnapshot } from "./model";
+import { latestVersions } from "./office-versions";
+import s from "./OfficeWorkspace.module.css";
+
+type View = "map" | "org" | "tasks" | "reviews";
+const navigation = [
+  { id: "map", label: "Plano", icon: Layers3 },
+  { id: "org", label: "Organigrama", icon: Network },
+  { id: "tasks", label: "Encargos", icon: ClipboardList },
+  { id: "reviews", label: "Revisiones", icon: CheckCheck },
+] as const;
+
+const eventLabels: Record<string, string> = {
+  create_task: "Encargo creado", update_task: "Encargo actualizado", set_lead: "Responsable actualizado",
+  add_note: "Nota de coordinación", add_version: "Versión añadida", review_version: "Versión revisada",
+};
+const eventDate = new Intl.DateTimeFormat("es-ES", { timeZone: "Europe/Madrid", dateStyle: "short", timeStyle: "short" });
+
+export default function OfficeWorkspace({ data, reload }: { data: OfficeSnapshot; reload: () => Promise<void> }) {
+  const [view, setView] = useState<View>("map");
+  const [selectedId, selectId] = useState("marketing");
+  const [scope, setScope] = useState<string>();
+  const details = useRef<HTMLElement>(null);
+  const selected = officeDepartments.find(area => area.id === selectedId) || officeDepartments[0];
+  const department = data.departments.find(area => area.id === selected.id);
+  const areaTasks = data.tasks.filter(task => task.department_id === selected.id);
+  const taskIds = new Set(areaTasks.map(task => task.id));
+  const deliverables = Array.from(latestVersions(data.versions).values());
+  const areaDeliverables = deliverables.filter(version => taskIds.has(version.task_id));
+  const areaReviews = areaDeliverables.filter(version => version.status === "pendiente");
+  const pendingReviews = deliverables.filter(version => version.status === "pendiente").length;
+  const events = data.events.filter(event => event.department_id === selected.id || event.previous_department_id === selected.id).slice(0, 5);
+  const openTasks = data.tasks.filter(task => task.status !== "completado" && task.status !== "cancelado").length;
+  const board = view === "map" || view === "org";
+  function openView(next: View, departmentId?: string) {
+    setScope(departmentId);
+    setView(next);
+  }
+  function inspect(id: string) {
+    selectId(id);
+    if (window.matchMedia("(max-width: 950px)").matches) {
+      requestAnimationFrame(() => { details.current?.focus({ preventScroll: true }); details.current?.scrollIntoView({ block: "start" }); });
+    }
+  }
+  return <main className={s.workspace}>
+    <div className={s.headingRow}>
+      <div><div className={s.breadcrumb}><span>Administración</span><ChevronRight size={13} aria-hidden="true"/> Oficina</div>
+        <h1>Oficina <em>Celestial</em></h1></div>
+      <div className={s.director}><div className={s.directorMark}><Orbit size={26} strokeWidth={1.35} aria-hidden="true"/></div>
+        <div><span>Dirección operativa</span><strong>Atlas</strong></div></div>
+    </div>
+    <div className={s.stats} aria-label="Resumen actual de Oficina">
+      <div><Boxes/><span>Departamentos</span><strong>{data.departments.length}</strong></div>
+      <div><ListChecks/><span>Encargos abiertos</span><strong>{openTasks}</strong></div>
+      <div><FileStack/><span>Entregables</span><strong>{deliverables.length}</strong></div>
+      <div><Clock3/><span>Por revisar</span><strong>{pendingReviews}</strong></div>
+    </div>
+    <nav className={s.nav} aria-label="Vistas de Oficina">
+      {navigation.map(({ id, label, icon: Icon }) => <button type="button" key={id} onClick={() => openView(id)}
+        aria-current={view === id ? "page" : undefined}><Icon aria-hidden="true" size={17}/>{label}
+        {id === "reviews" && pendingReviews > 0 && <small>{pendingReviews}</small>}</button>)}
+    </nav>
+    {board ? <div className={s.board}>
+      <section className={s.visual} aria-label={view === "org" ? "Organigrama de Oficina" : "Plano de Oficina"}>
+        <div className={s.visualHead}><h2>{view === "org" ? "Cadena de mando" : "Plano de la oficina"}</h2>
+          <span>{view === "org" ? "Estructura por departamento" : "Selecciona una sala"}</span></div>
+        <OfficeMap view={view === "org" ? "org" : "map"} selectedId={selected.id} onSelect={inspect} onOpenOrg={() => openView("org")}/>
+      </section>
+      <aside ref={details} tabIndex={-1} className={s.inspector} aria-label="Ficha de departamento" style={{ "--area-color": selected.color } as CSSProperties}>
+        <div className={s.inspectorTop}><span>Ficha de departamento</span><span className={s.planned}>Planificado</span></div>
+        <div className={s.areaTitle}><span className={s.areaMark} aria-hidden="true">{selected.initials}</span><h2>{selected.name}</h2></div>
+        <p className={s.purpose}>{department?.purpose || selected.purpose}</p>
+        {department && <DepartmentOwner key={department.id} departmentId={department.id} data={data} reload={reload}/>}
+        <div className={s.areaStats} aria-label="Indicadores del departamento">
+          <button type="button" onClick={() => openView("tasks", selected.id)}><span>Encargos</span><b>{areaTasks.length}</b></button>
+          <button type="button" onClick={() => openView("reviews", selected.id)}><span>Por revisar</span><b>{areaReviews.length}</b></button>
+        </div>
+        <button type="button" className={s.openTasks} onClick={() => openView("tasks", selected.id)}>Ver encargos <ArrowUpRight size={16}/></button>
+        <details className={s.detail}><summary><FileStack/>Entregables <ChevronDown/></summary>
+          {areaDeliverables.length ? <ul>{areaDeliverables.map(item => <li key={item.id}>{item.title} · v{item.version}</li>)}</ul> : <p>Todavía no hay entregables.</p>}</details>
+        <details className={s.detail}><summary><UsersRound/>Equipo y conexiones <ChevronDown/></summary><dl>
+          <dt>Dirección</dt><dd>Atlas</dd><dt>Especialista del área</dt><dd>Planificado</dd><dt>Herramientas externas</dt><dd>Pendiente de conexión</dd></dl></details>
+        <details className={s.detail}><summary><Activity/>Indicadores, costes y avisos <ChevronDown/></summary>
+          <p>Los recuentos corresponden a los registros actuales de esta Oficina.</p><dl><dt>Coste de IA</dt><dd>Sin datos</dd><dt>Alertas operativas</dt><dd>Planificado</dd></dl></details>
+        <details className={s.detail}><summary><Clock3/>Coordinación e historial <ChevronDown/></summary>
+          {events.length ? <ul>{events.map(event => <li key={event.id}>
+            <strong>{event.note || eventLabels[event.kind] || "Cambio registrado"}</strong>
+            <small>{data.workers.find(worker => worker.id === event.actor_id)?.name || "Personal"} · {eventDate.format(new Date(event.created_at))} (Madrid)</small>
+          </li>)}</ul> : <p>Todavía no hay actividad registrada.</p>}</details>
+      </aside>
+    </div> : <OfficeWork key={`${view}-${scope || "todos"}`} view={view === "reviews" ? "reviews" : "tasks"} departmentId={scope} data={data} reload={reload}/>}
+  </main>;
+}

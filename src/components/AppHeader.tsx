@@ -8,7 +8,7 @@ import TCToaster from "@/components/ui/TCToaster";
 import BrandSwitcher from "@/components/global/BrandSwitcher";
 import { tcToast } from "@/lib/tc-toast";
 import { useAttendance } from "@/hooks/useAttendance";
-import { ArrowLeft, Clock3, Landmark, Network } from "lucide-react";
+import { ArrowLeft, Building2, Clock3, Landmark, Network } from "lucide-react";
 import styles from "./AppHeader.module.css";
 import { backgroundFetch } from "@/lib/background-fetch";
 import StaffTeamStatusStrip from '@/components/chat/StaffTeamStatusStrip';
@@ -30,6 +30,7 @@ function pathLabel(pathname: string) {
   if (!pathname) return "Panel";
   if (pathname === "/admin/cerebro") return "Cerebro Celestial";
   if (pathname === "/admin/contabilidad") return "Contabilidad";
+  if (pathname === "/admin/oficina") return "Oficina Celestial";
   if (pathname === "/admin") return "Admin";
   if (pathname === "/panel-central") return "Centrales";
   if (pathname === "/panel-tarotista") return "Tarotista";
@@ -440,6 +441,17 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
                 >
                   <Landmark size={16} />
                   <span>Contabilidad</span>
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.brainButton} ${styles.officeButton} ${pathname === "/admin/oficina" ? styles.activeTool : ""}`}
+                  aria-label="Oficina Celestial"
+                  aria-current={pathname === "/admin/oficina" ? "page" : undefined}
+                  title="Oficina Celestial"
+                  onClick={() => router.push("/admin/oficina")}
+                >
+                  <Building2 size={16} aria-hidden="true" />
+                  <span>Oficina Celestial</span>
                 </button>
                 </>
               ) : null}

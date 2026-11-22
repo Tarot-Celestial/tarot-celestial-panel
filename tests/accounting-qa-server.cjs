@@ -17,7 +17,7 @@ const worker = { id: WORKER_ID, user_id: USER_ID, role: 'admin', email: user.ema
 const token = [Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url'), Buffer.from(JSON.stringify({ sub: USER_ID, aud: 'authenticated', role: 'authenticated', email: user.email, session_id: SESSION_ID, iat: Math.floor(Date.now()/1000), exp: Math.floor(Date.now()/1000)+86400 })).toString('base64url'), 'synthetic-local-signature'].join('.');
 const allowedRPC = new Set(['tc_has_admin_access', 'tc_accounting_reserve_login_attempt', 'tc_accounting_open_session', 'tc_accounting_read_session', 'tc_accounting_close_session', 'accounting_snapshot', 'accounting_post_entry', 'accounting_void_entry', 'accounting_upsert_option']);
 
-async function startAccountingQA({ appPort = 3055, dbPort = 54339 } = {}) {
+async function startAccountingQA({ appPort = 3055, dbPort = 54339, setupDatabase, extraRPC = [], handleFixtureRequest } = {}) {
   const repo = path.resolve(__dirname, '..');
   // NextURL normalizes loopback IPs to localhost, so Origin must use that host.
   const appOrigin = `http://localhost:${appPort}`;
@@ -37,6 +37,8 @@ async function startAccountingQA({ appPort = 3055, dbPort = 54339 } = {}) {
     grant select on public.test_admins to service_role;`);
   await db.exec(fs.readFileSync(path.join(repo, 'scripts/accounting-access-schema.sql'), 'utf8'));
   await db.exec(fs.readFileSync(path.join(repo, 'supabase/accounting-ledger.sql'), 'utf8'));
+  if (setupDatabase) await setupDatabase(db);
+  const rpcNames = new Set([...allowedRPC, ...extraRPC]);
   await db.exec('set role service_role');
   const send = (res, status, body, extra = {}) => { res.writeHead(status, { 'content-type': 'application/json', 'access-control-allow-origin': appOrigin, 'access-control-allow-headers': '*', 'access-control-allow-methods': 'GET, POST, HEAD, OPTIONS', ...extra }); res.end(JSON.stringify(body)); };
   const dbServer = http.createServer(async (req, res) => {
@@ -50,7 +52,7 @@ async function startAccountingQA({ appPort = 3055, dbPort = 54339 } = {}) {
       }
       if (url.pathname.startsWith('/rest/v1/rpc/')) {
         const name = url.pathname.split('/').at(-1);
-        if (!allowedRPC.has(name) || req.method !== 'POST') return send(res, 400, { code: 'QA_UNEXPECTED_RPC', message: name });
+        if (!rpcNames.has(name) || req.method !== 'POST') return send(res, 400, { code: 'QA_UNEXPECTED_RPC', message: name });
         if (req.headers.apikey !== SERVICE_KEY || req.headers.authorization !== `Bearer ${SERVICE_KEY}`) return send(res, 403, { code: '42501', message: 'Server role required' });
         const chunks = []; for await (const chunk of req) chunks.push(chunk);
         const args = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
@@ -93,7 +95,16 @@ async function startAccountingQA({ appPort = 3055, dbPort = 54339 } = {}) {
   fs.symlinkSync(path.join(repo,'node_modules'),path.join(stage,'node_modules'),process.platform === 'win32' ? 'junction' : 'dir');
   const nextApp = next({ dev: true, hostname: 'localhost', port: appPort, dir: stage });
   await nextApp.prepare();
-  const appServer = http.createServer(nextApp.getRequestHandler());
+  const handleNext = nextApp.getRequestHandler();
+  const fixtureContext = { appOrigin, dbOrigin, token, user, worker };
+  const appServer = http.createServer(handleFixtureRequest ? async (req, res) => {
+    try {
+      if (!await handleFixtureRequest(req, res, fixtureContext)) await handleNext(req, res);
+    } catch {
+      if (!res.headersSent) res.writeHead(500);
+      res.end('Local preview request failed');
+    }
+  } : handleNext);
   await new Promise((resolve, reject) => { appServer.once('error', reject); appServer.listen(appPort, 'localhost', resolve); });
   return { appOrigin, dbOrigin, db, calls, blocked, token, user, worker, password: PASSWORD,
     async close() { appServer.closeAllConnections(); await new Promise(resolve => appServer.close(resolve)); await nextApp.close(); dbServer.closeAllConnections(); await new Promise(resolve => dbServer.close(resolve)); await db.close(); global.fetch = realFetch; },
