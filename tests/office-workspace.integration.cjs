@@ -27,10 +27,39 @@ before(async () => {
     grant select on public.workers,public.admin_grants to service_role;`);
   await db.query("insert into public.workers values($1,$2,'Álex',true),($3,null,'Celia',true),($4,null,'Baja',false)",[actor,user,coworker,inactive]);
   await db.query("insert into public.admin_grants values($1)",[user]);
+  // Reproduce the managed project's grants on newly created public tables/functions.
+  await db.exec(`alter default privileges in schema public grant all on tables to anon,authenticated,service_role;
+    alter default privileges in schema public grant execute on functions to anon,authenticated,service_role;`);
   await db.exec(fs.readFileSync(path.join(__dirname,"../supabase/migrations/20261122185744_office_celestial_workspace.sql"),"utf8"));
   await db.exec("set role service_role");
 });
 after(async () => { if (db) await db.close(); });
+
+test("migration replaces broad Supabase defaults with the effective Office privilege matrix", async () => {
+  const tableGrants = {
+    office_departments:["SELECT","UPDATE"], office_tasks:["SELECT","INSERT","UPDATE"],
+    office_versions:["SELECT","INSERT"], office_events:["SELECT","INSERT"], office_requests:["SELECT","INSERT"],
+  };
+  const roles = ["anon","authenticated","service_role"];
+  const allGrants = ["SELECT","INSERT","UPDATE","DELETE","TRUNCATE","TRIGGER","REFERENCES"];
+  const columns = { office_versions:["status","review_note","reviewed_by","reviewed_at"], office_requests:["result_id"] };
+  for (const role of roles) {
+    for (const [table,grants] of Object.entries(tableGrants)) {
+      const qualified = "public." + table;
+      for (const privilege of allGrants) {
+        const allowed = await scalar("select has_table_privilege($1,$2,$3) v",[role,qualified,privilege]);
+        assert.equal(allowed,role === "service_role" && grants.includes(privilege),role + " " + privilege + " " + table);
+      }
+      if (columns[table]) {
+        const actual = (await db.query("select attname from pg_catalog.pg_attribute where attrelid=$1::regclass and attnum>0 and not attisdropped and has_column_privilege($2,attrelid,attnum,'UPDATE') order by attname",[qualified,role])).rows.map(r=>r.attname);
+        assert.deepEqual(actual,role === "service_role" ? [...columns[table]].sort() : []);
+      }
+    }
+    for (const signature of ["office_actor(uuid)","office_snapshot(uuid)","office_file(uuid,uuid)","office_apply(uuid,jsonb)"]) {
+      assert.equal(await scalar("select has_function_privilege($1,$2,'EXECUTE') v",[role,"public."+signature]),role === "service_role");
+    }
+  }
+});
 
 test("reloading reproduces 15 departments, real assignees, task state, notes and revisions", async () => {
   const before = await snapshot();

@@ -76,10 +76,13 @@ alter table public.office_tasks enable row level security;
 alter table public.office_versions enable row level security;
 alter table public.office_events enable row level security;
 alter table public.office_requests enable row level security;
-revoke all on public.office_departments,public.office_tasks,public.office_versions,public.office_events,public.office_requests from public,anon,authenticated;
+-- Supabase may grant ALL to the service role when a public table is created.
+revoke all on public.office_departments,public.office_tasks,public.office_versions,public.office_events,public.office_requests from public,anon,authenticated,service_role;
 grant select,update on public.office_departments to service_role;
-grant select,insert,update on public.office_tasks,public.office_versions,public.office_requests to service_role;
-grant select,insert on public.office_events to service_role;
+grant select,insert,update on public.office_tasks to service_role;
+grant select,insert on public.office_versions,public.office_requests,public.office_events to service_role;
+grant update(status,review_note,reviewed_by,reviewed_at) on public.office_versions to service_role;
+grant update(result_id) on public.office_requests to service_role;
 
 create function public.office_actor(p_user uuid) returns uuid
 language plpgsql stable security invoker set search_path = '' as $$
