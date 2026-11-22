@@ -26,9 +26,17 @@ test("el país cambia numerador, denominador y mediana; un período sin madurar 
     recorded_consultations: 11, without_reply_or_purchase: 70 };
   const argentina = { ...total, country: "Argentina", contacts: 8, replied: 0, median_reply_minutes: null,
     first_buyers: 1, matured_contacts: 0, buyers_within_7d: 0 };
+  const spain = { ...argentina, country: "España", contacts: 1, first_buyers: 0, matured_contacts: 1 };
+  const colombia = { ...spain, country: "Colombia", first_buyers: 1, buyers_within_7d: 1 };
   let ui;
-  await act(async () => { ui = create(React.createElement(Conversion, { funnel: { total, countries: [argentina, total] } })); });
+  await act(async () => { ui = create(React.createElement(Conversion, { funnel: { total, countries: [argentina, spain, colombia, total] } })); });
   try {
+    function checkCounts(accumulated, sevenDays) {
+      const captions = ui.root.findAllByType("small");
+      assert.equal(captions[0].children.join(""), accumulated + ".");
+      assert.equal(captions[2].children.join(""), sevenDays + " con siete días completos de observación.");
+    }
+    checkCounts("7 primeras compras entre 100 contactos", "3 primeras compras entre 60 contactos");
     assert.match(JSON.stringify(ui.toJSON()), /1 h 30 min/);
     const select = ui.root.findByType("select");
     await act(async () => select.props.onChange({ target: { value: "country:Argentina" } }));
@@ -37,6 +45,11 @@ test("el país cambia numerador, denominador y mediana; un período sin madurar 
     assert.match(text, /Sin base/);
     assert.match(text, /Sin dato/);
     assert.match(text, /Sin país registrado/);
+    checkCounts("1 primera compra entre 8 contactos", "0 primeras compras entre 0 contactos");
+    await act(async () => select.props.onChange({ target: { value: "country:España" } }));
+    checkCounts("0 primeras compras entre 1 contacto", "0 primeras compras entre 1 contacto");
+    await act(async () => select.props.onChange({ target: { value: "country:Colombia" } }));
+    checkCounts("1 primera compra entre 1 contacto", "1 primera compra entre 1 contacto");
   } finally { await act(async () => ui.unmount()); }
 });
 

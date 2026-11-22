@@ -11,6 +11,12 @@ function rate(buyers: number, contacts: number) {
   return contacts ? percent.format(buyers / contacts) : "Sin base";
 }
 
+function purchaseCount(buyers: number, contacts: number) {
+  const purchases = buyers === 1 ? "primera compra" : "primeras compras";
+  const people = contacts === 1 ? "contacto" : "contactos";
+  return `${buyers} ${purchases} entre ${contacts} ${people}`;
+}
+
 function countryLabel(country: string | null) {
   if (!country) return "Sin país registrado";
   return /^[A-Z]{2}$/.test(country) ? regions.of(country) || country : country;
@@ -46,11 +52,11 @@ export default function OfficeCampaignConversion({ funnel }: { funnel: PilotFunn
     </div>
     <div className={styles.sales} aria-live="polite">
       <div><span>Conversión acumulada</span><strong>{rate(row.first_buyers, row.contacts)}</strong>
-        <small>{row.first_buyers} de {row.contacts} contactos hicieron su primera compra.</small></div>
+        <small>{purchaseCount(row.first_buyers, row.contacts)}.</small></div>
       <div><span>Respuesta digital comprobada</span><strong>{row.replied} de {row.contacts}</strong>
         <small>Tiempo hasta la primera respuesta (mediana) · {duration(row.median_reply_minutes)}</small></div>
       <div><span>Conversión en 7 días</span><strong>{rate(row.buyers_within_7d, row.matured_contacts)}</strong>
-        <small>{row.buyers_within_7d} compras entre {row.matured_contacts} contactos con siete días completos de observación.</small></div>
+        <small>{purchaseCount(row.buyers_within_7d, row.matured_contacts)} con siete días completos de observación.</small></div>
     </div>
     <dl className={styles.conversionEvidence}>
       <div><dt>Recibieron una línea telefónica</dt><dd>{row.phone_routed}</dd></div>

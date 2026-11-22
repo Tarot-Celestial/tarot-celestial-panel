@@ -75,6 +75,7 @@ export type PilotReport = {
   unattributed_first_purchases: number;
   next_cursor: string | null;
   spend: PilotSpend | null;
+  /** Motivo de la ausencia de gasto automático, incluso cuando hay un CSV acreditado. */
   spend_reason: string | null;
   cpa: number | null;
 };

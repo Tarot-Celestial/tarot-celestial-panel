@@ -37,7 +37,7 @@ const labels: Record<string, string> = {
 };
 const spendReasons: Record<string, string> = {
   not_connected: "La Oficina aún no tiene una conexión de lectura de anuncios.",
-  no_access: "Meta no concedió acceso a los datos de gasto de esta campaña.",
+  no_access: "La conexión actual no pudo acceder al gasto de esta campaña en Meta.",
   not_campaign: "El formulario llegó sin identificador de campaña de Meta.",
   conflicting_account: "La cuenta del CSV y la conexión actual no coinciden.",
   unverified_period: "Los datos de Meta no coinciden con el período o la cuenta solicitados.",
@@ -218,6 +218,9 @@ export default function OfficeCampaignPilot({
           </div>
           {spend ? <p className={styles.note}>Gasto de {spend.source === "meta_insights" ? "Meta Ads Insights" : "una exportación de Ads Manager"} · Cuenta {spend.account_id} · {spend.source === "meta_insights" ? "Consultado" : "Registrado"} el {instant(spend.checked_at, report.zone)}
             {spend.worker && <> por {spend.worker}</>}{spend.file_sha256 && <> · Huella SHA-256 {spend.file_sha256.slice(0, 12)}…</>}</p> : <p className={styles.note}>{spendReasons[report.spend_reason ?? ""] ?? "No consta un importe de gasto comprobado para este período."}</p>}
+          {spend?.source === "ads_manager_csv" && (report.spend_reason === "not_connected" || report.spend_reason === "no_access") && <p className={styles.notice}>
+            {spendReasons[report.spend_reason]} Para actualizar el gasto automáticamente, conecta la Oficina a {spend.account_id === "1416816065835618" ? "TarotPubli" : `la cuenta ${spend.account_id}`} con el permiso de lectura de anuncios <code>ads_read</code>.
+          </p>}
           {!report.selected.id.startsWith("form-") && <ImportSpend key={report.selected.id + month} campaign={report.selected.id} month={month} onSaved={() => setRefresh(n => n + 1)} />}
         </section>
         {report.funnel && <OfficeCampaignConversion key={report.selected.id + month} funnel={report.funnel}/>}
