@@ -113,7 +113,7 @@ export async function currentCaptacionWhatsAppDelivery(admin: any, context: Awai
   return data;
 }
 // Retained for legacy receipts/tests. The public capture endpoint uses only QR.
-export async function sendCaptacionWhatsAppOfficial(admin: any, worker: Row, context: Awaited<ReturnType<typeof captacionWhatsAppLead>>, requestId: string) {
+export async function sendCaptacionWhatsAppOfficial(admin: any, worker: Row, context: Awaited<ReturnType<typeof captacionWhatsAppLead>>, requestId: string, beforeClaim?: () => Promise<void>) {
   if (!UUID.test(requestId)) throw new CaptacionWhatsAppError("INVALID_REQUEST_ID", 400);
   const existing = await currentCaptacionWhatsAppDelivery(admin, context);
   if (existing) return { ok: true, status: existing.status, duplicate: true, delivery_id: existing.id, message_id: existing.message_sid || null };
@@ -124,6 +124,7 @@ export async function sendCaptacionWhatsAppOfficial(admin: any, worker: Row, con
   if (context.lead.closed_at && (!context.submitted_at || Date.parse(context.lead.closed_at) >= Date.parse(context.submitted_at))) throw new CaptacionWhatsAppError("LEAD_CLOSED", 409);
   const deliveryId = randomUUID(), callbackToken = randomUUID();
   const clientSnapshot = Object.fromEntries(["telefono_normalizado", "telefono", "pais", "nombre", "apellido"].map(key => [key, context.client[key] ?? null]));
+  if (beforeClaim) await beforeClaim();
   const { data: claim, error: claimError } = await admin.rpc("tc_captacion_whatsapp_claim", {
     p_delivery_id: deliveryId, p_request_id: requestId, p_lead_id: context.lead.id, p_worker_id: worker.id, p_auth_user_id: worker.user_id,
     p_submission_key: context.submission_key, p_content_sid: settings.config.sid, p_from_number: settings.config.from, p_to_number: `whatsapp:${to}`, p_callback_token: callbackToken,

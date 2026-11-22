@@ -119,6 +119,7 @@ type Activity = ReturnType<typeof useMapActivity>;
 function openLabel(id: string) {
   if (id.startsWith("meta:")) return "Ver seguimiento de Meta";
   if (id.startsWith("cliente:")) return "Abrir ficha";
+  if (id.startsWith("comercial:")) return "Abrir caso";
   if (id.startsWith("cohorte:")) return "Abrir informe";
   if (id.startsWith("reservas:")) return "Ver reservas";
   return "Abrir encargo";

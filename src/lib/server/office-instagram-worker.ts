@@ -68,6 +68,9 @@ export async function processOfficeInstagram(db: SupabaseClient, id: string | nu
       if (duplicate) {
         await transition(db,job,"invalidated",{ error:"Ya hay una publicación reciente con este texto en la cuenta. Revisa el historial antes de preparar otro envío." }); return;
       }
+      const ready = await db.rpc("office_autonomy_ig_prepare", { p_id:job.id, p_lease:job.lease_token });
+      if (ready.error) throw new Error("No se pudo verificar la política de autonomía.");
+      if (ready.data !== true) return;
       container = await createOfficeContainer(job.account_id,officeMediaUrl(job.id,job.media_sha256),job.caption,job.alt_text,draft.media.type,pin);
       if (!await transition(db,job,"container_ready",{ container })) return;
     }

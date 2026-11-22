@@ -42,7 +42,7 @@ export async function sendWhatsAppReply(job: CaptureJob, proof: SocialProof, bod
   }
   return receipt.messageId as string;
 }
-export async function prepareFormReply(db: any, job: CaptureJob) {
+export async function prepareFormReply(db: any, job: CaptureJob, beforeSend: () => Promise<void>) {
   if (job.whatsapp_consent !== true) throw new DispatchDecision("WHATSAPP_CONSENT_REQUIRED");
   if (!job.lead_id || !job.client_id || !job.actor_worker_id || !job.actor_user_id) throw new DispatchDecision("FORM_IDENTITY_UNVERIFIED");
   if (!await hasAdminAccess(db,job.actor_user_id)) throw new DispatchDecision("DELEGATION_REQUIRED","blocked");
@@ -53,7 +53,7 @@ export async function prepareFormReply(db: any, job: CaptureJob) {
   const settings = await captacionWhatsAppTemplate();
   if (!settings.ready || !settings.template) throw new DispatchDecision(settings.reason || "TEMPLATE_UNAVAILABLE","blocked");
   return { body:CAPTACION_WHATSAPP_BODY.replace("{{1}}",()=>captacionWhatsAppName(context.client)), send:async () => {
-    const result = await sendCaptacionWhatsAppOfficial(db,actor,context,job.request_id);
+    const result = await sendCaptacionWhatsAppOfficial(db,actor,context,job.request_id,beforeSend);
     if (!result.message_id || !["accepted","sent","delivered","read"].includes(result.status)) {
       throw new DispatchDecision(["failed","undelivered"].includes(result.status) ? "WHATSAPP_REJECTED" : "WHATSAPP_RECEIPT_UNCERTAIN",
         ["failed","undelivered"].includes(result.status) ? "failed" : "uncertain");

@@ -58,6 +58,7 @@ const HabitualesPanel = nextDynamic(() => import("@/components/habituales/Habitu
 const RendimientoPanel = nextDynamic(() => import("@/components/rendimiento/RendimientoPanel"), { loading: tabLoading });
 const CentralTeamLivePanel = nextDynamic(() => import("@/features/central/CentralTeamLivePanel"), { loading: tabLoading });
 const CentralWhatsAppPanel = nextDynamic(() => import("@/features/central/CentralWhatsAppPanel"), { ssr: false, loading: tabLoading });
+const OfficeCommercialInbox = nextDynamic(() => import("@/features/office/OfficeCommercialInbox"), { ssr: false, loading: tabLoading });
 const CentralInstagramPanel = nextDynamic(() => import("@/features/central/CentralInstagramPanel"), { ssr: false, loading: tabLoading });
 const CentralRafflePanel = nextDynamic(() => import("@/features/central/CentralRafflePanel"), {
   ssr: false,
@@ -83,6 +84,7 @@ const TABS = [
   "primera-tarotista",
   "diario",
   "captacion",
+  "comercial",
   "incidencias",
   "checklist",
   "llamadas",
@@ -134,6 +136,7 @@ const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
   { key: "crm", label: "CRM", icon: Users },
   { key: "sorteo", label: "Sorteo", icon: Gift },
   { key: "captacion", label: "Captación", icon: Megaphone },
+  { key: "comercial", label: "Comercial", icon: UsersRound, kicker: "Consultas derivadas" },
   { key: "incidencias", label: "Incidencias", icon: ShieldCheck },
   { key: "checklist", label: "Checklist", icon: CheckSquare },
   { key: "rendimiento", label: "Rendimiento", icon: BarChart3 },
@@ -1579,12 +1582,14 @@ function CentralPage({ expectedRole }: { expectedRole: "central" | "admin" }) {
           )}
 
           {tab === "whatsapp" && <CentralWhatsAppPanel />}
+          {tab === "comercial" && <OfficeCommercialInbox inCentral opportunityId={searchParams?.get("caso")} showSource={searchParams?.get("origen")==="1"}/>}
           {tab === "instagram" && <CentralInstagramPanel provider="instagram" attention={socialAttention.instagram} />}
           {tab === "facebook" && <CentralInstagramPanel provider="facebook" attention={socialAttention.facebook} />}
           {tab === "crm" && <CRMClientesPanel mode="central" showImportButton={false} />}
           {tab === "sorteo" && <CentralRafflePanel />}
           {tab === "captacion" && (
             <CaptacionPanel
+              officeLeadId={searchParams?.get("lead")}
               onOpenWhatsApp={() => handleSidebarTabChange("whatsapp")}
               onOpenClient={(clienteId) => {
                 setTab("crm" as any);

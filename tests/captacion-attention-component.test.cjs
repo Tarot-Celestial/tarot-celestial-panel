@@ -60,12 +60,12 @@ test('operational capture and WhatsApp alerts work before assistant load, wake t
     assert.equal(monitorOptions.enabled, true, 'profile load failure must not disable operational alerts');
     assert.equal(whatsappOptions.enabled, true, 'WhatsApp must also work independently of companion profile and presence');
     assert.equal(monitorOptions.blocked, undefined, 'an existing reservation must not delay a new capture alert');
-    const minimize = tree.root.findAllByType('button').find(node => node.props.title === 'Minimizar mascota');
+    const minimize = tree.root.findAllByType('button').find(node => node.props.title === 'Minimizar Atlas');
     await act(async () => minimize.props.onClick());
-    assert.ok(tree.root.findAllByType('button').some(node => node.props.title === 'Ampliar mascota'));
+    assert.ok(tree.root.findAllByType('button').some(node => node.props.title === 'Ampliar Atlas'));
     pending = { ...pending, items, notice: { key: 'arrival', announcedAt: Date.now(), items } };
     await act(async () => monitorOptions.onReminder()); await update();
-    assert.ok(tree.root.findAllByType('button').some(node => node.props.title === 'Minimizar mascota'), 'arrival expands the minimized companion');
+    assert.ok(tree.root.findAllByType('button').some(node => node.props.title === 'Minimizar Atlas'), 'arrival expands the minimized companion');
     assert.match(content(tree.toJSON()), /Captación urgente/);
     assert.match(content(tree.toJSON()), /Reserva existente/);
     assert.equal(tree.root.findAllByType('aside').length, 2, 'urgent capture and reservation remain simultaneously accessible');

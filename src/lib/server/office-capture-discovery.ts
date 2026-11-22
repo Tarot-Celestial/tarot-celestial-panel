@@ -3,11 +3,12 @@ import { hasAdminAccess } from "./admin-access";
 import { parseWhatsAppAttention } from "./whatsapp-attention";
 import { whatsappGatewayConfig, whatsappGatewayFetch, whatsappSessionId } from "./whatsapp-gateway";
 import { asksToStop } from "./office-social-policy";
+import { allowOfficeDiscovery } from "./office-discovery-policy";
 
 const direct = /^(?:[1-9]\d{7,14}@s\.whatsapp\.net|[1-9]\d{0,29}@lid)$/;
 type GatewayChat = {id:string; name?:string; isGroup:boolean; lastText?:string; lastFromMe?:boolean; lastTs?:number};
-type Source = {thread_key:string; source_id:string; source_at:string; body:string; name:string|null; business_interest:boolean; last_own_id:string|null};
-type ConnectionState = "connected"|"not_configured"|"offline"|"unavailable"|"not_authorized";
+type Source = {thread_key:string; source_id:string; source_at:string; body:string; name:string|null; business_interest:boolean; last_own_id:string|null; last_own_at:string|null};
+type ConnectionState = "connected"|"not_configured"|"offline"|"unavailable"|"not_authorized"|"paused";
 type Health = {state:ConnectionState; ingested:number};
 const health = (state:ConnectionState, ingested=0):Health => ({state,ingested});
 
@@ -26,7 +27,7 @@ function sample<T>(items:T[], now:number, limit:number) {
   return Array.from({length:limit},(_,i)=>items[(start+i)%items.length]);
 }
 
-async function discoverWhatsApp(db:any):Promise<Health> {
+async function discoverWhatsApp(db:any,batch:string):Promise<Health> {
   const config = whatsappGatewayConfig();
   if (!config.configured) return health("not_configured");
   let session = "central";
@@ -39,11 +40,16 @@ async function discoverWhatsApp(db:any):Promise<Health> {
     session=whatsappSessionId(worker.data);
   }
   const path="/sessions/"+session;
+  const identity=await whatsappGatewayFetch(path+"/status");
+  if (identity.status!==200 || identity.json?.session!==session || identity.json?.state!=="connected" || !identity.json?.me?.id)
+    return health(identity.json?.state==="qr" || identity.json?.state==="idle" || identity.json?.error==="LOCAL_GATEWAY_OFFLINE" ? "offline":"unavailable");
+  if (!await allowOfficeDiscovery(db,"whatsapp",identity.json.me.id,batch)) return health("paused");
   const snapshot=await whatsappGatewayFetch(path+"/attention");
   if (snapshot.status!==200) {
     return health(["LOCAL_GATEWAY_OFFLINE","NOT_CONNECTED"].includes(snapshot.json?.error) ? "offline":"unavailable");
   }
   const attention=parseWhatsAppAttention(snapshot.json,session);
+  if (identity.json.me.id!==attention.account_id) return health("unavailable");
   const listing=await whatsappGatewayFetch(path+"/chats");
   if (listing.status!==200 || !listing.json?.ok || !Array.isArray(listing.json.chats)) return health("unavailable");
   const own=attention.account_id.replace(/:\d+@/,"@"), now=Date.now();
@@ -68,7 +74,8 @@ async function discoverWhatsApp(db:any):Promise<Health> {
       const expected=unread.get(chat.id);
       if (expected && !messages.some((m:any)=>m.fromMe===false && m.chatJid===chat.id && m.id===expected.last_incoming_id &&
         Number(m.ts)*1000===Date.parse(expected.last_incoming_at || ""))) return;
-      const lastOwn=messages.filter((m:any)=>m.chatJid===chat.id && m.fromMe===true && typeof m.id==="string").at(-1)?.id || null;
+      const lastOwn=messages.filter((m:any)=>m.chatJid===chat.id && m.fromMe===true && typeof m.id==="string").at(-1);
+      const lastOwnAt=lastOwn && Number.isSafeInteger(lastOwn.ts) && lastOwn.ts>0 && lastOwn.ts*1000<=now ? new Date(lastOwn.ts*1000).toISOString() : null;
       let qualified=known.has(chat.id);
       for (const m of messages) {
         if (m?.fromMe!==false || m.chatJid!==chat.id || m.kind!=="text" || typeof m.text!=="string" || !m.text.trim() ||
@@ -76,7 +83,7 @@ async function discoverWhatsApp(db:any):Promise<Health> {
         const interested=whatsAppBusinessInterest(m.text);
         qualified ||= interested;
         if (qualified || asksToStop(m.text)) sources.push({thread_key:chat.id,source_id:m.id,source_at:new Date(m.ts*1000).toISOString(),
-          body:m.text.slice(0,4000),name:chat.name?.slice(0,120) || null,business_interest:interested,last_own_id:lastOwn});
+          body:m.text.slice(0,4000),name:chat.name?.slice(0,120) || null,business_interest:interested,last_own_id:lastOwn?.id || null,last_own_at:lastOwnAt});
       }
     }));
   }
@@ -91,9 +98,9 @@ async function discoverWhatsApp(db:any):Promise<Health> {
   return health(partial?"unavailable":"connected",count);
 }
 
-export async function discoverOfficeCapture(db:any) {
-  const database=await db.rpc("office_capture_discover");
+export async function discoverOfficeCapture(db:any,batch:string) {
+  const database=await db.rpc("office_capture_discover",{p_batch:batch});
   if (database.error) throw new Error("OFFICE_CAPTURE_DISCOVERY_UNAVAILABLE");
-  const whatsapp=await discoverWhatsApp(db).catch(()=>health("unavailable"));
+  const whatsapp=await discoverWhatsApp(db,batch).catch(()=>health("unavailable"));
   return {database:{processed:Number(database.data?.processed || 0)},whatsapp};
 }

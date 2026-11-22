@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { renderOfficeArtwork } from "./office-artwork";
-import { officeArtworkAlt, officeCreativeStep, OfficeCreativeError, officePublicCaption, validateOfficeSources } from "./office-creative";
+import { checkCreativeAutonomy, officeArtworkAlt, officeCreativeStep, OfficeCreativeError, officePublicCaption, validateOfficeSources } from "./office-creative";
 
 type CreativeCopy = { headline: string; lines: string[]; caption: string };
 type Review = { id: string; deliverable_id: string; version: number; title: string; body: string; review_note: string | null };
@@ -52,6 +52,7 @@ export async function processOfficeRun(db: SupabaseClient, requestedId: string |
       const { task, revision } = await loadInputs(db, run);
       if (task.department_id !== "marketing") throw new OfficeCreativeError("waiting_input", "El encargo debe pertenecer a Marketing.");
       if (run.step === 2) {
+        await checkCreativeAutonomy(db,run);
         delivery = await makeDelivery(db, run, task, revision);
         output = { title: delivery.title, format: "PNG", width: 1080, height: 1350, renderer: "oficina-celestial/1" };
       } else {

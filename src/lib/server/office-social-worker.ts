@@ -26,6 +26,10 @@ async function activeLine(db:any,market:string) {
 async function markStop(db:any,job:CaptureJob) {
   if (!await rpc(db,"office_capture_optout",{p_id:job.id,p_lease_token:job.lease_token})) throw new DispatchDecision("CLAIM_CHANGED");
 }
+async function beforeTransport(db:any,job:CaptureJob) {
+  const {data,error} = await db.rpc("office_autonomy_dispatch",{p_id:job.id,p_lease:job.lease_token,p_request:job.request_id});
+  if (error || data !== true) throw new DispatchDecision("AUTONOMY_OR_SOURCE_CHANGED","handoff");
+}
 async function currentConversation(db:any, job:CaptureJob) {
   const [past,question] = await Promise.all([
     db.from("office_capture_inbound").select("inbound_text,source_id,source_at").eq("opportunity_id",job.id)
@@ -70,7 +74,11 @@ async function privatePlan(db:any,job:CaptureJob,proof:SocialProof):Promise<Plan
     ? " Si respondes a este mensaje, podemos ayudarte a vincular tu ficha." : "");
   return {body,route,send:async () => {
     if (market && mode === "private" && await activeLine(db,market) !== phone) throw new DispatchDecision("MARKET_LINE_CHANGED");
-    return job.channel === "whatsapp" ? sendWhatsAppReply(job,proof,body) : sendSocialReply(job,proof,body,mode);
+    if (job.channel === "whatsapp") {
+      await beforeTransport(db,job);
+      return sendWhatsAppReply(job,proof,body);
+    }
+    return sendSocialReply(job,proof,body,mode,() => beforeTransport(db,job));
   }};
 }
 function decision(error:unknown,committed:boolean): { outcome:Outcome; reason:string } {
@@ -95,7 +103,7 @@ async function dispatch(db:any,job:CaptureJob):Promise<Outcome> {
     if (job.kind !== "form" && job.inbound_text && asksToStop(job.inbound_text)) { await markStop(db,job); return "handoff"; }
     let plan:Plan;
     if (job.channel === "meta_form" && job.kind === "form") {
-      const template = await prepareFormReply(db,job);
+      const template = await prepareFormReply(db,job,() => beforeTransport(db,job));
       plan = {...template,route:"whatsapp_template"};
     } else {
       const proof = job.channel === "whatsapp" ? await readWhatsAppProof(job) : await readSocialProof(job);

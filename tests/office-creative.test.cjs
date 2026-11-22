@@ -13,6 +13,7 @@ function fixture(config = {}) {
   const tables = { central_assistant_knowledge: [], office_promotion_scopes: [], tc_client_promotions: [], tc_client_promotion_packages: [], ...config.tables };
   const db = {
     async rpc(name, args) {
+      if (name === 'office_autonomy_creative') return {data:config.autonomy || 'allow',error:null};
       assert.equal(name, 'office_promotion_scope_live');
       return { data: config.scopeLive?.(args) ?? true, error: null };
     },
@@ -58,6 +59,11 @@ function fixture(config = {}) {
     worker:()=>load('src/lib/server/office-worker')};
 }
 const expected = status => error => error.status === status;
+test('la revisión de autonomía se realiza antes de enviar datos al proveedor', async()=>{
+  for(const [autonomy,status] of [['paused','waiting_input'],['handoff','waiting_input'],['limit','limit_reached']]){
+    const f=fixture({autonomy}); await assert.rejects(f.step(0),expected(status));assert.equal(f.calls.length,0);
+  }
+});
 
 test('Atlas and Marketing call the configured server provider once per step with only the latest approved Office sources', async()=>{
   const f=fixture({tables:{central_assistant_knowledge:[

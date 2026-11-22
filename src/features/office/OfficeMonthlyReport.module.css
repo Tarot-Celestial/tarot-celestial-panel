@@ -55,5 +55,7 @@
 @media (max-width: 560px) {
   .header, .controls { align-items: stretch; }
   .header { flex-direction: column; }
+  .controls, .controls label, .controls input, .controls select { min-width: 0; max-width: 100%; }
+  .controls label { grid-template-columns: minmax(0, 1fr); }
   .table td, .table th { padding: 8px; }
 }
