@@ -1,6 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { decryptSecret, encryptSecret, SOCIAL_CONNECTIONS_TABLE, type SocialProvider } from "@/lib/server/social-connections";
+import { decryptSecret, encryptSecret, refreshInstagramToken, SOCIAL_CONNECTIONS_TABLE, type SocialProvider } from "@/lib/server/social-connections";
 
 export type SocialContentRow = {
   id: string;
@@ -28,18 +28,14 @@ async function connection(provider: SocialProvider) {
   if (shouldRefresh) {
     try {
       if (provider === "instagram") {
-        const refreshUrl = new URL("https://graph.instagram.com/refresh_access_token");
-        refreshUrl.searchParams.set("grant_type", "ig_refresh_token");
-        refreshUrl.searchParams.set("access_token", accessToken);
-        const refreshResponse = await fetch(refreshUrl, { cache: "no-store" });
-        const refreshed: any = await refreshResponse.json().catch(() => ({}));
-        if (refreshResponse.ok && refreshed?.access_token) {
-          accessToken = String(refreshed.access_token);
+        const refreshed = await refreshInstagramToken(accessToken);
+        if (refreshed) {
+          accessToken = refreshed.token;
           await db.from(SOCIAL_CONNECTIONS_TABLE).update({
             access_token_ciphertext: encryptSecret(accessToken),
-            token_expires_at: refreshed.expires_in ? new Date(Date.now() + Number(refreshed.expires_in) * 1000).toISOString() : data.token_expires_at,
+            token_expires_at: refreshed.expiresAt,
             updated_at: new Date().toISOString(),
-          }).eq("provider", provider);
+          }).eq("provider", provider).eq("account_id", data.account_id).eq("access_token_ciphertext", data.access_token_ciphertext);
         }
       } else {
         const refreshToken = decryptSecret(data.refresh_token_ciphertext);

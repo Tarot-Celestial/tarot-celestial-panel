@@ -1,6 +1,6 @@
 import 'server-only';
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import { decryptSecret, SOCIAL_CONNECTIONS_TABLE } from '@/lib/server/social-connections';
+import { decryptSecret, encryptSecret, refreshInstagramToken, SOCIAL_CONNECTIONS_TABLE } from '@/lib/server/social-connections';
 
 export class InstagramError extends Error {
   constructor(public code: string, message: string, public status = 503) { super(message); }
@@ -19,10 +19,10 @@ export async function instagramIdentity(req: Request) {
   return { db, worker, userId: data.user.id };
 }
 
-export async function instagramConnection() {
+export async function instagramConnection(refreshForAccount?: string, binding?: {connectedAt:string | null; ownerId:string | null}) {
   const db = supabaseAdmin();
   const { data, error } = await db.from(SOCIAL_CONNECTIONS_TABLE)
-    .select('account_id,username,access_token_ciphertext,token_expires_at,metadata').eq('provider', 'instagram').maybeSingle();
+    .select('account_id,username,access_token_ciphertext,token_expires_at,metadata,connected_at,connected_by').eq('provider', 'instagram').maybeSingle();
   if (error) throw error;
   if (!data?.account_id) throw new InstagramError('NOT_CONNECTED', 'Conecta @tarotcelestialof desde Administración → Redes sociales.');
   if (String(data.username || '').toLowerCase() !== 'tarotcelestialof') {
@@ -31,15 +31,37 @@ export async function instagramConnection() {
   if (data.token_expires_at && Date.parse(data.token_expires_at) <= Date.now()) {
     throw new InstagramError('TOKEN_EXPIRED', 'La conexión con Instagram ha caducado. Vuelve a conectarla desde Administración.');
   }
-  const token = decryptSecret(data.access_token_ciphertext);
+  let token = decryptSecret(data.access_token_ciphertext);
   if (!token) throw new InstagramError('TOKEN_MISSING', 'Vuelve a conectar Instagram desde Administración.');
   const verified = data.metadata?.instagram_verified_account_ids;
   const verifiedAccountIds = Array.isArray(verified) ? [...new Set(verified.filter((value: unknown): value is string => typeof value === 'string' && /^\d{1,40}$/.test(value)))].slice(0, 10) : [];
-  const account: {accountId:string;username:string;token:string;verifiedAccountIds?:string[]} = { accountId: String(data.account_id), username: String(data.username), token, verifiedAccountIds };
-  return account;
+  let expiresAt: string | null = data.token_expires_at;
+  if (refreshForAccount && refreshForAccount !== data.account_id) throw new InstagramError('WRONG_ACCOUNT', 'La cuenta de Instagram ha cambiado.');
+  if (binding && (!sameConnectionTime(binding.connectedAt, data.connected_at) || binding.ownerId !== (data.connected_by || null))) {
+    throw new InstagramError('CONNECTION_CHANGED','Cambió la vinculación de Instagram.');
+  }
+  if (refreshForAccount && expiresAt && Date.parse(expiresAt) - Date.now() < 7 * 86400000) {
+    // Refresh only before an authorized operation. An OAuth reconnection may win
+    // the race, so never overwrite a newly connected account or credential.
+    const rotated = await refreshInstagramToken(token).catch(() => null);
+    if (rotated) {
+      const update = await db.from(SOCIAL_CONNECTIONS_TABLE).update({
+        access_token_ciphertext: encryptSecret(rotated.token), token_expires_at: rotated.expiresAt, updated_at: new Date().toISOString(),
+      }).eq('provider', 'instagram').eq('account_id', data.account_id).eq('access_token_ciphertext', data.access_token_ciphertext).select('account_id').maybeSingle();
+      if (update.error || !update.data) throw new InstagramError('CONNECTION_CHANGED', 'La conexión cambió durante la renovación. Vuelve a comprobarla.');
+      token = rotated.token;
+      expiresAt = rotated.expiresAt;
+    }
+  }
+  return { accountId: String(data.account_id), username: String(data.username), token, verifiedAccountIds, expiresAt,
+    connectedAt: data.connected_at as string | null, ownerId: (data.connected_by || null) as string | null };
 }
 
-export type InstagramAccount = Awaited<ReturnType<typeof instagramConnection>>;
+export type InstagramAccount = {accountId: string; username: string; token: string; verifiedAccountIds?: string[]};
+
+export function sameConnectionTime(a: string | null, b: string | null) {
+  return a === b || (a !== null && b !== null && Number.isFinite(Date.parse(a)) && Date.parse(a) === Date.parse(b));
+}
 
 // All resource paths and cursors are constructed locally; never fetch Meta's
 // paging.next URL, which can contain tokens or an unexpected destination.

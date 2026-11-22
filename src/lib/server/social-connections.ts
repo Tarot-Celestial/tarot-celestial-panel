@@ -8,6 +8,17 @@ export type SocialProvider = "instagram" | "tiktok";
 // depender de restricciones/triggers heredados de tc_social_connections.
 export const SOCIAL_CONNECTIONS_TABLE = "tc_social_connections_v2";
 
+export async function refreshInstagramToken(token: string) {
+  const url = new URL("https://graph.instagram.com/refresh_access_token");
+  url.searchParams.set("grant_type", "ig_refresh_token");
+  url.searchParams.set("access_token", token);
+  const res = await fetch(url, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(8000) });
+  const result = await res.json().catch(() => null);
+  const seconds = Number(result?.expires_in);
+  if (!res.ok || typeof result?.access_token !== "string" || !result.access_token || !Number.isFinite(seconds) || seconds <= 0) return null;
+  return { token: result.access_token as string, expiresAt: new Date(Date.now() + seconds * 1000).toISOString() };
+}
+
 export type StoredSocialConnection = {
   provider: SocialProvider;
   account_id: string | null;
