@@ -9,6 +9,7 @@ export type MetaLeadPayload = {
   id?: string;
   created_time?: string;
   field_data?: LeadField[];
+  custom_disclaimer_responses?: { checkbox_key?: string; is_checked?: string | boolean }[];
   ad_id?: string;
   form_id?: string;
   campaign_id?: string;
@@ -409,7 +410,7 @@ export async function fetchMetaLeadById(leadgenId: string, deadlineAt?: number) 
   return await metaGraphRequest(leadgenId, {
     // form_name belongs to the form node (as "name"), not to Lead. Requesting
     // it here makes Graph reject the whole lead, including its contact data.
-    fields: "id,created_time,field_data,campaign_id,campaign_name,ad_id,ad_name,form_id,is_organic,platform",
+    fields: "id,created_time,field_data,custom_disclaimer_responses,campaign_id,campaign_name,ad_id,ad_name,form_id,is_organic,platform",
   }, deadlineAt) as MetaLeadPayload;
 }
 

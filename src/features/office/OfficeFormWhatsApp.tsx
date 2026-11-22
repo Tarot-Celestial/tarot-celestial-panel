@@ -8,7 +8,8 @@ const senders = { sandbox: "Número de pruebas", missing: "Falta configurar el n
 const templates = { missing: "Falta configurar la plantilla", approved: "Aprobada", pending: "Sin aprobación vigente",
   mismatch: "Revisar el texto y la imagen de Captación", unverified: "Pendiente de verificación" };
 type Status = { sender: keyof typeof senders; template: keyof typeof templates; ready: boolean; enabled: boolean;
-  consent: number | null; forms: number | null };
+  consent: number | null; forms: number | null;
+  coverage: { month: string; submissions: number; granted: number; declined: number; missing: number; review: number } };
 
 export default function OfficeFormWhatsApp() {
   const [open, setOpen] = useState(false);
@@ -32,8 +33,15 @@ export default function OfficeFormWhatsApp() {
           <li>Plantilla de bienvenida · {templates[state.template]}</li>
           <li>Envíos desde formularios · {state.enabled ? "Habilitados en la configuración" : "Desactivados en la configuración"}</li>
           <li>{state.forms === null || state.consent === null ? "Permisos sin datos" :
-            `${state.consent} de ${state.forms} formularios incorporados acreditan permiso para WhatsApp`}</li></ul>
-        <p className={s.note}>El permiso procede de la respuesta expresa de cada contacto en el formulario. Los mensajes que llegan directamente a Central se atienden desde la bandeja vinculada.</p>
+            `${state.consent} de ${state.forms} oportunidades de formulario tienen permiso para WhatsApp en su última entrada`}</li></ul>
+        <p className={s.note}><strong>Respuestas de {state.coverage.month} · {state.coverage.submissions} envíos de formulario verificados</strong><br/>
+          Con permiso · {state.coverage.granted} · Rechazado · {state.coverage.declined} · Sin respuesta registrada · {state.coverage.missing} ·
+          {' '}Por verificar · {state.coverage.review}</p>
+        <details className={s.details}><summary>Cómo recoger el permiso en Meta</summary>
+          <p className={s.note}>En el formulario, añade una casilla opcional con la clave <code>whatsapp_opt_in</code> y el texto
+            {' '}«Acepto que Tarot Celestial me escriba por WhatsApp al número que he indicado para responder a mi solicitud e informarme del Oráculo y de los beneficios de la consulta».
+            Deja la casilla desmarcada y pide el número con el prefijo internacional. La Oficina comprueba la respuesta de ese envío y el número antes de contactar.</p>
+        </details>
       </>)}
   </details>;
 }

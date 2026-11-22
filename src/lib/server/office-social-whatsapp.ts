@@ -48,12 +48,24 @@ export async function prepareFormReply(db: any, job: CaptureJob, beforeSend: () 
   if (!await hasAdminAccess(db,job.actor_user_id)) throw new DispatchDecision("DELEGATION_REQUIRED","blocked");
   const actor = {id:job.actor_worker_id,user_id:job.actor_user_id,can_admin:true};
   const context = await captacionWhatsAppLead(db,actor,job.lead_id,"celestial");
+  const target = captacionWhatsAppRecipient(context.client);
   if (context.client.id !== job.client_id || context.submission_key !== "meta:"+job.source_id || context.lead.closed_at ||
-      !captacionWhatsAppRecipient(context.client)) throw new DispatchDecision("FORM_CHANGED");
+      !target) throw new DispatchDecision("FORM_CHANGED");
+  async function verifyTarget() {
+    const { data, error } = await db.rpc("office_form_verify_whatsapp_target", {
+      p_id: job.id, p_request: job.request_id, p_phone: target,
+    });
+    if (error) throw new DispatchDecision("FORM_EVIDENCE_UNAVAILABLE", "blocked");
+    if (data !== true) throw new DispatchDecision("FORM_TARGET_UNVERIFIED");
+  }
+  await verifyTarget();
   const settings = await captacionWhatsAppTemplate();
   if (!settings.ready || !settings.template) throw new DispatchDecision(settings.reason || "TEMPLATE_UNAVAILABLE","blocked");
   return { body:CAPTACION_WHATSAPP_BODY.replace("{{1}}",()=>captacionWhatsAppName(context.client)), send:async () => {
-    const result = await sendCaptacionWhatsAppOfficial(db,actor,context,job.request_id,beforeSend);
+    const result = await sendCaptacionWhatsAppOfficial(db,actor,context,job.request_id,async () => {
+      await verifyTarget();
+      await beforeSend();
+    });
     if (!result.message_id || !["accepted","sent","delivered","read"].includes(result.status)) {
       throw new DispatchDecision(["failed","undelivered"].includes(result.status) ? "WHATSAPP_REJECTED" : "WHATSAPP_RECEIPT_UNCERTAIN",
         ["failed","undelivered"].includes(result.status) ? "failed" : "uncertain");

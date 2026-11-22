@@ -9,19 +9,21 @@ import styles from "./OfficeCommercialInbox.module.css";
 
 const Instagram=dynamic(()=>import("@/features/central/CentralInstagramPanel"),{ssr:false});
 const WhatsApp=dynamic(()=>import("@/features/central/CentralWhatsAppPanel"),{ssr:false});
-type Filter="active"|"open"|"mine"|"resolved"|"returned"|"all";
+type Filter="active"|"open"|"mine"|"resolved"|"returned"|"all"|"reply_window";
 type Case={opportunity_id:string;state:"open"|"claimed"|"resolved"|"returned";reason:string;opened_at:string;updated_at:string;
   version:number;name:string|null;owner_id:string|null;owner_name:string|null;outcome:string|null;note:string|null;
   channel:"instagram"|"facebook"|"whatsapp"|"meta_form";kind:"message"|"comment"|"form";source_at:string;latest_inbound_at:string;capture_status:string;
-  thread_id:string|null;lead_id:string|null;wa_account:string|null;wa_session:string|null;wa_peer:string|null};
+  reply_until?:string|null;thread_id:string|null;lead_id:string|null;wa_account:string|null;wa_session:string|null;wa_peer:string|null};
 type Cursor={at:string;id:string};
 type Inbox={items:Case[];actor_id:string;is_admin:boolean;native_access:boolean;central_path:string;next:Cursor|null};
 const endpoint="/api/central/comercial";
 const channel={instagram:"Instagram",facebook:"Facebook",whatsapp:"WhatsApp",meta_form:"Formulario de Meta"};
 const state={open:"Pendiente",claimed:"En atención",resolved:"Resuelto",returned:"Devuelto a Atlas"};
-const outcomes:Record<string,string>={answered:"Consulta atendida",appointment:"Reserva acordada",no_interest:"Sin interés",unreachable:"Sin respuesta",other:"Otro resultado",purchased:"Compra registrada",opted_out:"Baja solicitada"};
+const manualOutcomes:Record<string,string>={answered:"Consulta atendida",appointment:"Reserva acordada",no_inquiry:"Sin solicitud de consulta",no_interest:"Sin interés",unreachable:"Sin respuesta",other:"Otro resultado"};
+const outcomes:Record<string,string>={...manualOutcomes,purchased:"Compra registrada",opted_out:"Baja solicitada"};
 const reasons:Record<string,string>={human_takeover:"Ya intervino una persona",already_answered:"La conversación ya recibió respuesta",comment_managed:"Comentario atendido anteriormente",
-  whatsapp_consent_missing:"Falta autorización para contactar por WhatsApp",lead_managed:"La ficha tiene seguimiento previo",unverified_inbound:"Entrada por verificar",
+  whatsapp_consent_missing:"Falta autorización para contactar por WhatsApp",form_target_unverified:"El número o el permiso no coinciden con el formulario",
+  form_evidence_unavailable:"Falta verificar el formulario",lead_managed:"La ficha tiene seguimiento previo",unverified_inbound:"Entrada por verificar",
   unverified_thread:"Identidad del hilo por verificar",source_removed:"Origen retirado",connection_changed:"Cambió la conexión del canal",autonomy_handoff:"Atención humana configurada",new_inbound:"El contacto ha vuelto a escribir",
   needs_personal_response:"La consulta requiere una respuesta personal",window_closed:"Plazo de respuesta cerrado",incomplete_history:"Historial incompleto",conversation_changed:"Hay actividad posterior en el chat",
   inbound_changed:"Hay un mensaje más reciente",recipient_unverified:"Destinatario por verificar",attribution_confirmed:"Vinculación con la ficha confirmada",
@@ -54,10 +56,10 @@ function InboxBody({opportunityId,inCentral,showSource}:Props) {
     return ()=>{window.clearInterval(t);window.removeEventListener("focus",tick);};
   },[]);
   return <section className={styles.inbox} aria-label="Bandeja de Comercial">
-    <header><div><h2>Derivaciones a Comercial</h2><p>Las consultas más antiguas aparecen primero. Horario de Madrid.</p></div><button type="button" onClick={()=>refresh(n=>n+1)}>Actualizar</button></header>
+    <header><div><h2>Derivaciones a Comercial</h2><p>{filter==="reply_window" ? "Primero aparecen los plazos de respuesta que vencen antes. Comprueba el hilo antes de contestar." : "Las derivaciones más antiguas aparecen primero."} Horario de Madrid.</p></div><button type="button" onClick={()=>refresh(n=>n+1)}>Actualizar</button></header>
     {focus ? <button type="button" onClick={()=>{setFocus(null);setPages([null]);}}>Ver toda la bandeja</button> :
       <label>Mostrar <select value={filter} onChange={e=>{setFilter(e.target.value as Filter);setPages([null]);}}>
-        <option value="active">Pendientes y en atención</option><option value="open">Sin responsable</option><option value="mine">Mis casos en atención</option>
+        <option value="active">Pendientes y en atención</option><option value="reply_window">Plazo abierto · próximos vencimientos</option><option value="open">Sin responsable</option><option value="mine">Mis casos en atención</option>
         <option value="resolved">Resueltos</option><option value="returned">Devueltos a Atlas</option><option value="all">Todos</option></select></label>}
     {error && <p role="alert">{error}</p>}
     {!data && !error && <p role="status">Consultando derivaciones…</p>}
@@ -91,6 +93,9 @@ function CaseCard({item:v,data,inCentral,showSource,reload}:{item:Case;data:Inbo
       <div><dt>Derivado</dt><dd><time dateTime={v.opened_at}>{dt.format(new Date(v.opened_at))}</time>{(held||v.state==="open") && " · hace "+elapsed(v.opened_at)}</dd></div>
       <div><dt>Responsable</dt><dd>{v.owner_name || "Sin asignar"}</dd></div>
       <div><dt>Última entrada</dt><dd><time dateTime={v.latest_inbound_at}>{dt.format(new Date(v.latest_inbound_at))}</time></dd></div>
+      {v.reply_until && (held || v.state==="open") && <div><dt>Ventana de seguimiento</dt><dd>
+        {Date.parse(v.reply_until)>Date.now() ? "Hasta el " : "Cerrada el "}<time dateTime={v.reply_until}>{dt.format(new Date(v.reply_until))}</time>
+      </dd></div>}
       {v.outcome && <div><dt>Resultado</dt><dd>{outcomes[v.outcome]||v.outcome}{v.note && <p>{v.note}</p>}</dd></div>}
     </dl>
     {v.state==="open" && <button type="button" disabled={busy} onClick={()=>void change("claim")}>Tomar caso</button>}
@@ -102,7 +107,8 @@ function CaseCard({item:v,data,inCentral,showSource,reload}:{item:Case;data:Inbo
     {inCentral && source && showNative && (social && v.thread_id ? <Instagram provider={v.channel as "instagram"|"facebook"} initialThread={{id:v.thread_id,kind:v.kind as InstagramThread["kind"],name:v.name||"",preview:"",updatedAt:v.latest_inbound_at}}/>
       : v.wa_peer && v.wa_account && v.wa_session && <WhatsApp initialContact={{peer:v.wa_peer,account:v.wa_account,session:v.wa_session}}/>)}
     {held && canManage && <details><summary>Registrar resultado</summary><form onSubmit={e=>{e.preventDefault();void change("resolve");}}>
-      <label>Resultado<select value={outcome} onChange={e=>setOutcome(e.target.value)}>{Object.entries(outcomes).slice(0,5).map(([k,label])=><option key={k} value={k}>{label}</option>)}</select></label>
+      <label>Resultado<select value={outcome} onChange={e=>setOutcome(e.target.value)}>{Object.entries(manualOutcomes).map(([k,label])=><option key={k} value={k}>{label}</option>)}</select></label>
+      {outcome==="no_inquiry" && <p>Para reacciones o testimonios sin petición de atención. Atlas esperará una nueva entrada y el historial de esta revisión quedará guardado.</p>}
       <label>Nota de atención<textarea maxLength={600} value={note} required={outcome==="other"} onChange={e=>setNote(e.target.value)}/></label>
       <button disabled={busy} type="submit">Resolver caso</button></form></details>}
     {held && canManage && <button type="button" disabled={busy} onClick={()=>void change("release")}>Liberar para otro operador</button>}

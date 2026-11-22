@@ -70,6 +70,15 @@ test('Expanded lead is ingested once; processed duplicate does not duplicate not
   assert.equal(h.tables.meta_lead_events[0].attempt_count, 1);
 });
 
+test('the committed source retains the native Meta checkbox for the exact submission', async () => {
+  const h = harness();
+  const answer = [{ checkbox_key: 'whatsapp_opt_in', is_checked: '0' }];
+  await h.api.processExpandedMetaLead({ ...lead(), custom_disclaimer_responses: answer });
+  const event = h.tables.meta_lead_events[0];
+  assert.equal(event.payload.lead.id, event.leadgen_id);
+  assert.deepEqual(event.payload.lead.custom_disclaimer_responses, answer);
+});
+
 for (const state of ['pend_free', 'pend_cap', 'cliente', 'cerrado']) test(`Repeat form preserves CRM data and ${state} acquisition workflow`, async () => {
   const h = harness();
   const client = { id: 'client', nombre: 'Staff Name', telefono_normalizado: '34600000001', origen: 'manual', lead_status: 'contactado', lead_contacted_at: '2026-10-01', minutos_free_pendientes: 10 };
@@ -154,12 +163,13 @@ test('Single-lead and form-lead queries only request supported Lead fields', asy
   assert.equal((await h.sync()).status, 200);
   assert.equal(h.requests.length, 2);
   const supportedLeadFields = new Set([
-    'id', 'created_time', 'field_data', 'campaign_id', 'campaign_name',
+    'id', 'created_time', 'field_data', 'custom_disclaimer_responses', 'campaign_id', 'campaign_name',
     'ad_id', 'ad_name', 'form_id', 'is_organic', 'platform',
   ]);
   for (const request of h.requests) {
     const fields = new URL(request.url).searchParams.get('fields').split(',');
     assert.ok(fields.includes('field_data'));
+    assert.ok(fields.includes('custom_disclaimer_responses'));
     assert.ok(fields.includes('form_id'));
     assert.ok(fields.includes('campaign_name'));
     assert.ok(!fields.includes('form_name'), 'Form name must be fetched from the form node, not Lead');

@@ -46,6 +46,7 @@ before(async()=>{
  await db.exec("insert into office_departments values('captacion-reservas'),('marketing'),('seguridad-accesos');grant select on all tables in schema public to service_role");
  await db.exec(migration("office_autonomy"));
  await db.exec(migration("office_commercial_inbox"));
+ await db.exec(migration("office_commercial_reply_windows"));
  assert.equal((await page()).items[0].opportunity_id,historic);
 });
 after(async()=>db?.close());
@@ -65,6 +66,39 @@ test("assignment, release, resolution and explicit return are audited, versioned
  await q("update office_capture_opportunities set source_id='m2',latest_inbound_at=clock_timestamp(),status='handoff' where id=$1",[op]);
  assert.equal(await filter(op),null);assert.equal(await q("select status from office_capture_opportunities where id=$1",[op]),"pending");
  assert.equal(await q("select count(*)::int from office_capture_events where action='commercial_returned'"),1);
+});
+test("una reacción revisada conserva su historial y sólo una nueva entrada verificada puede reactivar la atención",async()=>{
+ const op=await source("facebook","same-peer","comment1","Amén","handoff");
+ await q("update office_capture_opportunities set kind='comment' where id=$1",[op]);
+ await change(op,"claim",1);await change(op,"resolve",2,1,"no_inquiry");
+ assert.equal((await page(1,"resolved")).items[0].outcome,"no_inquiry");
+ assert.equal(await filter(op),"commercial_wait_new_inbound");assert.equal((await page()).items.length,0);
+ // A delayed retry on the already reviewed source cannot reopen it.
+ await q("insert into office_capture_events(opportunity_id,action,detail) values($1,'handoff','NEEDS_PERSONAL_RESPONSE')",[op]);
+ assert.equal((await page()).items.length,0);
+ // A distinct, verified source for the same person is not a lasting suppression.
+ const dm=await source("facebook","same-peer","dm1","¿Puedo consultar?");assert.equal(await q("select office_commercial_blocked($1)",[dm]),false);
+ await q("update office_capture_opportunities set source_id='comment2',latest_inbound_at=clock_timestamp(),status='handoff' where id=$1",[op]);
+ assert.equal(await q("select status from office_capture_opportunities where id=$1",[op]),"pending");
+ await q("update office_capture_opportunities set status='handoff',last_error='NEEDS_PERSONAL_RESPONSE' where id=$1",[op]);
+ assert.equal((await page()).items[0].state,"open");
+ assert.equal(await q("select count(*)::int from office_commercial_changes where opportunity_id=$1 and input->>2='no_inquiry'",[op]),1);
+ assert.equal(await q("select count(*)::int from office_capture_suppressions"),0);
+});
+test("la prioridad usa ventana nativa vigente y pagina por fecha de cierre, con desempate por oportunidad",async()=>{
+ for(let i=0;i<28;i++){
+   const op=await source("whatsapp","valid"+i,"message"+i,"Consulta","handoff");
+   await q("update office_capture_opportunities set session_id='central', window_until=date_trunc('hour',now())+interval '3 hours' + ($2::int%2)*interval '2 hours' where id=$1",[op,i]);
+ }
+ const invalid=await source("whatsapp","foreign","foreign","Consulta","handoff");
+ await q("update office_capture_opportunities set session_id='w-other' where id=$1",[invalid]);
+ const expired=await source("whatsapp","expired","expired","Consulta","handoff");
+ await q("update office_capture_opportunities set session_id='central',window_until=now()-interval '1 hour' where id=$1",[expired]);
+ const a=await page(1,"reply_window"), b=await page(1,"reply_window",a.next.at,a.next.id);
+ const all=[...a.items,...b.items];assert.equal(a.items.length,25);assert.equal(b.items.length,3);
+ assert.ok(all.every(({reply_until},i)=>!i||Date.parse(reply_until)>=Date.parse(all[i-1].reply_until)));
+ assert.equal(new Set(all.map(x=>x.opportunity_id)).size,28);
+ assert.equal(a.next.at,a.items.at(-1).reply_until);assert.equal(a.items[0].page_at,undefined);
 });
 test("other channels and unverified peers stay independent, linked CRM or verified accounts share a human hold",async()=>{
  const op=await source("instagram","peer","msg","Fixture","handoff");
