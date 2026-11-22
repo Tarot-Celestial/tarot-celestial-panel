@@ -55,7 +55,10 @@ before(async()=>{
   await db.query("insert into public.tc_client_promotions(id,name,status,starts_at,active_until_disabled,promotion_kind,updated_at) values($1,'Oferta sintética','active',now()-interval '1 day',true,'standard',now())",[promo]);
   await db.query("insert into public.tc_client_promotion_packages(id,promotion_id,name,price,currency,paid_minutes,free_minutes,is_active,updated_at) values($1,$2,'Paquete',15,'EUR',20,5,true,now())",[pack,promo]);
   const migrations=path.join(__dirname,"../supabase/migrations");
-  for(const name of fs.readdirSync(migrations).filter(n=>/^\d+_office_.*\.sql$/.test(n)).sort()) await db.exec(fs.readFileSync(path.join(migrations,name),"utf8"));
+  const publicationSchema = /^\d+_office_(?:celestial_workspace|campaign_runs|run_reconciliation|tasks_delivery_review|instagram_.+)\.sql$/;
+  for (const name of fs.readdirSync(migrations).filter(name => publicationSchema.test(name)).sort()) {
+    await db.exec(fs.readFileSync(path.join(migrations, name), "utf8"));
+  }
   await db.exec("set role service_role");
 });
 after(async()=>{if(db)await db.close();});
