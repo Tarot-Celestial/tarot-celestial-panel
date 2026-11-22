@@ -61,3 +61,18 @@ test("informe de Marketing exige admin, rechaza cursor alterado y no confunde er
   const reply=await s.report("month=2024-04"),data=await reply.json();assert.equal(reply.status,200);assert.equal(data.totals.opportunities,0);
   assert.equal(data.secret,undefined);assert.match(reply.headers.get("cache-control"),/no-store/);
 });
+test("un cursor preserva corte por mes y queda limitado a administrador, búsqueda y estado originales",async()=>{
+  const s=setup(),at="2024-04-20T08:00:00Z";
+  const totals={opportunities:26,opened_opportunities:0,proof_pending:0,linked_clients:0,first_purchases:0,prior_clients:0,linked_elsewhere:0,pending:26};
+  const items=Array.from({length:25},()=>({id:randomUUID(),display_name:"Contacto",channel:"instagram",kind:"message",source_at:at,latest_inbound_at:at,
+    window_until:null,status:"handoff",provider_error:null,thread_id:null,lead_id:null,opened:false,has_receipt:false,conversion:"unlinked",
+    first_purchase_at:null,first_purchase_source:null,first_purchase_status:null}));
+  s.response=args=>({data:{month:"2024-04",as_of:args.p_as_of,totals,platforms:[{...totals,platform:"instagram"}],
+    states:[{state:"handoff",count:26}],purchases:[],items:args.p_after_id?items.slice(-1):items,has_more:!args.p_after_id}});
+  const query="month=2024-04&status=handoff&q=Contacto";
+  const page=await (await s.report(query)).json();assert.equal(page.items.length,25);
+  const next=await (await s.report(query+"&cursor="+page.next_cursor)).json();
+  assert.equal(next.as_of,page.as_of);assert.equal(next.items.length,1);assert.equal(next.next_cursor,null);
+  assert.equal((await s.report("month=2024-04&status=pending&q=Contacto&cursor="+page.next_cursor)).status,400);
+  s.actor=randomUUID();assert.equal((await s.report(query+"&cursor="+page.next_cursor)).status,400);
+});
