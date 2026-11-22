@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { RouletteSummary } from "@/lib/ruleta";
 import RouletteRewardArt from "./RouletteRewardArt";
 import ExperienceRail from "./ExperienceRail";
+import ClientReferralRewards from "./ClientReferralRewards";
 import { useClientRitualAccess } from "./ClientPanelAccess";
 import { usePortalMotion } from "./CelestialPortal";
 import { ACTIVE_CONSULTATION_LINES } from "@/lib/instagram-inbox";
@@ -28,6 +29,7 @@ export default function HomeObservatory(p:Props){
  const target=counts?.findIndex((n,i)=>n>0 && (i!==4 || p.roulette?.diamond_access));
  const wheelHref=target!=null && target>=0?"/cliente/ruleta?nivel="+(target+1):"/cliente/ruleta";
  return <div className={styles.home} data-client-home="portal">
+  <div className={styles.welcomeGrid}>
   <section ref={hero} className={styles.hero} data-running={running&&heroVisible} aria-labelledby="celestial-welcome">
    <div className={styles.emblem}>
     <div className={styles.aura} aria-hidden="true"/>
@@ -44,11 +46,13 @@ export default function HomeObservatory(p:Props){
     </div>
    </div>
   </section>
+  <aside className={styles.referralAside} aria-label="Tus premios por referidos"><ClientReferralRewards compact /></aside>
   <section className={styles.wallet} aria-label="Tus saldos y tu rango">
    <article id="saldo-minutes" className={styles.resource} data-highlight={p.highlight==="minutes"}><RouletteRewardArt type="minutes"/><div><strong>{p.minutes} <small>min</small></strong><p>{p.free} min gratis · {p.normal} min normales</p><Link href="/cliente/tarotistas">Usar mis minutos <ArrowRight size={16} aria-hidden="true"/></Link></div></article>
    <article id="saldo-coins" className={styles.resource} data-highlight={p.highlight==="coins"}><RouletteRewardArt type="coins"/><div><strong>{p.coins.toLocaleString("es-ES")} <small>Coins</small></strong><p>Tus recompensas</p><a href="#canjear-coins">Canjear <ArrowRight size={16} aria-hidden="true"/></a></div></article>
    <article className={styles.resource}><span className={styles.rankGem} aria-hidden="true"><Crown size={35} strokeWidth={1.2}/></span><div><strong className={styles.rankName}>{p.rank}</strong><p>Tu rango celestial</p><Link href="/cliente/rangos">Ver mis ventajas <ArrowRight size={16} aria-hidden="true"/></Link></div></article>
   </section>
+  </div>
   <ExperienceRail ritualAccess={ritualAccess} oracleFree={p.oracleFree} oracleCredits={p.oracleCredits} oracleCountdown={p.oracleCountdown} rouletteHref={wheelHref} rouletteSpins={total??null} rank={p.rank}/>
   <div className={styles.details}>
    <section className={styles.quickBalances} aria-label="Tus tiradas y giros">

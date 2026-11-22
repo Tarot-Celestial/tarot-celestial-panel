@@ -1,6 +1,6 @@
 "use client";
 import { useId } from "react";
-export type ClientNavIconName = "home" | "offers" | "runes" | "ranks" | "oracle" | "roulette" | "raffle" | "readers" | "reviews" | "ritual" | "notifications" | "profile" | "logout";
+export type ClientNavIconName = "home" | "offers" | "runes" | "ranks" | "oracle" | "roulette" | "raffle" | "readers" | "reviews" | "ritual" | "notifications" | "profile" | "logout" | "referrals";
 /** Small, full-colour illustrations. Text links provide the accessible names. */
 export default function ClientNavIcon({ name }: { name: ClientNavIconName }) {
   const uid = useId().replace(/:/g, "");
@@ -12,6 +12,7 @@ export default function ClientNavIcon({ name }: { name: ClientNavIconName }) {
       <linearGradient id={violet} x1="8" y1="3" x2="37" y2="44" gradientUnits="userSpaceOnUse"><stop stopColor="#e5c6ff"/><stop offset=".45" stopColor="#a06ce9"/><stop offset="1" stopColor="#44357d"/></linearGradient>
       <linearGradient id={ice} x1="8" y1="4" x2="36" y2="44" gradientUnits="userSpaceOnUse"><stop stopColor="#d4fff5"/><stop offset=".5" stopColor="#65d6d8"/><stop offset="1" stopColor="#3479a9"/></linearGradient>
     </defs>
+    {name === 'referrals' && <><circle cx="13" cy="15" r="6" fill={I} stroke="#d0fff1"/><path d="M3 35c0-9 4-13 10-13s10 4 10 13Z" fill={I} stroke="#a6ece7"/><circle cx="35" cy="15" r="6" fill={V} stroke="#dec1ff"/><path d="M25 35c0-9 4-13 10-13s10 4 10 13Z" fill={V} stroke="#dfbdff"/><path d="M25 17c3 9-5 13-3 18 3-1 5-4 5-7 7 7 9 12 5 16-5 6-16 3-16-5-1-5 4-10 4-14 2 2 2 4 2 6-3-7 4-10 3-14Z" fill={G} stroke="#ffe1a0"/><path d="M25 35c4 4 4 8 0 10-5 0-5-5 0-10Z" fill="#fff1cf"/></>}
     {name === 'runes' && <><path d="m13 7 18-3 10 12-2 23-13 6-17-6-3-17Z" fill={V} stroke="#e7c99a" strokeWidth="1.5" strokeLinejoin="round"/><path d="m13 7 4 9-11 6m11-6 16-4-2-8m2 8 6 27M9 39l9-7 8 13" stroke="#e7c99a" strokeOpacity=".35"/><path d="M24 14v23m0-23 9 8-9 7m0-8-7 8" stroke="#ffebb8" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/></>}
     {name === 'home' && <><path d="M10 22v19h28V22L24 10Z" fill={G} stroke="#ffe6a3"/><path d="m5 23 19-17 19 17-4 4L24 14 9 27Z" fill={V} stroke="#d8b5fc"/><path d="M20 29h9v12h-9Z" fill="#4b346d"/><rect x="12" y="27" width="5" height="6" rx="1" fill="#fff2b8"/><path d="m33 5 1.4 3.6L38 10l-3.6 1.4L33 15l-1.4-3.6L28 10l3.6-1.4Z" fill="#fff1bb"/></>}
     {name === 'offers' && <><path d="m6 10 16-4 20 21-16 16L5 22Z" fill={I} stroke="#b7fff2" strokeWidth="1.5"/><circle cx="14" cy="15" r="3" fill="#174b60"/><path d="M25 17 21 32" stroke="#effffe" strokeWidth="2.5" strokeLinecap="round"/><circle cx="21" cy="20" r="2.2" fill="#fff3c0"/><circle cx="29" cy="29" r="2.2" fill="#fff3c0"/><circle cx="37" cy="37" r="8" fill={G} stroke="#ffecad"/><path d="M37 32v10m3-8h-4a2 2 0 0 0 0 4h2a2 2 0 0 1 0 4h-4" stroke="#8a502b" strokeWidth="1.5"/></>}

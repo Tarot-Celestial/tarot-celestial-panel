@@ -11,6 +11,7 @@ const GROUPS: { id: string; label: string; description: string; icon: ClientNavI
   { path: "resenas", label: "Reseñas", description: "Valora la atención recibida", icon: "reviews" }] },
  { id: "camino", label: "Mi camino", description: "Rango y ritual", icon: "ranks", items: [
   { path: "rangos", label: "Mi rango", description: "Tus ventajas y tu recorrido", icon: "ranks" },
+  { path: "referidos", label: "Mis referidos", description: "Tu progreso y tus premios", icon: "referrals" },
   { path: "ritual", label: "Mi ritual", description: "Acompaña cada etapa", icon: "ritual" }] },
  { id: "experiencias", label: "Experiencias", description: "Cartas y premios", icon: "oracle", items: [
   { path: "oraculo", label: "Oráculo", description: "Tus cartas y lecturas", icon: "oracle" },

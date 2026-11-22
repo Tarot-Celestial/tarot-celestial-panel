@@ -15,6 +15,8 @@ type ClienteSidebarProps = {
   onGoToNotes?: () => void;
   onGoToReservation?: () => void;
   dialDisabled?: boolean;
+  referralCount?: number | null;
+  oracleCredits?: number | null;
 };
 
 function eur(value: any) {
@@ -58,6 +60,8 @@ export default function ClienteSidebar({
   onGoToNotes,
   onGoToReservation,
   dialDisabled = false,
+  referralCount = null,
+  oracleCredits = null,
 }: ClienteSidebarProps) {
   const confirmedPayments = pagos.filter(p => String(p.estado || p.status || "").toLowerCase() === "completed");
   const totalPagado = confirmedPayments.reduce((sum, pago) => sum + paymentAmount(pago), 0);
@@ -90,6 +94,8 @@ export default function ClienteSidebar({
         <MiniMetric label="Min normales" value={String(normales)} />
         <MiniMetric label="Coins disponibles" value={Number(cliente?.puntos || 0).toLocaleString("es-ES")} />
         <MiniMetric label="Deuda pendiente" value={eur(cliente?.deuda_pendiente)} />
+        <MiniMetric label="Tiradas disponibles" value={oracleCredits == null ? "—" : Number(oracleCredits).toLocaleString("es-ES")} />
+        <MiniMetric label="Referidos" value={referralCount == null ? "—" : Number(referralCount).toLocaleString("es-ES")} />
       </div>
 
       <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
