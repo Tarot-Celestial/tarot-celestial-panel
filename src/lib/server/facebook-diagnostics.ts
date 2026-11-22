@@ -17,7 +17,23 @@ async function tokenScopes(account: FacebookAccount) {
   // Server-only token introspection. Neither query URLs nor response bodies are logged.
   const data = await facebookGraph({ ...account, token: `${appId}|${secret}` }, 'debug_token', { input_token: account.token });
   const scopes = Array.isArray(data.data?.scopes) ? data.data.scopes.filter((scope: unknown) => typeof scope === 'string') as string[] : [];
-  return { verified: data.data?.is_valid === true, scopes, missing: required.filter(scope => !scopes.includes(scope)), appId: String(data.data?.app_id || appId) };
+  const now = Date.now() / 1000;
+  const active = [data.data?.expires_at, data.data?.data_access_expires_at].every(t => t == null || Number(t) === 0 || Number(t) > now);
+  const targetScopes = Array.isArray(data.data?.granular_scopes) ? data.data.granular_scopes : [];
+  const applicable = scopes.filter(s => !targetScopes.some((item: any) => item.scope === s && Array.isArray(item.target_ids)
+    && !item.target_ids.map(String).includes(account.accountId)));
+  return { verified: active && data.data?.is_valid === true && String(data.data.app_id || "") === appId, scopes: applicable,
+    missing: required.filter(scope => !applicable.includes(scope)), appId: String(data.data?.app_id || appId) };
+}
+
+export async function facebookReplyPermissions(account: FacebookAccount) {
+  await verifyFacebookAccount(account);
+  const result = await tokenScopes(account);
+  if (result.verified) return result.scopes;
+  if (result.appId) throw new FacebookError('META_PERMISSION', 'Facebook no ha confirmado los permisos de esta página.');
+  const response = await facebookGraph(account,'me/permissions');
+  if (!Array.isArray(response.data)) throw new FacebookError('META_PERMISSION', 'Facebook no ha confirmado los permisos de esta página.');
+  return response.data.filter((p:any) => p.status === 'granted' && typeof p.permission === 'string').map((p:any) => p.permission) as string[];
 }
 
 export async function facebookDiagnostics() {

@@ -45,6 +45,13 @@
 .lock p { margin: 3px 0 0; }
 .link { display: inline-flex; margin-top: 9px; width: fit-content; color: #eddaa8; text-decoration: none; }
 .notice { margin: 16px; color: #d7c4ad; font-size: 14px; }
+.captureName { display: block; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; }
+.captureThread { margin-top: 5px; }
+.captureThread summary { cursor: pointer; color: #efd49d; }
+.captureThread ol, .captureThread p { width: min(38ch, 65vw); margin: 8px 0; white-space: normal; overflow-wrap: anywhere; }
+.captureThread ol { padding-left: 16px; max-height: 225px; overflow-y: auto; }
+.captureThread li { padding: 4px; }
+.controls select { grid-column: 1 / -1; min-height: 35px; padding: 6px; border: 1px solid #544957; border-radius: 7px; background: #26212c; color: #f0e8f0; font: inherit; }
 @media (max-width: 560px) {
   .header, .controls { align-items: stretch; }
   .header { flex-direction: column; }

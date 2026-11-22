@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { Activity, ArrowUpRight, Boxes, CalendarDays, CheckCheck, ChevronDown, ChevronRight, CircleDollarSign, ClipboardList, Clock3, FileStack, Layers3, ListChecks, Network, Orbit, UsersRound } from "lucide-react";
+import { Activity, ArrowUpRight, Boxes, CalendarDays, CheckCheck, ChevronDown, ChevronRight, CircleDollarSign, ClipboardList, Clock3, FileStack, Layers3, ListChecks, MessagesSquare, Network, Orbit, UsersRound } from "lucide-react";
 import { officeDepartments } from "./catalog";
 import OfficeMap from "./OfficeMap";
 import OfficeLiveMap from "./OfficeLiveMap";
+import OfficeMetaCapture from "./OfficeMetaCapture";
 import OfficeReportView from "./OfficeReportView";
 import type { OfficeReportArea } from "./OfficeMonthlyReport";
 import OfficeCatalog from "./OfficeCatalog";
@@ -16,7 +17,7 @@ import { latestVersions } from "./office-versions";
 import s from "./OfficeWorkspace.module.css";
 
 type WorkspaceView = "map" | "org" | "tasks" | "reviews";
-type View = WorkspaceView | ClientArea | OfficeReportArea;
+type View = WorkspaceView | ClientArea | OfficeReportArea | "captacion-meta";
 type Entry = { task?: string; version?: string; compose?: boolean };
 function isClientArea(value: string | null): value is ClientArea { return value === "clientes" || value === "captacion-reservas"; }
 function isReportArea(value: string | null): value is OfficeReportArea {
@@ -26,7 +27,7 @@ function validMonth(value: string | null): value is string { return !!value && /
 function readLocation(tasks: OfficeSnapshot["tasks"]): { view: View; clientId: string | null; entry: Entry; month?: string } {
   const params = new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
   const area = params.get("departamento"), id = params.get("cliente"), task = params.get("task");
-  if (isReportArea(area)) {
+  if (isReportArea(area) || area === "captacion-meta") {
     const month = params.get("mes");
     return { view: area, month: validMonth(month) ? month : undefined, clientId: null, entry: {} };
   }
@@ -42,6 +43,7 @@ const navigation = [
   { id: "reviews", label: "Revisiones", icon: CheckCheck },
   { id: "clientes", label: "Clientes", icon: UsersRound },
   { id: "captacion-reservas", label: "Captación y reservas", icon: CalendarDays },
+  { id: "captacion-meta", label: "Seguimiento de Meta", icon: MessagesSquare },
   { id: "finanzas", label: "Finanzas", icon: CircleDollarSign },
 ] as const;
 
@@ -82,19 +84,19 @@ export default function OfficeWorkspace({ data, reload }: { data: OfficeSnapshot
       const location = readLocation(data.tasks);
       setView(location.view); setEntry(location.entry); setClientId(location.clientId);
       setScope(undefined);
-      if (isReportArea(location.view)) setMonth(location.month ?? currentMonth);
+      if (isReportArea(location.view) || location.view === "captacion-meta") setMonth(location.month ?? currentMonth);
       if (isClientArea(location.view) || isReportArea(location.view)) selectId(location.view);
     }
     window.addEventListener("popstate", restore);
     return () => window.removeEventListener("popstate", restore);
   }, [data.tasks, currentMonth]);
-  function openReport(area: OfficeReportArea, nextMonth: string) {
+  function openReport(area: OfficeReportArea | "captacion-meta", nextMonth: string) {
     if (!validMonth(nextMonth)) return;
     const url = new URL(window.location.href);
     url.searchParams.delete("cliente"); url.searchParams.delete("task");
     url.searchParams.set("departamento", area); url.searchParams.set("mes", nextMonth);
     if (url.href !== window.location.href) window.history.pushState({ ...window.history.state, officeView: area }, "", url);
-    setEntry({}); setScope(undefined); setClientId(null); selectId(area); setMonth(nextMonth); setView(area);
+    setEntry({}); setScope(undefined); setClientId(null); selectId(area === "captacion-meta" ? "marketing" : area); setMonth(nextMonth); setView(area);
   }
   function openClientArea(area: ClientArea, id?: string | null) {
     const url = new URL(window.location.href);
@@ -111,7 +113,7 @@ export default function OfficeWorkspace({ data, reload }: { data: OfficeSnapshot
     url.searchParams.delete("departamento"); url.searchParams.delete("cliente"); url.searchParams.delete("mes");
     if (target.task) url.searchParams.set("task", target.task);
     else url.searchParams.delete("task");
-    if (isClientArea(view) || isReportArea(view)) window.history.pushState({ ...window.history.state, officeView: next }, "", url);
+    if (isClientArea(view) || isReportArea(view) || view === "captacion-meta") window.history.pushState({ ...window.history.state, officeView: next }, "", url);
     else window.history.replaceState({ ...window.history.state, officeView: next }, "", url);
     setClientId(null);
     setScope(departmentId);
@@ -124,7 +126,8 @@ export default function OfficeWorkspace({ data, reload }: { data: OfficeSnapshot
     }
   }
   function openHandoff(id: string) {
-    if (id.startsWith("cohorte:")) openReport("finanzas", id.slice(8));
+    if (id.startsWith("meta:")) openReport("captacion-meta", id.slice(5));
+    else if (id.startsWith("cohorte:")) openReport("finanzas", id.slice(8));
     else if (id.startsWith("cliente:")) openClientArea("captacion-reservas", id.slice(8));
     else if (data.tasks.some(task => task.id === id)) openView("tasks", undefined, { task: id });
   }
@@ -145,7 +148,7 @@ export default function OfficeWorkspace({ data, reload }: { data: OfficeSnapshot
     <nav className={s.nav} aria-label="Vistas de Oficina">
       {navigation.map(({ id, label, icon: Icon }) => isClientArea(id) ?
         <OfficeClientLink key={id} area={id} clientId={clientId} open={openClientArea} current={view === id}>
-          <Icon aria-hidden="true" size={17}/>{label}</OfficeClientLink> : isReportArea(id) ?
+          <Icon aria-hidden="true" size={17}/>{label}</OfficeClientLink> : isReportArea(id) || id === "captacion-meta" ?
           <a key={id} href={`/admin/oficina?departamento=${id}&mes=${month}`} aria-current={view === id ? "page" : undefined}
             onClick={e => { if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) { e.preventDefault(); openReport(id, month); } }}>
             <Icon aria-hidden="true" size={17}/>{label}</a> : <button type="button" key={id} onClick={() => openView(id)}
@@ -168,6 +171,8 @@ export default function OfficeWorkspace({ data, reload }: { data: OfficeSnapshot
         }}>Abrir informe mensual <ArrowUpRight size={16}/></button>}
         {isClientArea(selected.id) && <OfficeClientLink area={selected.id} open={openClientArea} className={s.openTasks}>
           {selected.id === "clientes" ? "Abrir directorio de clientes" : "Abrir Captación y reservas"}<ArrowUpRight size={16} aria-hidden="true"/></OfficeClientLink>}
+        {["marketing","captacion-reservas","comercial"].includes(selected.id) && <button type="button" className={s.openTasks}
+          onClick={() => openReport("captacion-meta", month)}>Ver seguimiento de Meta <ArrowUpRight size={16}/></button>}
         {department && <DepartmentOwner key={department.id} departmentId={department.id} data={data} reload={reload}/>}
         <div className={s.areaStats} aria-label="Indicadores del departamento">
           <button type="button" onClick={() => openView("tasks", selected.id)}><span>Encargos</span><b>{areaTasks.length}</b></button>
@@ -191,7 +196,8 @@ export default function OfficeWorkspace({ data, reload }: { data: OfficeSnapshot
             <small>{data.workers.find(worker => worker.id === event.actor_id)?.name || "Personal"} · {eventDate.format(new Date(event.created_at))} (Madrid)</small>
           </li>)}</ul> : <p>Todavía no hay actividad registrada.</p>}</details>
       </aside>
-    </div> : isReportArea(view) ? <OfficeReportView area={view} month={month} onMonthChange={value => openReport(view, value)}/> :
+    </div> : view === "captacion-meta" ? <OfficeMetaCapture month={month} onMonthChange={value => openReport("captacion-meta", value)}/> :
+      isReportArea(view) ? <OfficeReportView area={view} month={month} onMonthChange={value => openReport(view, value)}/> :
       isClientArea(view) ? <OfficeClients area={view} selectedId={clientId} open={openClientArea}/> :
       <OfficeWork key={`${view}-${scope || "todos"}-${entry.task || (entry.compose ? "atlas" : "")}`} view={view === "reviews" ? "reviews" : "tasks"} departmentId={scope}
       initialTask={entry.task} preferredVersion={entry.version} composeAtlas={entry.compose} onOpenTask={(task, version) => openView("tasks", undefined, { task, version })} data={data} reload={reload}/>}

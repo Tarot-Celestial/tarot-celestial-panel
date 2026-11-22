@@ -26,6 +26,7 @@ import makeWASocket, {
 import { ChatStore, isGroup, isLid, isPn, normalizeJid, phoneFromJid } from "./store.mjs";
 import { CaptacionJournal, gatewayError, statusFromWhatsApp } from "./captacion-journal.mjs";
 import { createCaptacionSender } from "./captacion-sender.mjs";
+import { sendOfficeReply } from "./office-reply.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = String(process.env.HOST || "127.0.0.1");
@@ -160,7 +161,7 @@ class WaSession {
       qr: this.state === "qr" ? this.qr : null,
       me: this.state === "connected" ? this.me : null,
       historyProgress: this.historyProgress,
-      capabilities: { captacion: true },
+      capabilities: { captacion: true, officeReply: true },
       rev: `${this.stateRev}.${this.store.rev}`,
     };
   }
@@ -617,6 +618,8 @@ const server = http.createServer(async (req, res) => {
       }
       case "POST captacion":
         return send(res, 200, await session.captacion(await readBody(req)));
+      case "POST office-reply":
+        return send(res, 200, await sendOfficeReply(session,await readBody(req),captacionJournal));
       case "GET captacion/:jid":
         return send(res, 200, session.captacionReceipt(action[1]));
       default:

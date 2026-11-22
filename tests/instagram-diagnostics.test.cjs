@@ -17,7 +17,7 @@ test('diagnostic comparisons use identical reads and never return token, comment
 test('central workers cannot run administrative connection diagnostics',async()=>{
   let called=0;
   class InstagramError extends Error{constructor(code,message,status){super(message);this.code=code;this.status=status;}}
-  const mod=load('src/app/api/central/instagram/route.ts',{'next/server':{NextResponse:{json:(body,options)=>({body,...options})}},'@/lib/server/instagram-graph':{InstagramError,instagramIdentity:async()=>({worker:{role:'central'}})},'@/lib/server/instagram-inbox':{},'@vercel/functions':{waitUntil:()=>{}},'@/lib/server/instagram-sync':{},'@/lib/server/instagram-subscriptions':{},'@/lib/server/instagram-diagnostics':{instagramDiagnostics:async()=>{called++;}}});
+  const mod=load('src/app/api/central/instagram/route.ts',{'next/server':{NextResponse:{json:(body,options)=>({body,...options})}},'@/lib/server/admin-access':{requestHasAdminAccess:async()=>false},'@/lib/server/instagram-graph':{InstagramError,instagramIdentity:async()=>({worker:{role:'central'}})},'@/lib/server/instagram-inbox':{},'@vercel/functions':{waitUntil:()=>{}},'@/lib/server/instagram-sync':{},'@/lib/server/instagram-subscriptions':{},'@/lib/server/instagram-diagnostics':{instagramDiagnostics:async()=>{called++;}}});
   const result=await mod.GET(new Request('https://local.test/api/central/instagram?action=diagnostics'));
   assert.equal(result.status,403);assert.equal(called,0);
 });

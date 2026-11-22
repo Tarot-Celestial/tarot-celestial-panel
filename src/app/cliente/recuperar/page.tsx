@@ -230,7 +230,7 @@ export default function ClienteRecuperarPage() {
             </button>
           </div>
 
-          <button type="button" className={styles.linkButton} onClick={() => router.push(clientLoginHref(clientDestination(window.location.search).split("/").pop() || "dashboard"))} disabled={loading}>
+          <button type="button" className={styles.linkButton} onClick={() => router.push(clientLoginHref(new URLSearchParams(window.location.search).get("next") || "dashboard",window.location.search))} disabled={loading}>
             <ArrowLeft size={15} /> Volver al inicio de sesión
           </button>
         </div>

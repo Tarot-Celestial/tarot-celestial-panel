@@ -55,6 +55,7 @@ async function identity(account: Credentials) {
   if (type && !['BUSINESS','MEDIA_CREATOR','CREATOR'].includes(type)) throw new OfficeInstagramError('WRONG_TYPE', 'Se necesita una cuenta profesional de Instagram.');
   return { ids: [...new Set([...(remoteIds.includes(account.accountId) ? [account.accountId] : []), ...remoteIds])], type };
 }
+export const verifyOfficeInstagramIdentity = identity;
 async function quota(account: Credentials, ids: string[]) {
   for (const id of ids) {
     try {

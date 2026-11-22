@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/office-capture",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/office-agents",
       "schedule": "*/5 * * * *"
     },
