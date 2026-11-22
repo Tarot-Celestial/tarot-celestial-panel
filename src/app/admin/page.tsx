@@ -2925,6 +2925,7 @@ function AdminPage() {
 
           {tab === "captacion" && (
             <CaptacionPanel
+              officeLeadId={searchParams?.get("lead") ?? null}
               onOpenClient={(clienteId) => {
                 setTab("crm" as any);
                 window.setTimeout(() => {

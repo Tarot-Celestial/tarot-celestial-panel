@@ -41,7 +41,7 @@ function fixture(options = {}) {
     if (name.endsWith('.css')) return { default: new Proxy({}, { get: (_, key) => String(key) }) };
     throw new Error(name);
   }, window: win, document: doc, sessionStorage, Event: FixtureEvent, CustomEvent: FixtureEvent, Date, Set, Map, AbortController, console, fetch(url, requestOptions) { return new Promise((resolve, reject) => { requests.push({ url, options: requestOptions, resolve, reject }); if (!options.ignoreAbort) requestOptions.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true }); }); } });
-  function render() { cursor = 0; dirty = false; effects = []; tree = exports.default({}); for (const effect of effects) effect(); }
+  function render() { cursor = 0; dirty = false; effects = []; tree = exports.default(options.props || {}); for (const effect of effects) effect(); }
   async function flush() { for (let i = 0; i < 5; i++) { await new Promise(resolve => setImmediate(resolve)); if (dirty) render(); } }
   render();
   return { requests, channels, win, doc, storage, emitted, scrolls, async flush() { await flush(); }, tree: () => tree, text: () => text(tree),
@@ -407,6 +407,34 @@ test('a saved companion handoff survives mounting and is consumed only after a v
     assert.equal(f.composer().selectedLeadId, focusedId);
     const count = f.requests.length;
     await f.focus('malformed-id'); assert.equal(f.requests.length, count); assert.equal(f.composer().selectedLeadId, focusedId);
+  } finally { f.close(); }
+});
+
+test('Oficina opens the linked lead in reading mode and returns to its CRM client', async () => {
+  const f = fixture({ props: { officeLeadId: focusedId } });
+  try {
+    await f.flush();
+    await resolveMainList(f);
+    await f.respond(focusRequest(f), body([row(focusedId, 'pend_cap', { cliente_id: secondFocusedId })]));
+    assert.deepEqual(f.cards().map(item => item.id), [focusedId]);
+    assert.equal(f.composer().selectedLeadId, null);
+    const link = nodes(f.tree()).find(node => node.type === 'a' && text(node).includes('Ver captación en la Oficina'));
+    assert.equal(link.props.href, '/admin/oficina?departamento=captacion-reservas&cliente=' + secondFocusedId);
+    assert.equal(f.requests.some(request => request.options.method === 'POST'), false);
+  } finally { f.close(); }
+});
+
+test('a contact stays pending while its first purchase is checked', async () => {
+  const f = fixture();
+  try {
+    await f.flush();
+    await f.respond(0, body([row(focusedId, 'pend_cap')]));
+    await f.manage(focusedId, 'captado');
+    const action = pendingRequest(f, request => request.url === '/api/captacion/action');
+    assert.equal(f.cards()[0].estado, 'pend_cap');
+    await f.respond(action, { ok: false, error: 'CAPTURE_REQUIRES_COMPLETED_PURCHASE' }, 409);
+    assert.match(f.text(), /pendiente de su primera compra/);
+    assert.equal(f.cards()[0].estado, 'pend_cap');
   } finally { f.close(); }
 });
 
