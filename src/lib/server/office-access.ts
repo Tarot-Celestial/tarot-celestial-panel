@@ -15,6 +15,9 @@ export async function officeAccess(req: Request) {
 }
 
 export function officeDatabaseError(error: { code?: string; message?: string }) {
+  if (error.message === "OFFICE_RUN_ACTIVE") return officeError("Este encargo ya tiene una ejecución activa.", 409);
+  if (error.message === "OFFICE_RUN_ALREADY_DELIVERED") return officeError("El borrador ya está entregado. Puedes solicitar una corrección desde Revisiones.", 409);
+  if (error.message === "OFFICE_OFFER_UNAVAILABLE") return officeError("La oferta o la moneda seleccionada ya no están disponibles.", 409);
   if (error.message === "OFFICE_FORBIDDEN") return officeError("Se requiere acceso de administración.", 403);
   if (error.message === "OFFICE_NOT_FOUND") return officeError("El registro solicitado ya no está disponible.", 404);
   if (error.message === "OFFICE_CONFLICT") return officeError("El registro ha cambiado. Actualiza la Oficina antes de continuar.", 409);

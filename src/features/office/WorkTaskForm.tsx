@@ -4,24 +4,26 @@ import { FormEvent, useId, useMemo, useState } from "react";
 import type { OfficeSnapshot, OfficeTask, OfficeTaskInput } from "./model";
 import { AssigneeOptions, assigneeKey, Feedback, priorities, taskStatuses, useOfficeSave } from "./WorkControls";
 import { canonicalZone, deadlineCandidates, localMinute } from "./WorkTime";
+import { startOfficeRun } from "./office-runs";
 import styles from "./OfficeWork.module.css";
 
 type Props = {
   task?: OfficeTask;
   departmentId?: string;
+  atlas?: boolean;
   data: OfficeSnapshot;
   reload: () => Promise<void>;
   onClose: () => void;
-  onSaved: (id: string) => void;
+  onSaved: (id: string, startError?: { message: string; requestId: string }) => void;
 };
 
-export default function WorkTaskForm({ task, departmentId, data, reload, onClose, onSaved }: Props) {
-  const [department, setDepartment] = useState(task?.department_id || departmentId || "");
+export default function WorkTaskForm({ task, departmentId, atlas, data, reload, onClose, onSaved }: Props) {
+  const [department, setDepartment] = useState(atlas ? "marketing" : task?.department_id || departmentId || "");
   const [objective, setObjective] = useState(task?.objective || "");
-  const [delivery, setDelivery] = useState(task?.expected_delivery || "");
+  const [delivery, setDelivery] = useState(task?.expected_delivery || (atlas ? "Un texto y una pieza visual para revisión." : ""));
   const [priority, setPriority] = useState<OfficeTask["priority"]>(task?.priority || "media");
   const [status, setStatus] = useState<OfficeTask["status"]>(task?.status || "pendiente");
-  const [assignee, setAssignee] = useState(task ? assigneeKey(task) : "departamento");
+  const [assignee, setAssignee] = useState(task ? assigneeKey(task) : atlas ? "atlas" : "departamento");
   const [zone, setZone] = useState(task?.time_zone || "Europe/Madrid");
   const originalDate = task?.due_at ? localMinute(new Date(task.due_at), task.time_zone) : "";
   const originalInstant = task?.due_at ? new Date(Math.floor(Date.parse(task.due_at) / 60000) * 60000).toISOString() : "";
@@ -50,23 +52,32 @@ export default function WorkTaskForm({ task, departmentId, data, reload, onClose
     };
     await operation.save(task
       ? { action: "update_task", id: task.id, revision: task.revision, ...input }
-      : { action: "create_task", ...input }, "Encargo guardado.", onSaved);
+      : { action: "create_task", ...input }, "Encargo guardado.", async id => {
+        if (!atlas) return onSaved(id);
+        const requestId = crypto.randomUUID();
+        try { await startOfficeRun(id, requestId); }
+        catch (e) {
+          return onSaved(id, { message: e instanceof Error ? e.message : "No se pudo confirmar el inicio con Atlas.", requestId });
+        }
+        onSaved(id);
+      });
   }
 
   return <form className={styles.card} onSubmit={submit} aria-labelledby={id}>
-    <h3 id={id}>{task ? "Editar encargo" : "Nuevo encargo"}</h3>
+    <h3 id={id}>{task ? "Editar encargo" : atlas ? "Encargar a Atlas" : "Nuevo encargo"}</h3>
     <fieldset disabled={operation.saving} className={styles.formGrid}>
       <label className={styles.wide}><span id={id + "-objective"}>Objetivo</span>
-        <textarea aria-labelledby={id + "-objective"} autoFocus required maxLength={4000} rows={2} value={objective} onChange={e => setObjective(e.target.value)} />
+        <textarea aria-labelledby={id + "-objective"} aria-describedby={atlas ? id + "-brief-help" : undefined} autoFocus required maxLength={4000} rows={2} value={objective} onChange={e => setObjective(e.target.value)} />
+        {atlas && <small id={id + "-brief-help"}>Indica qué quieres comunicar, en qué canal y para qué mercado. Si hay una promoción, indica también la moneda.</small>}
       </label>
       <label><span id={id + "-department"}>Departamento</span>
-        <select aria-labelledby={id + "-department"} required value={department} onChange={e => setDepartment(e.target.value)}>
+        <select aria-labelledby={id + "-department"} required disabled={atlas} value={department} onChange={e => setDepartment(e.target.value)}>
           <option value="" disabled>Seleccionar departamento</option>
           {data.departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
       </label>
       <label><span id={id + "-assignee"}>Responsable</span>
-        <select aria-labelledby={id + "-assignee"} value={assignee} onChange={e => setAssignee(e.target.value)}>
+        <select aria-labelledby={id + "-assignee"} disabled={atlas} value={assignee} onChange={e => setAssignee(e.target.value)}>
           <option value="">Sin asignar</option><AssigneeOptions data={data} current={assignee} />
         </select>
       </label>
@@ -101,7 +112,7 @@ export default function WorkTaskForm({ task, departmentId, data, reload, onClose
     </fieldset>
     <Feedback value={operation.feedback} />
     <div className={styles.actions}>
-      <button type="submit" className={styles.primary} disabled={operation.saving}>{operation.saving ? "Guardando…" : "Guardar encargo"}</button>
+      <button type="submit" className={styles.primary} disabled={operation.saving}>{operation.saving ? "Guardando…" : atlas ? "Crear encargo e iniciar Atlas" : "Guardar encargo"}</button>
       <button type="button" className={styles.button} disabled={operation.saving} onClick={onClose}>Cancelar</button>
     </div>
   </form>;

@@ -1,10 +1,11 @@
 "use client";
 
-import { FormEvent, useId, useState } from "react";
+import { FormEvent, useEffect, useId, useRef, useState } from "react";
 import { ClipboardList, Plus } from "lucide-react";
 import type { OfficeSnapshot, OfficeTask } from "./model";
 import { AssigneeOptions, assigneeKey, assigneeName, Feedback, priorities, taskStatuses, useOfficeSave, workerName } from "./WorkControls";
 import WorkTaskForm from "./WorkTaskForm";
+import OfficeRuns from "./OfficeRuns";
 import { WorkDeliverables, WorkReviews } from "./WorkDeliverables";
 import { displayTime } from "./WorkTime";
 import styles from "./OfficeWork.module.css";
@@ -14,14 +15,18 @@ type Props = {
   data: OfficeSnapshot;
   reload: () => Promise<void>;
   departmentId?: string;
+  composeAtlas?: boolean;
+  initialTask?: string;
+  preferredVersion?: string;
+  onOpenTask?: (id: string, revision?: string) => void;
 };
 
-export default function OfficeWork({ view, data, reload, departmentId }: Props) {
-  if (view === "reviews") return <WorkReviews data={data} reload={reload} departmentId={departmentId} />;
-  return <Tasks key={departmentId || "all"} data={data} reload={reload} departmentId={departmentId} />;
+export default function OfficeWork({ view, ...props }: Props) {
+  if (view === "reviews") return <WorkReviews {...props} />;
+  return <Tasks key={props.departmentId || "all"} {...props} />;
 }
 
-export function DepartmentOwner({ departmentId, data, reload }: Required<Omit<Props, "view">>) {
+export function DepartmentOwner({ departmentId, data, reload }: Required<Pick<Props, "departmentId" | "data" | "reload">>) {
   const dept = data.departments.find(d => d.id === departmentId);
   if (!dept) return null;
   return <OwnerForm key={dept.id + "-" + dept.revision} dept={dept} data={data} reload={reload} />;
@@ -52,35 +57,51 @@ function OwnerForm({ dept, data, reload }: {
   </form>;
 }
 
-function Tasks({ data, departmentId, reload }: Omit<Props, "view">) {
+function Tasks({ data, departmentId, composeAtlas, initialTask, preferredVersion, reload }: Omit<Props, "view">) {
   const [dept, setDept] = useState(departmentId || "");
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
   const [owner, setOwner] = useState("");
-  const [selected, setSelected] = useState("");
-  const [editor, setEditor] = useState<{ task?: OfficeTask } | null>(null);
+  const [selected, setSelected] = useState(initialTask || "");
+  const [editor, setEditor] = useState<{ task?: OfficeTask; atlas?: boolean } | null>(composeAtlas ? { atlas: true } : null);
+  const [startError, setStartError] = useState<{ taskId: string; message: string; requestId: string }>();
   const [notice, setNotice] = useState("");
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const id = useId();
   const tasks = data.tasks.filter(t => (!dept || t.department_id === dept) && (!status || t.status === status) &&
     (!priority || t.priority === priority) && (!owner || (assigneeKey(t) || "unassigned") === owner))
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   const task = tasks.find(t => t.id === selected) || tasks[0];
   function reset() { setDept(""); setStatus(""); setPriority(""); setOwner(""); }
-  function onSaved(id: string) {
-    reset();
+  function selectTask(id: string) {
     setSelected(id);
+    const url = new URL(window.location.href);
+    url.searchParams.set("task", id);
+    url.hash = "";
+    window.history.replaceState(window.history.state, "", url);
+  }
+  function onSaved(id: string, error?: { message: string; requestId: string }) {
+    if (!mounted.current) return;
+    reset();
+    selectTask(id);
     setEditor(null);
+    setStartError(error ? { taskId: id, ...error } : undefined);
     setNotice("Encargo guardado.");
   }
   return <section className={styles.root}>
     <div className={styles.heading}>
       <h2>Encargos</h2>
-      {!editor && <button className={styles.primary} type="button" onClick={() => { setNotice(""); setEditor({}); }}>
+      {!editor && <div className={styles.actions}><button className={styles.button} type="button" onClick={() => { setNotice(""); setEditor({ atlas: true }); }}>Nuevo encargo para Atlas</button>
+        <button className={styles.primary} type="button" onClick={() => { setNotice(""); setEditor({}); }}>
         <Plus size={16} aria-hidden /> Nuevo encargo
-      </button>}
+      </button></div>}
     </div>
     {notice && <p className={styles.success} role="status">{notice}</p>}
-    {editor ? <WorkTaskForm key={editor.task?.id || "new"} task={editor.task} departmentId={dept} data={data} reload={reload}
+    {editor ? <WorkTaskForm key={editor.task?.id || "new"} task={editor.task} atlas={editor.atlas} departmentId={dept} data={data} reload={reload}
       onClose={() => setEditor(null)} onSaved={onSaved} /> : <>
       <div className={styles.filters} aria-label="Filtros de encargos">
         <label><span id={id + "-department"}>Departamento</span><select aria-labelledby={id + "-department"} value={dept} onChange={e => setDept(e.target.value)}>
@@ -102,20 +123,21 @@ function Tasks({ data, departmentId, reload }: Omit<Props, "view">) {
         {data.tasks.length > 0 && <button className={styles.button} type="button" onClick={reset}>Limpiar filtros</button>}
       </div> : <div className={styles.columns}>
         <div className={styles.list} aria-label="Lista de encargos">
-          {tasks.map(t => <button type="button" key={t.id} className={styles.task} aria-pressed={task?.id === t.id} onClick={() => { setSelected(t.id); setNotice(""); }}>
+          {tasks.map(t => <button type="button" key={t.id} className={styles.task} aria-pressed={task?.id === t.id} onClick={() => { selectTask(t.id); setNotice(""); }}>
             <span className={styles.meta}>{data.departments.find(d => d.id === t.department_id)?.name}</span>
             <strong>{t.objective}</strong>
             <span className={styles.meta}>{taskStatuses[t.status]} · Prioridad {priorities[t.priority].toLowerCase()}</span>
           </button>)}
         </div>
-        {task && <TaskDetail key={task.id} task={task} data={data} reload={reload} onEdit={() => { setNotice(""); setEditor({ task }); }} />}
+        {task && <TaskDetail key={task.id} task={task} data={data} reload={reload} startError={startError?.taskId === task.id ? startError : undefined}
+          preferredVersion={task.id === initialTask ? preferredVersion : undefined} onEdit={() => { setNotice(""); setEditor({ task }); }} />}
       </div>}
     </>}
   </section>;
 }
 
-function TaskDetail({ task, data, reload, onEdit }: {
-  task: OfficeTask; data: OfficeSnapshot; reload: Props["reload"]; onEdit: () => void;
+function TaskDetail({ task, data, reload, onEdit, startError, preferredVersion }: {
+  task: OfficeTask; data: OfficeSnapshot; reload: Props["reload"]; onEdit: () => void; startError?: { requestId: string; message: string }; preferredVersion?: string;
 }) {
   const [note, setNote] = useState("");
   const noteId = useId();
@@ -139,6 +161,7 @@ function TaskDetail({ task, data, reload, onEdit }: {
       <div><dt>Plazo</dt><dd>{task.due_at ? `${displayTime(task.due_at, task.time_zone)} (${task.time_zone})` : "Sin plazo"}</dd></div>
       <div className={styles.wide}><dt>Entrega esperada</dt><dd className={styles.body}>{task.expected_delivery}</dd></div>
     </dl>
+    {task.department_id === "marketing" && <OfficeRuns task={task} versions={data.versions} reload={reload} onEdit={onEdit} retryId={startError?.requestId} startError={startError?.message} preferredVersion={preferredVersion} />}
     <WorkDeliverables task={task} data={data} reload={reload} />
     <section className={styles.section}>
       <h4>Coordinación e historial</h4>

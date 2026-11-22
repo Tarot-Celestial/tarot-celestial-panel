@@ -47,7 +47,7 @@ export function useOfficeSave(reload: () => Promise<void>) {
   const locked = useRef(false);
   const request = useRef<{ signature: string; id: string } | null>(null);
 
-  async function save(action: OfficeAction, success: string, afterSave?: (id: string) => void) {
+  async function save(action: OfficeAction, success: string, afterSave?: (id: string) => void | Promise<void>) {
     if (locked.current) return;
     locked.current = true;
     setSaving(true);
@@ -65,7 +65,7 @@ export function useOfficeSave(reload: () => Promise<void>) {
       await reload();
       request.current = null;
       setFeedback({ ok: true, text: success });
-      afterSave?.(result.id);
+      await afterSave?.(result.id);
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Inténtalo de nuevo.";
       let message = committed ? "Se guardó el cambio. No se pudo actualizar la vista. " + detail : detail;

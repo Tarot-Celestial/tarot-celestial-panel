@@ -1,11 +1,11 @@
 "use client";
 
-import { FormEvent, useId, useState } from "react";
+import { FormEvent, useEffect, useId, useState } from "react";
 import { Download, FileText } from "lucide-react";
 import type { OfficeSnapshot, OfficeTask, OfficeVersion } from "./model";
 import { OFFICE_FILE_LIMIT } from "./model";
 import { Feedback, reviewStatuses, useOfficeSave, workerName } from "./WorkControls";
-import { officeDownload } from "./office-client";
+import { officeDownload, officeFile } from "./office-client";
 import { latestVersions } from "./office-versions";
 import { displayTime } from "./WorkTime";
 import styles from "./OfficeWork.module.css";
@@ -26,6 +26,31 @@ async function fileData(file: File) {
   return { file_name: file.name, file_type: mime, file_base64: url.slice(url.indexOf(",") + 1) };
 }
 
+function ImagePreview({ version }: { version: OfficeVersion }) {
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState("");
+  const [problem, setProblem] = useState("");
+  useEffect(() => {
+    setUrl("");
+    setProblem("");
+    if (!open) return;
+    const controller = new AbortController();
+    let objectUrl = "";
+    officeFile(version.id, controller.signal).then(blob => {
+      if (!controller.signal.aborted) {
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+      }
+    }).catch(e => { if (!controller.signal.aborted) setProblem(e instanceof Error ? e.message : "No se pudo abrir la imagen."); });
+    return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [open, version.id]);
+  const alt = version.body.split("\n\nTexto alternativo\n\n")[1]?.trim() || version.title;
+  return <details className={styles.details} onToggle={e => setOpen(e.currentTarget.open)}>
+    <summary>Ver imagen de la versión {version.version}</summary>
+    {open && (url ? <img className={styles.preview} src={url} alt={alt} /> : <p role={problem ? "alert" : "status"}>{problem || "Cargando imagen…"}</p>)}
+  </details>;
+}
+
 export function VersionContent({ version, data }: { version: OfficeVersion; data: OfficeSnapshot }) {
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState("");
@@ -37,9 +62,10 @@ export function VersionContent({ version, data }: { version: OfficeVersion; data
     catch (e) { setError(e instanceof Error ? e.message : "No se pudo descargar el archivo."); }
     finally { setDownloading(false); }
   }
-  return <div className={styles.stack}>
+  return <div className={styles.stack} id={"office-version-" + version.id}>
     <p className={styles.meta}>Entregado por {workerName(data, version.created_by)} · {displayTime(version.created_at)} (Madrid)</p>
     {version.body && <p className={styles.body}>{version.body}</p>}
+    {version.file_type && ["image/png","image/jpeg","image/webp"].includes(version.file_type) && <ImagePreview key={version.id} version={version} />}
     {version.file_name && <button className={styles.file} type="button" disabled={downloading} onClick={download}>
       <Download size={15} aria-hidden /> {downloading ? "Descargando…" : version.file_name}
     </button>}
@@ -131,9 +157,10 @@ function VersionForm({ previous, task, reload, onSaved, onClose }: {
   </form>;
 }
 
-export function WorkReviews({ data, reload, departmentId }: { data: OfficeSnapshot; reload: () => Promise<void>; departmentId?: string }) {
+export function WorkReviews({ data, reload, departmentId, onOpenTask }: { data: OfficeSnapshot; reload: () => Promise<void>; departmentId?: string; onOpenTask?: (id: string, version?: string) => void }) {
   const [tab, setTab] = useState("pending");
   const [notice, setNotice] = useState("");
+  const [requested, setRequested] = useState<OfficeVersion>();
   const current = latestVersions(data.versions);
   const tasks = new Map(data.tasks.map(task => [task.id, task]));
   const versions = data.versions.filter(v => (!departmentId || tasks.get(v.task_id)?.department_id === departmentId) &&
@@ -142,6 +169,7 @@ export function WorkReviews({ data, reload, departmentId }: { data: OfficeSnapsh
   return <section className={styles.root}>
     <div className={styles.heading}><h2>Revisiones</h2></div>
     {notice && <p className={styles.success} role="status">{notice}</p>}
+    {requested && onOpenTask && <div><button type="button" className={styles.button} onClick={() => onOpenTask(requested.task_id, requested.id)}>Abrir corrección con Atlas</button></div>}
     <div className={styles.actions} aria-label="Mostrar revisiones">
       <button type="button" aria-pressed={tab === "pending"} className={styles.toggle} onClick={() => setTab("pending")}>Pendientes</button>
       <button type="button" aria-pressed={tab === "history"} className={styles.toggle} onClick={() => setTab("history")}>Historial</button>
@@ -155,13 +183,18 @@ export function WorkReviews({ data, reload, departmentId }: { data: OfficeSnapsh
         <h3>{v.title}</h3>
         {task && <p className={styles.meta}>Encargo · {task.objective}</p>}
         <VersionContent version={v} data={data} />
-        {tab === "pending" && <ReviewForm version={v} reload={reload} onSaved={() => setNotice(`Decisión guardada para «${v.title}», versión ${v.version}.`)} />}
+        {tab === "history" && onOpenTask && task?.department_id === "marketing" && v.status === "cambios" && current.get(v.deliverable_id)?.id === v.id &&
+          <div><button type="button" className={styles.button} onClick={() => onOpenTask(v.task_id, v.id)}>Abrir corrección con Atlas</button></div>}
+        {tab === "pending" && <ReviewForm version={v} reload={reload} onSaved={decision => {
+          setNotice(`Decisión guardada para «${v.title}», versión ${v.version}.`);
+          setRequested(task?.department_id === "marketing" && decision === "cambios" ? v : undefined);
+        }} />}
       </article>;
     })}
   </section>;
 }
 
-function ReviewForm({ version, reload, onSaved }: { version: OfficeVersion; reload: () => Promise<void>; onSaved: () => void }) {
+function ReviewForm({ version, reload, onSaved }: { version: OfficeVersion; reload: () => Promise<void>; onSaved: (decision: string) => void }) {
   const id = useId();
   const [decision, setDecision] = useState<"aprobado" | "cambios" | "rechazado">("aprobado");
   const [note, setNote] = useState("");
@@ -169,7 +202,7 @@ function ReviewForm({ version, reload, onSaved }: { version: OfficeVersion; relo
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (decision !== "aprobado" && !note.trim()) return op.error("Escribe el motivo de la decisión.");
-    await op.save({ action: "review_version", id: version.id, decision, note: note.trim() }, "Decisión guardada.", onSaved);
+    await op.save({ action: "review_version", id: version.id, decision, note: note.trim() }, "Decisión guardada.", () => onSaved(decision));
   }
   return <form onSubmit={submit} className={styles.subform}>
     <fieldset disabled={op.saving} className={styles.formGrid}>

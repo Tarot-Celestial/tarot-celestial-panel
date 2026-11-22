@@ -23,6 +23,8 @@
 .director strong, .director span { display: block; }
 .director span { color: var(--muted); font-size: 11px; }
 .director strong { font-size: 17px; font-weight: 650; }
+.atlasCta { padding: 8px 12px; border: 1px solid #927648; border-radius: 8px; background: #342a20; color: var(--gold); font-weight: 650; font-size: 13px; }
+.atlasCta:hover { background: #433627; }
 .stats { margin: 24px 0 18px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-block: 1px solid var(--line); }
 .stats > div { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 15px clamp(10px, 1.6vw, 26px); }
 .stats > div + div { border-left: 1px solid var(--line); }
@@ -68,6 +70,16 @@
 .detail ul { padding-left: 16px; }
 .detail li { margin-block: 5px; }
 .detail small, .detail strong { display: block; }
+.catalog, .offer, .scopeForm { display: grid; gap: 8px; }
+.catalog { padding: 0 0 12px; }
+.catalog p, .catalog ul { margin: 0; }
+.offer { padding: 10px; background: #221e27; border-radius: 8px; }
+.offer h3 { margin: 0; font-size: 14px; }
+.scopeForm { gap: 5px; margin-top: 4px; }
+.scopeForm label { font-size: 12px; }
+.scopeForm input, .scopeForm select, .catalog button { width: 100%; min-width: 0; min-height: 38px; padding: 7px 9px; font: inherit; font-size: 12px; border: 1px solid #69586d; border-radius: 7px; color: #f5edf3; background: #15131a; }
+.catalog button { color: var(--gold); margin-top: 4px; }
+.catalog button:disabled { opacity: .55; }
 .gate { display: grid; place-items: center; padding: 24px; text-align: center; }
 .gate h1 { margin-bottom: 6px; color: #ebd1a0; }
 .gate button { border: 1px solid #75634c; border-radius: 9px; padding: 9px 15px; background: #2c2424; color: #f5e4c5; }
@@ -77,6 +89,8 @@
   .inspector { scroll-margin-top: 140px; }
 }
 @media (max-width: 620px) {
+  .headingRow { flex-wrap: wrap; }
+  .atlasCta { min-height: 38px; }
   .workspace { padding: 17px 11px 35px; }
   .director { border: none; padding: 0; gap: 6px; }
   .directorMark { width: 28px; height: 28px; border: none; background: transparent; }

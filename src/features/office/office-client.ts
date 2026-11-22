@@ -29,9 +29,13 @@ export async function officeRequest<T>(path: string, init?: RequestInit): Promis
   return response.json();
 }
 
+export async function officeFile(versionId: string, signal?: AbortSignal) {
+  const response = await authorizedRequest(`/api/admin/oficina/archivo?id=${encodeURIComponent(versionId)}`, { signal });
+  return response.blob();
+}
+
 export async function officeDownload(versionId: string, filename: string) {
-  const response = await authorizedRequest(`/api/admin/oficina/archivo?id=${encodeURIComponent(versionId)}`);
-  const url = URL.createObjectURL(await response.blob());
+  const url = URL.createObjectURL(await officeFile(versionId));
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
