@@ -130,7 +130,7 @@ test('private accounting state has no browser-persistent password or money cache
   }
 });
 
-function pageFixture({ unlocked = true, deferUnlock = false } = {}) {
+function pageFixture({ unlocked = true, deferUnlock = false, search = '' } = {}) {
   const session = (uid, sid) => ({ user: { id: uid }, access_token: `header.${Buffer.from(JSON.stringify({ session_id: sid })).toString('base64url')}.signature` });
   const first = session('first-admin', 'first-session');
   const redirects = [], requests = [];
@@ -156,7 +156,9 @@ function pageFixture({ unlocked = true, deferUnlock = false } = {}) {
     '@/lib/supabase-browser': { supabaseBrowser: () => sb },
     '@/features/accounting/accounting-client': { ...client, accountingRequest: request },
   }, {
-    window: { setTimeout, clearTimeout, setInterval, clearInterval, addEventListener() {}, removeEventListener() {}, location: { replace: url => redirects.push(url) } },
+    URLSearchParams,
+    window: { setTimeout, clearTimeout, setInterval, clearInterval, addEventListener() {}, removeEventListener() {},
+      location: { search, replace: url => redirects.push(url), assign: url => redirects.push(url) } },
     document: { visibilityState: 'visible' },
   }).default;
   return { Component, redirects, requests, session, notify: (...args) => notify(...args), resolveUnlock: value => resolveUnlock(value), identityChecks: () => identityChecks, resolveReplacement: value => resolveReplacement?.(value) };
@@ -194,4 +196,64 @@ test('an unlock response from before sign-out cannot reopen the financial worksp
   assert.equal(renderer.root.findAllByProps({ 'data-private-workspace': true }).length, 0);
   assert.ok(fixture.redirects.includes('accounting_signout'));
   assert.equal(fixture.requests.filter(request => request.url === '').length, 0);
+});
+
+test('opening Accounting from Office returns to the selected report after the existing password gate', async t => {
+  const fixture = pageFixture({ unlocked: false, deferUnlock: true, search: '?oficina=estrategia&mes=2024-11&redirect=https://external.test' });
+  let renderer;
+  t.after(async () => { if (renderer) await act(async () => renderer.unmount()); });
+  await act(async () => { renderer = Renderer.create(React.createElement(fixture.Component)); await settle(); });
+  const expected = '/admin/oficina?departamento=estrategia&mes=2024-11';
+  assert.equal(renderer.root.findAllByProps({ href: expected }).length, 1);
+  await act(async () => renderer.root.findByProps({ id: 'accounting-password' }).props.onChange({ target: { value: 'fixture-only' } }));
+  await act(async () => { renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }); await settle(); });
+  assert.deepEqual(fixture.redirects, []);
+  await act(async () => { fixture.resolveUnlock({ ok: true, configured: true, unlocked: true, expiresAt: new Date(Date.now() + 60000).toISOString() }); await settle(); });
+  assert.deepEqual(fixture.redirects, [expected]);
+});
+
+test('Office hides its book at expiry, cross-tab lock and remote revocation, ignoring an earlier report response', async t => {
+  const document = new EventTarget();
+  document.visibilityState = 'visible';
+  const window = new EventTarget();
+  let expiry, poll, channel, deferred, nextReport;
+  window.setInterval = fn => { poll = fn; return 1; };
+  window.clearInterval = () => {};
+  window.setTimeout = fn => { expiry = fn; return 2; };
+  window.clearTimeout = () => {};
+  const expireAt = new Date(Date.now() + 60000).toISOString();
+  const report = { month: '2024-11', from: '2024-11-01', through: '2024-11-30', accounts: [], categories: [] };
+  const response = { report, expiresAt: expireAt };
+  let unlocked = true;
+  const Component = load('src/features/office/OfficeAccountingMonth.tsx', {
+    '@/lib/supabase-browser': { supabaseBrowser: () => ({ auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }) } }) },
+    '@/features/accounting/accounting-client': {
+      accountingAccessExpired: cause => cause.status === 423,
+      accountingRequest: async url => {
+        if (url === '/session') return { unlocked, expiresAt: expireAt };
+        if (nextReport) return nextReport;
+        if (!unlocked) throw Object.assign(new Error('locked'), { status: 423 });
+        return response;
+      },
+    },
+  }, {
+    window, document, URLSearchParams, BroadcastChannel: class { constructor() { channel = this; } close() {} },
+  }).default;
+  let renderer;
+  t.after(async () => { if (renderer) await act(async () => renderer.unmount()); });
+  const showsMoney = () => renderer.root.findAllByType('table').length > 0;
+  const locked = () => JSON.stringify(renderer.toJSON()).includes('Contabilidad bloqueada');
+  await act(async () => { renderer = Renderer.create(React.createElement(Component, { area: 'finanzas', month: '2024-11' })); await settle(); });
+  assert.equal(showsMoney(), true);
+  await act(async () => { unlocked = false; await poll(); });
+  assert.equal(showsMoney(), false); assert.equal(locked(), true);
+  await act(async () => { unlocked = true; await poll(); });
+  assert.equal(showsMoney(), true);
+  await act(async () => expiry());
+  assert.equal(showsMoney(), false); assert.equal(locked(), true);
+  await act(async () => { nextReport = new Promise(resolve => { deferred = resolve; }); void poll(); await settle(); });
+  await act(async () => channel.onmessage({ data: 'locked' }));
+  await act(async () => { deferred(response); await settle(); });
+  assert.equal(showsMoney(), false); assert.equal(locked(), true);
+  assert.equal(renderer.root.findByType('a').props.href, '/admin/contabilidad?oficina=finanzas&mes=2024-11');
 });

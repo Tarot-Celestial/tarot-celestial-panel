@@ -37,7 +37,7 @@ async function renderWorkspace({ search = "?departamento=clientes", request }) {
         if (url.pathname.endsWith("capture-totals")) return totals;
         return request(url.searchParams);
       } };
-      if (["./OfficeCatalog", "./OfficeMap", "./OfficeWork"].includes(spec)) return { default: () => null, DepartmentOwner: () => null };
+      if (["./OfficeCatalog", "./OfficeMap", "./OfficeLiveMap", "./OfficeReportView", "./OfficeWork"].includes(spec)) return { default: () => null, DepartmentOwner: () => null };
       if (spec.endsWith(".css")) return { default: {} };
       return spec.startsWith("./") ? load(spec.slice(2)) : require(spec);
     } });
