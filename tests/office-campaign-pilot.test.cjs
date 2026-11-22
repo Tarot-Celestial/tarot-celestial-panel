@@ -4,7 +4,7 @@ const root=path.join(__dirname,".."), spendFile="src/lib/server/office-campaign-
 function load(file,mocks={},extra={}) {
   const js=ts.transpileModule(fs.readFileSync(path.join(root,file),"utf8"),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
   const exports={};
-  vm.runInNewContext(js,{exports,URL,URLSearchParams,Buffer,TextDecoder,AbortController,AbortSignal,Date,Intl,Error,process:{env:{}},...extra,
+  vm.runInNewContext(js,{exports,URL,URLSearchParams,Buffer,TextDecoder,AbortController,AbortSignal,Date,Intl,Error,Response,process:{env:{}},...extra,
     require:n=>n in mocks?mocks[n]:n.endsWith(".css")?{default:{}}:require(n)});
   return exports;
 }
