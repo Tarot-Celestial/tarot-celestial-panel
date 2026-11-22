@@ -10,7 +10,7 @@ export async function GET(req: Request) {
     if (!access.ok) return access.response;
     const db = access.admin;
     const promotions = await db.from("tc_client_promotions").select("id,name,status,starts_at,ends_at,active_until_disabled")
-      .in("status", ["active", "scheduled"]).order("starts_at", { ascending: false });
+      .eq("promotion_kind", "standard").in("status", ["active", "scheduled"]).order("starts_at", { ascending: false });
     if (promotions.error) return officeDatabaseError(promotions.error);
     const live = promotions.data.filter(row => promotionIsLive(row));
     if (!live.length) return officeJson({ offers: [] });
