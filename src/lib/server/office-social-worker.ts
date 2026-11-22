@@ -3,7 +3,7 @@ import { confirmMetaPanelCode, getMetaPanelLink } from "./office-meta-attributio
 import { CAPTACION_WHATSAPP_ORIGIN } from "./captacion-whatsapp";
 import { readSocialProof, sendSocialReply } from "./office-social-graph";
 import { readWhatsAppProof, sendWhatsAppReply, prepareFormReply } from "./office-social-whatsapp";
-import { asksToStop, consultationInterest, DispatchDecision, explicitMarket, messageMarket, openWindow, socialReplyText,
+import { asksToStop, consultationIntent, DispatchDecision, explicitMarket, messageMarket, readMessageMarket, openWindow, socialReplyText,
   type CaptureJob, type ContactRoute, type SocialProof } from "./office-social-policy";
 export { syncOfficeSocialInboxes } from "./office-social-graph";
 
@@ -45,7 +45,9 @@ async function currentConversation(db:any, job:CaptureJob) {
     const previous = (question.data || []).find((attempt:{completed_at:string}) => Date.parse(attempt.completed_at) < Date.parse(row.source_at));
     if (job.kind === "message" && market && (!explicitMarket(body) || previous?.route === "ask_country")) markets.add(market);
   }
-  return { asked:question.data?.[0]?.route === "ask_country", historicalMarket:markets.size === 1 ? [...markets][0] : null };
+  const lastSent = question.data?.[0];
+  const previousRoute: ContactRoute | null = lastSent && openWindow(lastSent.completed_at, 24, Date.parse(job.latest_inbound_at)) ? lastSent.route : null;
+  return { previousRoute, historicalMarket:markets.size === 1 ? [...markets][0] : null };
 }
 async function privatePlan(db:any,job:CaptureJob,proof:SocialProof):Promise<Plan> {
   if (!proof.privateAllowed && !proof.publicAllowed) throw new DispatchDecision("CHANNEL_UNAVAILABLE","blocked");
@@ -54,16 +56,17 @@ async function privatePlan(db:any,job:CaptureJob,proof:SocialProof):Promise<Plan
     if (code !== "not_code") throw new DispatchDecision(code === "confirmed" ? "ATTRIBUTION_CONFIRMED" : "ATTRIBUTION_UNMATCHED");
   }
   if (!openWindow(proof.sourceAt, job.kind === "comment" ? 168 : 24)) throw new DispatchDecision("WINDOW_CLOSED");
-  const history = await currentConversation(db,job), fromMessage = messageMarket(proof.text);
-  if (!consultationInterest(proof.text,job.channel,job.kind,history.asked)) throw new DispatchDecision("NEEDS_PERSONAL_RESPONSE");
-  const market = fromMessage || history.historicalMarket || explicitMarket(job.market);
+  const history = await currentConversation(db,job), location = readMessageMarket(proof.text);
+  const intent = consultationIntent(proof.text,job.channel,job.kind,history.previousRoute);
+  if (!intent) throw new DispatchDecision("NEEDS_PERSONAL_RESPONSE");
+  const market = location.needsCountry ? null : location.market || history.historicalMarket || explicitMarket(job.market);
   const mode = proof.privateAllowed ? "private" : "public";
   let route:ContactRoute = "public_invite", value:string|undefined;
   let phone:string|null = null;
   if (mode === "private") {
-    route = "ask_country";
-    if (market) {
-      phone = await activeLine(db,market);
+    route = intent === "greeting" ? "clarify_request" : "ask_country";
+    if (intent !== "greeting" && (market || intent === "oracle")) {
+      phone = market && intent !== "oracle" ? await activeLine(db,market) : null;
       route = phone ? "phone" : "oracle";
       value = phone || (job.kind === "message" ? await getMetaPanelLink(db,job.id,CAPTACION_WHATSAPP_ORIGIN,"oracle")
         : new URL("/cliente/oraculo",CAPTACION_WHATSAPP_ORIGIN).href);
@@ -73,7 +76,7 @@ async function privatePlan(db:any,job:CaptureJob,proof:SocialProof):Promise<Plan
   const body = socialReplyText(route,value,panelLink) + (route === "oracle" && job.kind === "comment"
     ? " Si respondes a este mensaje, podemos ayudarte a vincular tu ficha." : "");
   return {body,route,send:async () => {
-    if (market && mode === "private" && await activeLine(db,market) !== phone) throw new DispatchDecision("MARKET_LINE_CHANGED");
+    if (market && intent === "consultation" && mode === "private" && await activeLine(db,market) !== phone) throw new DispatchDecision("MARKET_LINE_CHANGED");
     if (job.channel === "whatsapp") {
       await beforeTransport(db,job);
       return sendWhatsAppReply(job,proof,body);

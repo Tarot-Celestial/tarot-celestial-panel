@@ -3,8 +3,8 @@ import { officeError, officeJson, officeUuid } from "@/lib/server/office-access"
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-const filters = ["active","open","mine","resolved","returned","all"];
-const outcomes = ["answered","appointment","no_interest","unreachable","other"];
+const filters = ["active","open","mine","resolved","returned","all","reply_window"];
+const outcomes = ["answered","appointment","no_interest","no_inquiry","unreachable","other"];
 function dbError(error:{message:string}) {
   switch(error.message) {
     case "OFFICE_FORBIDDEN": return officeError("Tu cuenta no tiene permiso para realizar esta operación.",403);

@@ -42,6 +42,21 @@ export type PilotSpend = {
   worker?: string | null;
   file_sha256?: string;
 };
+export type PilotFunnelRow = {
+  country: string | null;
+  contacts: number;
+  replied: number;
+  median_reply_minutes: number | null;
+  first_buyers: number;
+  buyers_after_reply: number;
+  phone_routed: number;
+  oracle_routed: number;
+  without_reply_or_purchase: number;
+  matured_contacts: number;
+  buyers_within_7d: number;
+  recorded_consultations: number;
+};
+export type PilotFunnel = { total: PilotFunnelRow; countries: PilotFunnelRow[] };
 export type PilotReport = {
   ok: true;
   month: string;
@@ -54,6 +69,7 @@ export type PilotReport = {
   contacts: number;
   first_buyers: number;
   cost_first_buyers: number;
+  funnel: PilotFunnel | null;
   amounts: PilotMoney[];
   buyers: PilotBuyer[];
   unattributed_first_purchases: number;

@@ -67,6 +67,45 @@ test("la línea depende del directorio habilitado, la alternativa en Argentina e
   }
   const unavailable=harness({lookupError:true});assert.equal((await unavailable.run()).blocked,1);assert.equal(unavailable.links.length,0);
 });
+test("el Oráculo solicitado se ofrece directamente incluso con línea local y el enlace nunca sale en público",async()=>{
+  for(const text of ["Quiero entrar al Oráculo","Vivo en España y prefiero una tirada online","No quiero llamar, quiero el Oráculo"]){
+    const f=harness({proof:{text},lookupError:true});
+    assert.equal((await f.run()).sent,1);assert.equal(f.calls.find(x=>x.name==="office_capture_begin").args.p_route,"oracle");
+    assert.deepEqual(f.links,["oracle"]);
+  }
+  const pub=harness({job:{kind:"comment"},proof:{text:"Quiero el Oráculo",privateAllowed:false,publicAllowed:true}});
+  assert.equal((await pub.run()).sent,1);assert.deepEqual(pub.links,[]);
+  assert.equal(pub.calls.find(x=>x.name==="office_capture_begin").args.p_route,"public_invite");
+});
+test("una negativa a llamar tras un teléfono recibido ofrece la alternativa digital una sola vez en contexto",async()=>{
+  const now=new Date(Date.now()-60000).toISOString(), earlier=new Date(Date.now()-2*86400000).toISOString();
+  for(const [route,at,expected] of [["phone",now,1],["oracle",now,0],["phone",earlier,0],["ask_country",now,0]]){
+    const f=harness({questions:[{route,completed_at:at}],proof:{text:"No puedo llamar, ¿hay otra opción?"}});
+    assert.equal((await f.run()).sent,expected);
+  }
+  const support=harness({questions:[{route:"phone",completed_at:now}],proof:{text:"Quiero consultar pero no funciona el enlace"}});
+  assert.equal((await support.run()).handoff,1);assert.deepEqual(support.links,[]);
+});
+test("un saludo privado se aclara sin canal de venta y un testimonio o una reacción no activa oferta",async()=>{
+  const f=harness({job:{market:"ES"},proof:{text:"Buenas tardes"}});
+  assert.equal((await f.run()).sent,1);assert.deepEqual(f.links,[]);
+  assert.equal(f.calls.find(x=>x.name==="office_capture_begin").args.p_route,"clarify_request");
+  assert.doesNotMatch(f.calls.find(x=>x.name==="send").body,/\+\d|http|país|gratis/);
+  for(const text of ["Amén","Yes","Quiero agradecer la lectura","Quiero recomendar un amarre"]){
+    const reaction=harness({job:{kind:"comment"},proof:{text}});
+    assert.equal((await reaction.run()).handoff,1);assert.deepEqual(reaction.links,[]);
+  }
+});
+test("el país desde el que escribe prevalece sobre la nacionalidad y una corrección ambigua no usa el país del CRM",async()=>{
+  assert.equal(policy.messageMarket("Soy argentina, pero ahora vivo en España"),"ES");
+  assert.equal(policy.messageMarket("No soy de España, te escribo desde España"),"ES");
+  assert.equal(policy.messageMarket("Vivo en Guinea Ecuatorial"),"GQ");
+  for (const text of ["Quiero consultar. Ya no vivo en España","Quiero consultar, vivo en Perú y vivo en Chile"]) {
+    const f=harness({job:{market:"ES"},proof:{text},lines:{ES:{country:"ES",enabled:true,phone:"93 050 25 86"}}});
+    assert.equal((await f.run()).sent,1);
+    assert.equal(f.calls.find(x=>x.name==="office_capture_begin").args.p_route,"ask_country");
+  }
+});
 test("un país solo responde a una pregunta enviada; saludo en comentario, datos de terceros y rechazo no disparan llamadas",async()=>{
   const direct=harness({proof:{text:"Argentina"}});assert.equal((await direct.run()).handoff,1);
   const answer=harness({proof:{text:"Argentina"},questions:[{route:"ask_country",completed_at:new Date(Date.now()-60000).toISOString()}]});

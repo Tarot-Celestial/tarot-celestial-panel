@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { officeAccess, officeDatabaseError, officeError, officeJson, officeUuid } from "@/lib/server/office-access";
 import { dateInZone, parsePilotCsv, periodFor, readPilotSpend, validZone } from "@/lib/server/office-campaign-spend";
-import type { PilotBuyer, PilotCampaign, PilotMoney, PilotSpend, PilotTouch } from "@/features/office/office-campaign-pilot";
+import { COUNTRY_OPTIONS } from "@/lib/countries";
+import type { PilotBuyer, PilotCampaign, PilotFunnel, PilotFunnelRow, PilotMoney, PilotSpend, PilotTouch } from "@/features/office/office-campaign-pilot";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -17,6 +18,42 @@ const word = (v: unknown): string => typeof v === "string" && /^[a-z][a-z0-9_]{0
 const date = (v: unknown): string => typeof v === "string" && /^\d{4}-\d\d-\d\dT/.test(v) && Number.isFinite(Date.parse(v)) ? v : invalid();
 const curr = (v: unknown): string | null => v === null ? null : typeof v === "string" && /^[A-Z]{3}$/.test(v) ? v : invalid();
 const id = (v: unknown): string => officeUuid(v) ? v : invalid();
+// Only known countries leave the report. Free-text CRM values stay in the database.
+const countryLabels: Record<string, string> = Object.create(null);
+const englishCountries = new Intl.DisplayNames(["en"], {type: "region"});
+const additionalNames: Record<string, string[]> = {US: ["USA", "EEUU", "EE. UU.", "EE UU"], DO: ["Dominicana"]};
+for (const country of COUNTRY_OPTIONS) {
+  for (const alias of [country.code, country.label, englishCountries.of(country.code), ...(country.aliases || []), ...(additionalNames[country.code] || [])]) {
+    if (alias) {
+      const key = alias.trim().toLowerCase();
+      countryLabels[key] = country.label;
+      countryLabels[key.normalize("NFD").replace(/[\u0300-\u036f]/g, "")] = country.label;
+    }
+  }
+}
+const knownCountries = new Set(Object.values(countryLabels));
+const funnelCounts = ["contacts", "replied", "first_buyers", "buyers_after_reply", "phone_routed", "oracle_routed",
+  "without_reply_or_purchase", "matured_contacts", "buyers_within_7d", "recorded_consultations"] as const;
+function hydrateFunnelRow(raw: PilotFunnelRow): PilotFunnelRow {
+  if (!raw || (raw.country !== null && !knownCountries.has(raw.country))) return invalid();
+  const row = {country: raw.country, median_reply_minutes: money(raw.median_reply_minutes)} as PilotFunnelRow;
+  for (const key of funnelCounts) row[key] = count(raw[key]);
+  if (funnelCounts.some(k => row[k] > row.contacts) ||
+    row.buyers_after_reply > Math.min(row.first_buyers, row.replied) ||
+    row.buyers_within_7d > Math.min(row.first_buyers, row.matured_contacts) ||
+    row.phone_routed > row.replied || row.oracle_routed > row.replied ||
+    row.without_reply_or_purchase > row.contacts - Math.max(row.first_buyers,row.replied) ||
+    (row.replied === 0) !== (row.median_reply_minutes === null)) return invalid();
+  return row;
+}
+function hydrateFunnel(raw: PilotFunnel, contacts: number, buyers: number): PilotFunnel {
+  if (!raw || !Array.isArray(raw.countries)) return invalid();
+  const total = hydrateFunnelRow(raw.total), countries = raw.countries.map(hydrateFunnelRow);
+  if (total.country !== null || total.contacts !== contacts || total.first_buyers !== buyers ||
+    new Set(countries.map(r => r.country)).size !== countries.length ||
+    funnelCounts.some(key => countries.reduce((sum, row) => sum + row[key], 0) !== total[key])) return invalid();
+  return {total, countries};
+}
 function hydrateAmount(a: PilotMoney): PilotMoney {
   return {
     currency: curr(a.currency),
@@ -96,6 +133,7 @@ export async function GET(req: Request) {
         period_through: fallback.through,
         contacts: 0,
         first_buyers: 0,
+        funnel: null,
         cost_first_buyers: 0,
         amounts: [],
         buyers: [],
@@ -154,12 +192,13 @@ export async function GET(req: Request) {
     } catch {
       return officeError("Ha cambiado la consulta. Vuelve a la primera página de compradores.", 400);
     }
-    const result = await gate.admin.rpc("office_campaign_pilot", {
+    const result = await gate.admin.rpc("office_conversion_funnel", {
       p_actor: gate.authUserId,
       p_campaign: key,
       p_month: month + "-01",
       p_zone: zone,
       p_as_of: snapshot,
+      p_country_names: countryLabels,
       p_after_at: afterAt,
       p_after_client: afterClient,
       p_through: spend?.through ?? null
@@ -186,6 +225,7 @@ export async function GET(req: Request) {
       period_through: period.through,
       contacts,
       first_buyers: buyers,
+      funnel: hydrateFunnel(r.funnel, contacts, buyers),
       cost_first_buyers: costBuyers,
       unattributed_first_purchases: count(r.unattributed_first_purchases),
       amounts,

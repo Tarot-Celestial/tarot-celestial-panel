@@ -8,11 +8,14 @@ Entra en **Oficina Celestial → Bandeja de Comercial**. En Central, abre **Come
 2. En **Registrar resultado**, elige el desenlace y pulsa **Resolver caso**. Si otro operador va a continuar, usa **Liberar para otro operador**.
 3. Usa **Devolver a Atlas** cuando quieras que los agentes puedan atender la próxima entrada de esa persona. Durante la intervención, el seguimiento queda en manos de Central. Una devolución conserva la baja solicitada y las condiciones de cada canal.
 
+El filtro **Plazo abierto · próximos vencimientos** muestra primero las consultas cuyo plazo de respuesta termina antes. Si el comentario es una reacción sin petición de ayuda, registra **Sin solicitud de consulta**. Cuando llegue una nueva consulta verificable, Atlas podrá atenderla.
+
 ## Leer los resultados de una campaña
 
 En **Oficina Celestial → Campañas**, selecciona un mes y una campaña. Abre una primera compra para seguir su recorrido hasta el CRM. La ficha indica qué canal o intervención pudo verificarse.
 
 - Cada persona cuenta una vez entre los contactos de una campaña en el mes seleccionado. Puede haber escrito también en meses anteriores.
+- En **Conversión a primera compra**, selecciona un país para ver cuántos contactos recibieron respuesta digital, tuvieron una consulta registrada y compraron. Para comparar períodos, usa **Conversión en 7 días**, que incluye solo a quienes ya tuvieron siete días completos para comprar.
 - La primera compra lleva su importe, moneda y origen de pago. La primera tirada gratuita del Oráculo conserva la condición de oportunidad. El primer pago confirmado es lo que convierte a esa persona en cliente captado.
 - El coste por captado divide el gasto publicitario acreditado entre las primeras compras atribuidas a los contactos del período cubierto. Comprueba las fechas, moneda y zona horaria junto al importe. Una campaña sin gasto verificable o sin captados muestra el coste por captado sin calcular.
 - Los ingresos se consultan por moneda. Las primeras compras y las compras posteriores de esos mismos clientes responden a preguntas distintas.

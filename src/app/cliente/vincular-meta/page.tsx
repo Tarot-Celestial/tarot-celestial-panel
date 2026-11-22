@@ -13,7 +13,7 @@ async function request(action?: string, bearer?: string, signal?: AbortSignal) {
   if (action) headers.set("Content-Type","application/json");
   if (bearer) headers.set("Authorization","Bearer " + bearer);
   const ref = new URLSearchParams(window.location.search).get("ref") || "";
-  const res = await fetch(api+"?ref="+encodeURIComponent(ref),{method:action ? "POST" : "GET",credentials:"same-origin",cache:"no-store",headers,signal,
+  const res = await fetch(api+"?ref="+encodeURIComponent(ref),{method:action ? "POST" : "GET",credentials:"same-origin",cache:"no-store",headers,signal,keepalive:action==="visit",
     body:action ? JSON.stringify({action}) : undefined});
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "No se pudo consultar el enlace.");
@@ -36,13 +36,11 @@ export default function MetaPanelEntry() {
     }).catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
   },[attempt]);
-  async function enter(identify: boolean) {
+  async function linkConversation() {
     if (busy) return;
     setBusy(true); setError("");
     try {
-      const visit = await request("visit");
-      const url = visit.destination === "oracle" ? "/cliente/oraculo" : "/cliente/dashboard";
-      if (!identify) { window.location.assign(url); return; }
+      await request("visit");
       const session = await supabaseClienteBrowser().auth.getSession();
       if (session.error) throw new Error("No se pudo comprobar tu sesión.");
       const bearer = session.data.session?.access_token;
@@ -53,14 +51,17 @@ export default function MetaPanelEntry() {
     finally { setBusy(false); }
   }
   return <ClientAuthShell eyebrow="Tarot Celestial" title={destination ? "Tu acceso al " + name : "Acceso al panel"}
-    subtitle="Puedes vincular tu conversación privada con tu ficha para que nuestro equipo reconozca tu primera compra.">
+    subtitle={destination === "oracle" ? "Tu primera tirada es gratuita. Entra con tu cuenta o regístrate para hacer tu pregunta." :
+      "Accede a tus consultas y reservas con tu cuenta de Tarot Celestial."}>
     <div className={css.form}>
       {error && <p className={css.errorText} role="alert">{error}</p>}
       {!destination && (error ? <><button type="button" className={css.primaryButton} onClick={()=>{setError("");setAttempt(n=>n+1);}}>Reintentar</button>
         <a href="/cliente/login">Abrir el panel de clientes</a></> : <p role="status">Consultando enlace…</p>)}
       {destination && !code && !confirmed && <>
-        <button type="button" className={css.primaryButton} disabled={busy} onClick={()=>enter(true)}>Vincular mi conversación</button>
-        <button type="button" className={css.linkButton} disabled={busy} onClick={()=>enter(false)}>Entrar al {name} sin vincular</button>
+        <a className={css.primaryButton} href={target} onClick={() => { void request("visit").catch(() => {}); }}>
+          {destination === "oracle" ? "Entrar al Oráculo" : "Entrar a mi panel"}
+        </a>
+        <button type="button" className={css.linkButton} disabled={busy} onClick={linkConversation}>Vincular mi conversación con el equipo</button>
       </>}
       {code && <><p>Envía este código como único mensaje en el mismo chat privado donde recibiste el enlace. Es válido durante 15 minutos desde su emisión.</p>
         <strong aria-label="Código de vinculación">{code}</strong>
@@ -68,7 +69,7 @@ export default function MetaPanelEntry() {
           try { await navigator.clipboard.writeText(code); setCopied(true); }
           catch { setError("Selecciona y copia el código de la pantalla."); }
         }}>{copied ? "Código copiado" : "Copiar código"}</button>
-        <button type="button" className={css.linkButton} disabled={busy} onClick={()=>enter(true)}>Comprobar vinculación</button></>}
+        <button type="button" className={css.linkButton} disabled={busy} onClick={linkConversation}>Comprobar vinculación</button></>}
       {confirmed && <p role="status">Tu conversación está vinculada a tu ficha.</p>}
       {(confirmed || code) && <a className={css.primaryButton} href={target}>Continuar al {name}</a>}
     </div>

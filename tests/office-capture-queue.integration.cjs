@@ -41,7 +41,10 @@ before(async()=>{
    create table office_runs(id uuid);create table office_tasks(id uuid);create table office_departments(id text);
    create table office_run_attempts(step int,lease_token uuid,claimed_at timestamptz);
    create table office_instagram_posts(id uuid,persisted_account_id text,dispatch_started_at timestamptz);`);
+ await db.exec(`create function public.office_actor(p_user uuid) returns uuid language plpgsql as $$
+   begin if public.tc_has_admin_access(p_user) then return p_user; end if; raise exception 'OFFICE_FORBIDDEN'; end $$;`);
  await db.exec(fs.readFileSync(path.join(directory,fs.readdirSync(directory).find(f=>f.endsWith("_office_autonomy.sql"))),"utf8"));
+ await db.exec(fs.readFileSync(path.join(directory,fs.readdirSync(directory).find(f=>f.endsWith("_office_meta_form_whatsapp_consent.sql"))),"utf8"));
  await q("insert into workers values($1,$2,true),($3,$4,true)",[id(1),id(2),id(3),id(4)]);
  await q("insert into office_capture_settings values(true,true,$1)",[id(2)]);
 });
@@ -108,13 +111,45 @@ test("form submission requires explicit WhatsApp permission on the matching CRM 
    await q("insert into crm_clientes values($1,'Fixture','ES','meta')",[id(n)]);
    await q("insert into captacion_leads(id,cliente_id,estado) values($1,$2,'nuevo')",[id(n+20),id(n)]);
    await q("insert into meta_lead_events values($1,'FB','FORM',$2,$3,now()-interval '1 hour','processed',$4)",
-     ["lead"+n,id(n+20),id(n),{lead:{field_data:[{name:n===8?"consent_whatsapp":"phone_number",values:["sí"]}]}}]);
+     ["lead"+n,id(n+20),id(n),{lead:{id:"lead"+n,field_data:[{name:"phone_number",values:["+34 600 000 123"]}],
+       custom_disclaimer_responses:[{checkbox_key:"whatsapp_opt_in",is_checked:n===8?"1":"0"}]}}]);
  }
  await discover();const job=await claim();assert.equal(job.client_id,id(8));assert.equal(job.submission_key,"meta:lead8");
+ const target=(phone)=>scalar("select office_form_verify_whatsapp_target($1,$2,$3)",[job.id,job.request_id,phone]);
+ assert.equal(await target("+34600000123"),true);assert.equal(await target("+34600000456"),false);
+ await q("insert into meta_lead_events values('later','FB','FORM',$1,$2,now(),'processed',$3)",[id(28),id(8),{
+   lead:{id:"later",custom_disclaimer_responses:[{checkbox_key:"whatsapp_opt_in",is_checked:"false"}]}}]);
+ assert.equal(await target("+34600000123"),false);
+ const coverage=await scalar("select office_form_whatsapp_coverage($1)",[id(2)]);
+ // now()-1 hour can fall in the previous Madrid month; compare against the actual period.
+ const current=await scalar("select (now()-interval '1 hour') >= (date_trunc('month',now() at time zone 'Europe/Madrid') at time zone 'Europe/Madrid')");
+ assert.equal(coverage.submissions,current?3:1);assert.equal(coverage.granted,current?1:0);
+ assert.equal(coverage.declined,current?2:1);assert.equal(coverage.missing,0);assert.equal(coverage.review,0);
+ await assert.rejects(scalar("select office_form_whatsapp_coverage($1)",[id(100)]),/OFFICE_FORBIDDEN/);
  assert.equal(await scalar("select last_error from office_capture_opportunities where client_id=$1",[id(9)]),"whatsapp_consent_missing");
  await q("insert into captacion_whatsapp_deliveries values($1,'meta:lead8')",[id(28)]);
  assert.equal(await begin(job),null);assert.equal(await claim(),null);
  const priv=await q("select has_function_privilege('authenticated','public.office_capture_claim()','EXECUTE') f,has_table_privilege('anon','office_capture_inbound','SELECT') t");
+ assert.deepEqual(priv[0],{f:false,t:false});
+});
+
+test("los permisos se limitan a la pregunta explícita del envío y requieren respuestas concordantes",async()=>{
+ const answer=lead=>scalar("select office_meta_whatsapp_answer($1)",[lead]);
+ const field=(name,values)=>({name,values});
+ const box=(key,value)=>({checkbox_key:key,is_checked:value});
+ assert.equal(await answer({field_data:[field("phone_number",["+34600000123"])],custom_disclaimer_responses:[box("privacy",true)]}),"missing");
+ assert.equal(await answer({field_data:[field("consent_whatsapp",["  Sí "])]}),"granted");
+ assert.equal(await answer({field_data:[field("WHATSAPP_OPT_IN",["no"])]}),"declined");
+ assert.equal(await answer({custom_disclaimer_responses:[box("whatsapp_opt_in","false")]}),"declined");
+ assert.equal(await answer({field_data:[field("whatsapp_opt_in",["true"])],custom_disclaimer_responses:[box("whatsapp_opt_in",false)]}),"review");
+ assert.equal(await answer({field_data:[field("whatsapp_opt_in",["sí","no"])]}),"review");
+ assert.equal(await answer({custom_disclaimer_responses:[box("whatsapp_opt_in","unchecked")]}),"review");
+ const number=fields=>scalar("select office_meta_whatsapp_number($1)",[{field_data:fields}]);
+ assert.equal(await number([field("phone_number",["0034 600 000 123"])]),"+34600000123");
+ assert.equal(await number([field("telefono",["600000123"])]),null);
+ assert.equal(await number([field("telefono",["+34600000123"]),field("phone_number",["+17875555555"])]),null);
+ assert.equal(await number([field("telefono",["texto +34 600000123"])]),null);
+ const priv=await q("select has_function_privilege('authenticated','public.office_form_verify_whatsapp_target(uuid,uuid,text)','EXECUTE') f,has_table_privilege('anon','office_meta_whatsapp_evidence','SELECT') t");
  assert.deepEqual(priv[0],{f:false,t:false});
 });
 

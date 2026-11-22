@@ -52,6 +52,14 @@
 .captureThread ol { padding-left: 16px; max-height: 225px; overflow-y: auto; }
 .captureThread li { padding: 4px; }
 .controls select { grid-column: 1 / -1; min-height: 35px; padding: 6px; border: 1px solid #544957; border-radius: 7px; background: #26212c; color: #f0e8f0; font: inherit; }
+.conversionHeader { display: flex; gap: 12px 24px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.conversionHeader h3 { margin: 0; font-size: 18px; }
+.conversionHeader label { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; color: #c9bfcb; font-size: 13px; }
+.conversionHeader select { min-width: 0; max-width: 100%; min-height: 36px; padding: 5px 8px; border: 1px solid #544957; border-radius: 7px; background: #26212c; color: #f0e8f0; }
+.conversionHeader select:focus-visible { outline: 2px solid #efcb8c; outline-offset: 2px; }
+.conversionEvidence { margin: 12px 0; font-size: 13px; }
+.conversionEvidence > div { display: flex; justify-content: space-between; align-items: baseline; gap: 15px; padding: 7px 0; border-bottom: 1px solid #39333e; }
+.conversionEvidence dd { margin: 0; font-weight: 650; font-variant-numeric: tabular-nums; }
 @media (max-width: 560px) {
   .header, .controls { align-items: stretch; }
   .header { flex-direction: column; }

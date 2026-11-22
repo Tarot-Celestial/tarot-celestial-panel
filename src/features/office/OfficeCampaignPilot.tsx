@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { officeRequest } from "./office-client";
 import type { PilotBuyer, PilotReport } from "./office-campaign-pilot";
+import OfficeCampaignConversion from "./OfficeCampaignConversion";
 import styles from "./OfficeMonthlyReport.module.css";
 const api = "/api/admin/office/campaign-pilot";
 const labels: Record<string, string> = {
@@ -23,6 +24,7 @@ const labels: Record<string, string> = {
   reversed: "Revertido",
   oracle: "Oráculo",
   ask_country: "Solicitud de país",
+  clarify_request: "Aclaración de la consulta",
   phone: "Línea telefónica",
   line: "Línea telefónica",
   public_invite: "Invitación pública",
@@ -218,6 +220,7 @@ export default function OfficeCampaignPilot({
             {spend.worker && <> por {spend.worker}</>}{spend.file_sha256 && <> · Huella SHA-256 {spend.file_sha256.slice(0, 12)}…</>}</p> : <p className={styles.note}>{spendReasons[report.spend_reason ?? ""] ?? "No consta un importe de gasto comprobado para este período."}</p>}
           {!report.selected.id.startsWith("form-") && <ImportSpend key={report.selected.id + month} campaign={report.selected.id} month={month} onSaved={() => setRefresh(n => n + 1)} />}
         </section>
+        {report.funnel && <OfficeCampaignConversion key={report.selected.id + month} funnel={report.funnel}/>}
         <section className={styles.section}><div className={styles.sectionTitle}><h3>Ingresos por moneda</h3></div>
           <p className={styles.note}>Cobros de estos compradores hasta {instant(report.as_of, report.zone)}, incluidas las compras posteriores al fin del mes. El bruto conserva los cobros con reembolso o reversión.</p>
           {report.amounts.length > 0 ? <div className={styles.scroll}><table className={styles.table}><thead><tr><th>Moneda</th><th>Primeras compras · bruto</th><th>Todos los cobros · bruto</th><th>Cobros con reembolso o reversión</th></tr></thead>

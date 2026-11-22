@@ -7,7 +7,7 @@ export type CaptureJob = {
   actor_user_id: string | null; actor_worker_id: string | null; market: string | null; opted_out: boolean; whatsapp_consent: boolean;
   session_id: string | null; lead_id: string | null; client_id: string | null; inbound_text: string | null;
 };
-export type ContactRoute = "ask_country" | "phone" | "oracle" | "public_invite" | "whatsapp_template";
+export type ContactRoute = "clarify_request" | "ask_country" | "phone" | "oracle" | "public_invite" | "whatsapp_template";
 export class DispatchDecision extends Error {
   constructor(public code: string, public outcome: "blocked" | "handoff" | "failed" | "uncertain" = "handoff") { super(code); }
 }
@@ -27,42 +27,63 @@ for (const country of COUNTRY_OPTIONS) {
 }
 for (const [alias, iso] of [["usa","US"],["eeuu","US"],["ee uu","US"],["united states","US"],["spain","ES"],["dominicana","DO"],["puerto rico","PR"]]) names.set(alias,iso);
 const countries = new Set(names.values());
+const regionAlternatives = [...names.keys()].filter(Boolean).sort((a,b) => b.length-a.length).join("|");
+const locationStatement = new RegExp("\\b(?:(no|ya no) )?(soy de|estoy en|vivo en|escribo de|escribo desde|consultar desde|llamar desde|i live in|i am from|im from) (?:la |el |los )?(" + regionAlternatives + ")(?= |$)", "g");
 
 export function explicitMarket(value?: string | null): string | null {
   if (!value) return null;
   const trimmed = value.trim(), code = trimmed.toUpperCase();
   return countries.has(code) ? code : names.get(plain(trimmed)) || null;
 }
-export function messageMarket(text: string): string | null {
+export function readMessageMarket(text: string): {market: string | null; needsCountry: boolean} {
   const normalized = plain(text);
   const wholeAnswer = names.get(normalized) || (/^[A-Z]{2}$/.test(text.trim()) ? explicitMarket(text) : null);
-  if (wholeAnswer) return wholeAnswer;
-  const matches = new Set<string>();
+  if (wholeAnswer) return {market:wholeAnswer, needsCountry:false};
+  const origins = new Set<string>(), locations = new Set<string>();
+  const deniedOrigins = new Set<string>(), deniedLocations = new Set<string>();
   const demonyms: [RegExp,string][] = [
     [/\b(?:soy (?:de nacionalidad )?|soja )argentin[oa]\b/,"AR"], [/\bsoy puertorriquen[oa]\b/,"PR"],
     [/\bsoy espan(?:ol|ola)\b/,"ES"], [/\bsoy dominican[oa]\b/,"DO"], [/\bsoy chilen[oa]\b/,"CL"],
     [/\bsoy colombian[oa]\b/,"CO"], [/\bsoy estadounidense\b/,"US"],
   ];
-  for (const [pattern,code] of demonyms) if (pattern.test(normalized) && !/\bno soy\b/.test(normalized)) matches.add(code);
-  for (const [name, code] of names) {
-    if (normalized.includes("no soy de " + name) || normalized.includes("no vivo en " + name)) continue;
-    if (new RegExp("(?:^| )(?:soy de|estoy en|vivo en|escribo (?:de|desde)|consultar desde|llamar desde|i live in|i am from|im from) (?:la |el |los )?" + name + "(?: |$)").test(normalized)) matches.add(code);
+  for (const [pattern,code] of demonyms) if (pattern.test(normalized) && !/\bno soy\b/.test(normalized)) origins.add(code);
+  for (const [,negative,phrase,name] of normalized.matchAll(locationStatement)) {
+    const code = names.get(name)!;
+    const origin = ["soy de","i am from","im from"].includes(phrase);
+    if (negative) (origin ? deniedOrigins : deniedLocations).add(code);
+    else (origin ? origins : locations).add(code);
   }
-  return matches.size === 1 ? [...matches][0] : null;
+  const candidates = locations.size ? locations : origins;
+  const allowed = [...candidates].filter(code => !deniedLocations.has(code) && (locations.size || !deniedOrigins.has(code)));
+  const market = allowed.length === 1 ? allowed[0] : null;
+  return {market,needsCountry:!market && (candidates.size>0 || deniedOrigins.size>0 || deniedLocations.size>0)};
+}
+export function messageMarket(text: string): string | null {
+  return readMessageMarket(text).market;
 }
 export function asksToStop(text: string): boolean {
   const value = plain(text);
   return /^(?:stop|unsubscribe|cancelar suscripcion|baja|borrame|no me interesa)(?: |$)/.test(value) ||
     /\b(?:no (?:me )?(?:escriban|escribas|contacten|contactes|envien|manden)|no quiero (?:mas )?(?:mensajes|publicidad|promociones)|dejen de escribirme|do not (?:contact|message|text) me|stop (?:texting|messaging))\b/.test(value);
 }
-export function consultationInterest(text: string, channel: CaptureJob["channel"], kind: CaptureJob["kind"], replyingToCountry: boolean) {
+export function consultationIntent(text: string, channel: CaptureJob["channel"], kind: CaptureJob["kind"], previousRoute: ContactRoute | null): "oracle" | "consultation" | "greeting" | null {
   const value = plain(text);
-  if (!value || asksToStop(text) || /\b(?:reembolso|devolucion|denuncia|queja|urgencia|suicid|medicamento|chargeback|refund|no quiero|no me interesa|factura|banco|proveedor|soporte tecnico)\w*/.test(value)) return false;
-  if (replyingToCountry && messageMarket(text)) return true;
-  if (kind === "message" && ["instagram","facebook"].includes(channel) && /^(?:hola|buenas|buenos dias|buenas tardes|buenas noches|hello|hi)(?: que tal)?$/.test(value)) return true;
-  return /\b(?:quiero|quisiera|querria|queria|puedo|podria|podemos|necesito|puede|como|donde|cuanto|cuesta|vale|interesa|gustaria)\b.{0,55}\b(?:consulta\w*|lectura|tarot|tirada|oraculo|cartas|llamar|reading)\b/.test(value) ||
+  if (!value || asksToStop(text) || /\b(?:reembolso|devolucion|denuncia|queja|urgencia|suicid|medicamento|chargeback|refund|no me interesa|factura|banco|proveedor|soporte tecnico)\w*/.test(value)) return null;
+  if (/\b(?:no (?:me )?(?:funciona|abre|carga)|no consigo (?:entrar|registrarme)|ya (?:llame|pague|compre)|me (?:han )?cobrado|hablar con (?:una? )?(?:persona|agente|operador)|quiero agradecer|gracias por (?:la|tu|su) (?:consulta|lectura)|amarres?|recomiendo)\b/.test(value)) return null;
+  const cannotCall = /\bno (?:quiero|puedo) (?:llamar|consultar por telefono)\b/;
+  if (previousRoute === "phone" && /^(?:(?:hola|gracias|lo siento) )?no (?:quiero|puedo) llamar(?: (?:ahora|por telefono))?(?: (?:hay otra (?:opcion|forma)|que otra opcion hay|puedo consultar (?:online|en linea)))?$/.test(value)) return "oracle";
+  const request = value.replace(cannotCall, "").trim();
+  if (/\bno (?:quiero|necesito|deseo|busco|me gustaria)\b/.test(request)) return null;
+  // A request for the digital reading has a destination even without a country.
+  // A request to speak to a tarot reader online is a different service.
+  if (/\b(?:quiero|quisiera|prefiero|busco|me interesa|como (?:entro|accedo)|puedo (?:entrar|acceder|probar)) (?:hacer |probar |usar |entrar (?:en |a )?|acceder (?:a )?)?(?:el |al |la |una |mi )?(?:oraculo|(?:primera )?tirada (?:online|en linea|del oraculo))\b/.test(request)) return "oracle";
+  if (cannotCall.test(value)) return null;
+  if (previousRoute === "ask_country" && messageMarket(text)) return "consultation";
+  if (kind === "message" && ["instagram","facebook"].includes(channel) && /^(?:hola|buenas|buenos dias|buenas tardes|buenas noches|hello|hi)(?: que tal)?$/.test(value)) return previousRoute ? null : "greeting";
+  const interested = /\b(?:quiero|quisiera|querria|queria|puedo|podria|podemos|necesito|puede|como|donde|cuanto|cuesta|vale|interesa|gustaria)\b.{0,55}\b(?:consulta\w*|lectura|tarot(?:istas?)?|tirada|oraculo|cartas|llamar|reading)\b/.test(value) ||
     /\b(?:precio|informacion|info|detalles|numero|telefono|horario) (?:de|sobre|para) (?:la |una |el |las )?(?:consulta|lectura|tarot|tirada|oraculo|llamar)\b/.test(value) ||
     /^(?:info|informacion|precio|quiero informacion|me interesa|como puedo consultar|consulta de tarot|cuanto cuesta la consulta)$/.test(value);
+  return interested ? "consultation" : null;
 }
 export function openWindow(sourceAt: string, hours: number, now = Date.now()) {
   const t = Date.parse(sourceAt);
@@ -70,6 +91,7 @@ export function openWindow(sourceAt: string, hours: number, now = Date.now()) {
 }
 export function socialReplyText(route: ContactRoute, value?: string, panelLink?: string) {
   switch (route) {
+    case "clarify_request": return "¡Hola! Gracias por escribir a Tarot Celestial. ¿En qué podemos ayudarte?";
     case "public_invite": return "Gracias por escribir a Tarot Celestial. Envíanos un mensaje privado y te indicaremos cómo consultar desde tu país.";
     case "ask_country": return "Hola, somos el equipo de Tarot Celestial. ¿Desde qué país nos escribes? Así podemos indicarte cómo consultar.";
     case "phone": return "Puedes llamar a Tarot Celestial al " + value + " para consultar. " + (panelLink

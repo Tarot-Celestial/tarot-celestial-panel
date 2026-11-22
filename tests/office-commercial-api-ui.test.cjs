@@ -20,6 +20,10 @@ test("API requires verified auth, strips caller actor, validates cursor/body and
  assert.equal((await f.route.GET(new Request("http://test.invalid?before=2026-11-01"))).status,400);
  assert.equal((await post({...body,action:"send"})).status,400);assert.equal((await post({...body,action:"resolve",outcome:"other",note:""})).status,400);
  assert.equal((await post(body)).status,200);assert.equal(f.calls[0].name,"office_commercial_change");assert.equal(f.calls[0].args.p_actor,user);
+ assert.equal((await post({...body,action:"resolve",outcome:"no_inquiry"})).status,200);
+ assert.equal(f.calls.at(-1).args.p_outcome,"no_inquiry");
+ assert.equal((await f.route.GET(new Request("http://test.invalid?state=reply_window"))).status,200);
+ assert.equal(f.calls.at(-1).args.p_filter,"reply_window");
 });
 const example={opportunity_id:id,name:"Contacto de prueba",reason:"needs_personal_response",channel:"instagram",kind:"message",state:"open",owner_id:null,owner_name:null,
   version:1,opened_at:"2026-11-01T11:00:00Z",latest_inbound_at:"2026-11-01T12:00:00Z",capture_status:"handoff",thread_id:id};
@@ -38,6 +42,7 @@ test("inbox renders real case detail, claims it, links the correct Central and r
  const rendered=()=>JSON.stringify(tree.toJSON()),button=s=>tree.root.findAllByType("button").find(b=>b.children.includes(s));
  assert.match(rendered(),/respuesta personal/);assert.equal(calls.filter(([,r])=>r?.method==="POST").length,0);assert.ok(calls[0][0].includes("id="+id));
  await act(async()=>{await button("Tomar caso").props.onClick();});assert.match(rendered(),/En atención/);
+ assert.ok(tree.root.findAllByType("option").some(o=>o.props.value==="no_inquiry" && o.children.includes("Sin solicitud de consulta")));
  assert.ok(tree.root.findAllByType("a").some(a=>a.props.href==="/panel-central?tab=comercial&caso="+id+"&origen=1"));
  await act(async()=>{await button("Liberar para otro operador").props.onClick();});assert.ok(button("Tomar caso"));
  assert.deepEqual(calls.filter(([,r])=>r?.method==="POST").map(([,r])=>JSON.parse(r.body).action),["claim","release"]);

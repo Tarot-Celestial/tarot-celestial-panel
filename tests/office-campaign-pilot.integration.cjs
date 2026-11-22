@@ -23,18 +23,18 @@ async function pay(seq,client,amount,currency,at,extra={}) {
 }
 before(async()=>{
   db=new PGlite();
-  await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
+  await db.exec(`set time zone 'UTC'; create role anon; create role authenticated; create role service_role bypassrls;
     alter default privileges in schema public grant all on tables to service_role,anon,authenticated;
     alter default privileges in schema public grant execute on functions to service_role,anon,authenticated;
     create table workers(id uuid primary key,display_name text,user_id uuid);
     create function office_actor(p_user uuid) returns uuid language sql as $$ select id from public.workers where user_id=p_user $$;
-    create table crm_clientes(id uuid primary key,origen text);
+    create table crm_clientes(id uuid primary key,origen text,pais text);
     create table captacion_leads(id uuid primary key,cliente_id uuid,campaign_name text,form_name text,origen text);
     create table meta_lead_events(leadgen_id text,status text,page_id text,form_id text,campaign_id text,cliente_id uuid,captacion_lead_id uuid,
       meta_created_at timestamptz,received_at timestamptz,inserted_at timestamptz,payload jsonb);
     create table crm_cliente_pagos(id uuid,cliente_id uuid,importe numeric,moneda text,estado text,created_at timestamptz,referencia_externa text,
       stripe_session_id text,payment_intent text,paypal_capture_id text,paypal_order_id text,benefits_context jsonb,source_rendimiento_id uuid);
-    create table rendimiento_llamadas(id uuid,cliente_id text,importe numeric,fecha_hora timestamptz,created_at timestamptz,cliente_compra_minutos boolean,telefonista_worker_id text);
+    create table rendimiento_llamadas(id uuid,cliente_id text,importe numeric,fecha_hora timestamptz,created_at timestamptz,cliente_compra_minutos boolean,telefonista_worker_id text,tiempo numeric,usa_minutos boolean,usa_7_free boolean);
     create table cliente_payment_attempts(id uuid,cliente_id uuid,amount numeric,currency text,status text,completed_at timestamptz,created_at timestamptz,provider text,order_id text,provider_response jsonb);
     create table cliente_oracle_credit_movements(id uuid,cliente_id uuid,amount int,movement_type text,reference text,meta jsonb,created_at timestamptz);
     create table cliente_oracle_question_movements(like cliente_oracle_credit_movements);
@@ -42,10 +42,12 @@ before(async()=>{
     create table cliente_chat_payment_links(id uuid,cliente_id uuid,amount numeric,created_at timestamptz,paid_at timestamptz,status text,stripe_session_id text);
     create table cliente_chat_creditos(id uuid,cliente_id uuid,cantidad int,tipo text,created_at timestamptz,meta jsonb);
     create table office_meta_verified_clients(client_id uuid,contact_at timestamptz,opportunity_id uuid,channel text,bound_at timestamptz);
-    create table office_capture_opportunities(id uuid,channel text,kind text,account_id text,lead_id uuid,client_id uuid);
-    create table office_capture_attempts(request_id uuid,opportunity_id uuid,completed_at timestamptz,outcome text,receipt_id text,route text);
+    create table office_capture_opportunities(id uuid,channel text,kind text,account_id text,lead_id uuid,client_id uuid,thread_id uuid);
+    create table office_capture_attempts(request_id uuid,opportunity_id uuid,completed_at timestamptz,outcome text,receipt_id text,route text,source_id text);
+    create table tc_instagram_sends(thread_id uuid,status text,remote_message_id text,completed_at timestamptz,resolved_at timestamptz);
+    create table tc_facebook_sends(like tc_instagram_sends);
     create table captacion_whatsapp_deliveries(request_id uuid,lead_id uuid,cliente_id uuid,updated_at timestamptz,worker_id uuid,status text,message_sid text,submission_key text,id uuid default gen_random_uuid());
-    create table captacion_whatsapp_delivery_events(delivery_id uuid,status text,message_sid text,created_at timestamptz);
+    create table captacion_whatsapp_delivery_events(delivery_id uuid,status text,message_sid text,created_at timestamptz,id bigint generated always as identity);
     create table office_commercial_changes(opportunity_id uuid,created_at timestamptz,actor_id uuid,action text);
   `);
   const history=migration("_crm_activity_month_history_2026.sql");
@@ -53,6 +55,7 @@ before(async()=>{
   const canonical=migration("_office_crm_monthly_cohorts.sql");
   await db.exec(canonical.slice(canonical.indexOf("create function"),canonical.indexOf("-- Keep the phase 4")));
   await db.exec(migration("_office_campaign_pilot.sql"));
+  await db.exec(migration("_office_conversion_funnel.sql"));
   await query("insert into workers values($1,'Operador de prueba',$2)",[id(990),actor]);
   for(let c=1;c<=13;c++)await query("insert into crm_clientes values($1,$2)",[id(c),c===11?"orion":"meta"]);
   for(let c=1;c<=8;c++)await form(c,c,"101",c===7?"2024-04-24":"2024-04-03");
@@ -81,6 +84,40 @@ before(async()=>{
   await query("insert into captacion_whatsapp_delivery_events select id,'accepted','receiptB','2024-04-06' from captacion_whatsapp_deliveries where request_id=$1",[id(601)]);
 });
 after(async()=>{await db?.close();});
+
+test("embudo por país exige recibo, conserva compras sin respuesta previa y compara sólo cohortes observables",async()=>{
+  await db.exec("begin");
+  try {
+    await query("update crm_clientes set pais=case when id=$1 then 'ES' when id=$2 then 'USA' else 'texto ajeno a un país' end",[id(1),id(7)]);
+    await query("update meta_lead_events set payload=$1 where leadgen_id='2'",[{lead:{field_data:[{name:"country",values:["AR"]}]}}]);
+    await query("update office_capture_attempts set source_id='1' where request_id=$1",[id(600)]);
+    await query("update rendimiento_llamadas set tiempo=4,usa_minutos=true where cliente_id=$1",[id(1)]);
+    await query("insert into office_capture_opportunities(id,channel,kind,account_id,client_id,thread_id) values($1,'instagram','message','account',$2,$3)",
+      [id(730),id(7),id(732)]);
+    await query("insert into office_meta_verified_clients values($1,'2024-04-24 00:01Z',$2,'instagram','2024-04-24 01:00Z')",[id(7),id(730)]);
+    await query("insert into tc_instagram_sends values($1,'sent','remote','2024-04-24 00:05Z',null),($1,'uncertain','maybe','2024-04-24 00:02Z',null),($1,'confirmed_sent','late','2024-04-24 00:03Z','2024-07-02')",[id(732)]);
+    await query("insert into captacion_whatsapp_deliveries(request_id,lead_id,cliente_id,updated_at,status,message_sid,submission_key) values($1,$2,$3,'2024-04-05','undelivered','never','meta:5'),($4,$5,$6,'2024-04-04','sent','wrong','meta:99')",
+      [id(710),id(105),id(5),id(711),id(106),id(6)]);
+    await query("insert into captacion_whatsapp_delivery_events(delivery_id,status,message_sid,created_at) select id,'accepted','never','2024-04-04' from captacion_whatsapp_deliveries where message_sid='never'");
+    const q="select office_conversion_funnel($1,'101','2024-04-01','Europe/Madrid',$2,$3) r";
+    const countries={es:"España",ar:"Argentina",usa:"Estados Unidos"};
+    const current=(await query(q,[actor,"2024-04-25",countries]))[0].r;
+    assert.deepEqual(current.funnel.total,{country:null,contacts:8,replied:2,median_reply_minutes:722.5,first_buyers:1,
+      buyers_after_reply:1,phone_routed:0,oracle_routed:1,without_reply_or_purchase:6,matured_contacts:7,buyers_within_7d:1,recorded_consultations:1});
+    assert.deepEqual(current.funnel.countries.map(x=>[x.country,x.contacts,x.first_buyers]),[[null,5,0],["Argentina",1,0],["España",1,1],["Estados Unidos",1,0]]);
+    assert.equal(current.funnel.countries.find(c=>c.country==="Estados Unidos").matured_contacts,0);
+    const later=(await query(q,[actor,"2024-06-30",countries]))[0].r;
+    assert.equal(later.funnel.total.first_buyers,2);assert.equal(later.funnel.total.matured_contacts,8);assert.equal(later.funnel.total.buyers_within_7d,2);
+    await query("update office_capture_attempts set outcome='failed' where request_id=$1",[id(600)]);
+    await query("delete from captacion_whatsapp_deliveries where cliente_id=$1",[id(1)]);
+    const noReceipt=(await query(q,[actor,"2024-06-30",countries]))[0].r;
+    assert.equal(noReceipt.funnel.total.first_buyers,2);assert.equal(noReceipt.funnel.total.replied,1);assert.equal(noReceipt.funnel.total.buyers_after_reply,1);
+    assert.equal(noReceipt.funnel.total.recorded_consultations,1);
+    const permission="office_conversion_funnel(uuid,text,date,text,timestamptz,jsonb,timestamptz,uuid,date)";
+    for(const role of ["anon","authenticated"])assert.equal((await query("select has_function_privilege($1,$2,'execute') allowed",[role,permission]))[0].allowed,false);
+    await assert.rejects(query(q,[id(85),"2024-04-25",countries]),/OFFICE_INVALID/);
+  } finally {await db.exec("rollback");}
+});
 
 test("deduplica contactos y adjudica primeras compras comprobadas en todas las campañas y canales",async()=>{
   const r=await report("101","2024-04-15");

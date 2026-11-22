@@ -43,17 +43,20 @@ test("Insights exige la campaña, cuenta, divisa y fecha exactas; diferencia cer
 });
 
 const actor="12345678-0000-4000-8000-000000000000";
-function makeRoute({allowed=true,imported=null,liveSpend=null,liveCurrency=null,empty=false}={}) {
+function makeRoute({allowed=true,imported=null,liveSpend=null,liveCurrency=null,empty=false,wrongFunnel=false}={}) {
   const calls=[],catalog=empty?[]:[{id,name:"Campaña de prueba"}];
+  const row={country:null,contacts:3,replied:1,first_buyers:2,buyers_after_reply:1,phone_routed:1,oracle_routed:0,
+    without_reply_or_purchase:1,median_reply_minutes:5,matured_contacts:2,buyers_within_7d:1,recorded_consultations:1};
   const db={rpc:async(name,args)=>{
     calls.push({name,args});
     if(name==="office_pilot_catalog")return {data:catalog};
     if(name==="office_pilot_record_csv")return {data:actor};
     return {data:{campaign:args.p_campaign,month,zone:args.p_zone,as_of:args.p_as_of,contacts:3,first_buyers:2,cost_first_buyers:1,
+      funnel:{total:row,countries:[{...row,contacts:wrongFunnel?4:3,country:"España"}]},
       unattributed_first_purchases:5,amounts:[{currency:"EUR",receipts:3,first_count:2,first_gross:20,gross:25,confirmed:25,refund_flagged:0}],buyers:[],has_more:false}};
   },from:()=>{const chain={select:()=>chain,eq:()=>chain,order:()=>chain,limit:()=>chain,maybeSingle:async()=>({data:imported})};return chain;}};
   const helpers=load(spendFile);
-  const api=load(routeFile,{"@/lib/server/office-campaign-spend":{...helpers,readPilotSpend:async()=>({spend:liveSpend,reason:"no_access",account:"99",zone,currency:liveCurrency})},
+  const api=load(routeFile,{"@/lib/countries":load("src/lib/countries.ts"),"@/lib/server/office-campaign-spend":{...helpers,readPilotSpend:async()=>({spend:liveSpend,reason:"no_access",account:"99",zone,currency:liveCurrency})},
     "@/lib/server/office-access":{officeAccess:async()=>allowed?{ok:true,authUserId:actor,admin:db}:{ok:false,response:new Response(null,{status:403})},
       officeUuid:v=>typeof v==="string"&&/^[\da-f-]{36}$/.test(v),officeDatabaseError:()=>new Response(null,{status:500}),
       officeError:(error,status)=>Response.json({error},{status}),officeJson:x=>Response.json(x)}});
@@ -66,6 +69,9 @@ test("API privada emplea solo el gasto de mayor autoridad, CPA de su período y 
     file_sha256:"a".repeat(64),recorded_at:"2024-04-18T00:00:00Z",workers:{display_name:"Ana"}};
   f=makeRoute({imported});let r=await (await f.get()).json();assert.equal(r.cpa,45);assert.equal(r.spend.source,"ads_manager_csv");
   assert.equal(r.spend.worker,"Ana");assert.equal(f.calls[1].args.p_through,"2024-04-17");assert.equal(r.unattributed_first_purchases,5);
+  assert.equal(f.calls[1].name,"office_conversion_funnel");assert.equal(f.calls[1].args.p_country_names.usa,"Estados Unidos");
+  assert.equal(r.funnel.countries[0].country,"España");assert.equal(r.funnel.total.median_reply_minutes,5);
+  assert.equal((await makeRoute({wrongFunnel:true}).get()).status,503);
   f=makeRoute({imported,liveCurrency:"USD"});r=await (await f.get()).json();assert.equal(r.spend,null);assert.equal(r.spend_reason,"conflicting_account");
   f=makeRoute({imported,liveSpend:{...imported,source:"meta_insights",amount:30,zone,from:"2024-04-01",through:"2024-04-30"}});
   r=await (await f.get()).json();assert.equal(r.cpa,30);assert.equal(r.spend.source,"meta_insights");
@@ -85,7 +91,7 @@ test("el enlace mantiene campaña y mes al volver atrás y el formulario no sube
   const stack=[href],calls=[];
   const win={get location(){return {href};},history:{state:null,replaceState(_s,_t,u){href=u.href;stack[stack.length-1]=href;},
     pushState(_s,_t,u){href=u.href;stack.push(href);}},addEventListener(){},removeEventListener(){}};
-  const View=load("src/features/office/OfficeCampaignPilot.tsx",{"./office-client":{officeRequest:async(url,req)=>{
+  const View=load("src/features/office/OfficeCampaignPilot.tsx",{"./OfficeCampaignConversion":{default:()=>null},"./office-client":{officeRequest:async(url,req)=>{
     assert.equal(req.method,undefined);calls.push(url);const q=new URL(url,"http://test.local").searchParams,sel=q.get("campaign")||id;
     return {ok:true,month:q.get("month"),selected:{id:sel,name:"Campaña de prueba"},campaigns:[{id:sel,name:"Campaña de prueba"}],
       zone,as_of:"2024-04-20T00:00:00Z",period_from:"2024-04-01",period_through:"2024-04-20",contacts:3,first_buyers:2,cost_first_buyers:0,
