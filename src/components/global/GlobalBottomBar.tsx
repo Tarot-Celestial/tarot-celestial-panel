@@ -31,6 +31,7 @@ function shouldShowDock(pathname: string | null) {
   const path = pathname || "";
   if (path === "/admin/cerebro" || path.startsWith("/admin/cerebro/")) return false;
   if (path === "/admin/contabilidad" || path.startsWith("/admin/contabilidad/")) return false;
+  if (path === "/admin/oficina" || path.startsWith("/admin/oficina/")) return false;
   return path.startsWith("/admin") || path.startsWith("/panel-central") || path.startsWith("/panel-tarotista");
 }
 
