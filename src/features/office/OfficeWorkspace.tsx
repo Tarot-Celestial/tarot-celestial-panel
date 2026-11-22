@@ -4,6 +4,7 @@ import { useRef, useState, type CSSProperties } from "react";
 import { Activity, ArrowUpRight, Boxes, CheckCheck, ChevronDown, ChevronRight, ClipboardList, Clock3, FileStack, Layers3, ListChecks, Network, Orbit, UsersRound } from "lucide-react";
 import { officeDepartments } from "./catalog";
 import OfficeMap from "./OfficeMap";
+import OfficeCatalog from "./OfficeCatalog";
 import OfficeWork, { DepartmentOwner } from "./OfficeWork";
 import type { OfficeSnapshot } from "./model";
 import { latestVersions } from "./office-versions";
@@ -24,7 +25,11 @@ const eventLabels: Record<string, string> = {
 const eventDate = new Intl.DateTimeFormat("es-ES", { timeZone: "Europe/Madrid", dateStyle: "short", timeStyle: "short" });
 
 export default function OfficeWorkspace({ data, reload }: { data: OfficeSnapshot; reload: () => Promise<void> }) {
-  const [view, setView] = useState<View>("map");
+  const [entry, setEntry] = useState<{ task?: string; version?: string; compose?: boolean }>(() => {
+    const task = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("task");
+    return task && data.tasks.some(t => t.id === task) ? { task } : {};
+  });
+  const [view, setView] = useState<View>(entry.task ? "tasks" : "map");
   const [selectedId, selectId] = useState("marketing");
   const [scope, setScope] = useState<string>();
   const details = useRef<HTMLElement>(null);
@@ -39,7 +44,12 @@ export default function OfficeWorkspace({ data, reload }: { data: OfficeSnapshot
   const events = data.events.filter(event => event.department_id === selected.id || event.previous_department_id === selected.id).slice(0, 5);
   const openTasks = data.tasks.filter(task => task.status !== "completado" && task.status !== "cancelado").length;
   const board = view === "map" || view === "org";
-  function openView(next: View, departmentId?: string) {
+  function openView(next: View, departmentId?: string, target: typeof entry = {}) {
+    setEntry(target);
+    const url = new URL(window.location.href);
+    if (target.task) url.searchParams.set("task", target.task);
+    else url.searchParams.delete("task");
+    window.history.replaceState(window.history.state, "", url);
     setScope(departmentId);
     setView(next);
   }
@@ -54,7 +64,8 @@ export default function OfficeWorkspace({ data, reload }: { data: OfficeSnapshot
       <div><div className={s.breadcrumb}><span>Administración</span><ChevronRight size={13} aria-hidden="true"/> Oficina</div>
         <h1>Oficina <em>Celestial</em></h1></div>
       <div className={s.director}><div className={s.directorMark}><Orbit size={26} strokeWidth={1.35} aria-hidden="true"/></div>
-        <div><span>Dirección operativa</span><strong>Atlas</strong></div></div>
+        <div><span>Dirección operativa</span><strong>Atlas</strong></div>
+        {board && <button type="button" className={s.atlasCta} onClick={() => openView("tasks", "marketing", { compose: true })}>Encargar a Atlas</button>}</div>
     </div>
     <div className={s.stats} aria-label="Resumen actual de Oficina">
       <div><Boxes/><span>Departamentos</span><strong>{data.departments.length}</strong></div>
@@ -74,7 +85,7 @@ export default function OfficeWorkspace({ data, reload }: { data: OfficeSnapshot
         <OfficeMap view={view === "org" ? "org" : "map"} selectedId={selected.id} onSelect={inspect} onOpenOrg={() => openView("org")}/>
       </section>
       <aside ref={details} tabIndex={-1} className={s.inspector} aria-label="Ficha de departamento" style={{ "--area-color": selected.color } as CSSProperties}>
-        <div className={s.inspectorTop}><span>Ficha de departamento</span><span className={s.planned}>Planificado</span></div>
+        <div className={s.inspectorTop}><span>Ficha de departamento</span><span className={s.planned}>{selected.id === "marketing" || selected.id === "creacion-contenido" ? "Borradores" : "Planificado"}</span></div>
         <div className={s.areaTitle}><span className={s.areaMark} aria-hidden="true">{selected.initials}</span><h2>{selected.name}</h2></div>
         <p className={s.purpose}>{department?.purpose || selected.purpose}</p>
         {department && <DepartmentOwner key={department.id} departmentId={department.id} data={data} reload={reload}/>}
@@ -86,7 +97,8 @@ export default function OfficeWorkspace({ data, reload }: { data: OfficeSnapshot
         <details className={s.detail}><summary><FileStack/>Entregables <ChevronDown/></summary>
           {areaDeliverables.length ? <ul>{areaDeliverables.map(item => <li key={item.id}>{item.title} · v{item.version}</li>)}</ul> : <p>Todavía no hay entregables.</p>}</details>
         <details className={s.detail}><summary><UsersRound/>Equipo y conexiones <ChevronDown/></summary><dl>
-          <dt>Dirección</dt><dd>Atlas</dd><dt>Especialista del área</dt><dd>Planificado</dd><dt>Herramientas externas</dt><dd>Pendiente de conexión</dd></dl></details>
+          <dt>Dirección</dt><dd>Atlas</dd><dt>Especialista del área</dt><dd>{selected.id === "marketing" ? "Redacción para Marketing" : selected.id === "creacion-contenido" ? "Creación de piezas" : "Planificado"}</dd><dt>Herramientas externas</dt><dd>{selected.id === "marketing" || selected.id === "creacion-contenido" ? "Estado en cada ejecución" : "Pendiente de conexión"}</dd></dl></details>
+        {selected.id === "marketing" && <OfficeCatalog />}
         <details className={s.detail}><summary><Activity/>Indicadores, costes y avisos <ChevronDown/></summary>
           <p>Los recuentos corresponden a los registros actuales de esta Oficina.</p><dl><dt>Coste de IA</dt><dd>Sin datos</dd><dt>Alertas operativas</dt><dd>Planificado</dd></dl></details>
         <details className={s.detail}><summary><Clock3/>Coordinación e historial <ChevronDown/></summary>
@@ -95,6 +107,7 @@ export default function OfficeWorkspace({ data, reload }: { data: OfficeSnapshot
             <small>{data.workers.find(worker => worker.id === event.actor_id)?.name || "Personal"} · {eventDate.format(new Date(event.created_at))} (Madrid)</small>
           </li>)}</ul> : <p>Todavía no hay actividad registrada.</p>}</details>
       </aside>
-    </div> : <OfficeWork key={`${view}-${scope || "todos"}`} view={view === "reviews" ? "reviews" : "tasks"} departmentId={scope} data={data} reload={reload}/>}
+    </div> : <OfficeWork key={`${view}-${scope || "todos"}-${entry.task || (entry.compose ? "atlas" : "")}`} view={view === "reviews" ? "reviews" : "tasks"} departmentId={scope}
+      initialTask={entry.task} preferredVersion={entry.version} composeAtlas={entry.compose} onOpenTask={(task, version) => openView("tasks", undefined, { task, version })} data={data} reload={reload}/>}
   </main>;
 }

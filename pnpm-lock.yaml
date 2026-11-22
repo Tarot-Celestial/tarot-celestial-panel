@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@resvg/resvg-wasm':
+        specifier: 2.6.2
+        version: 2.6.2
       '@supabase/supabase-js':
         specifier: ^2.49.1
         version: 2.117.3
@@ -62,6 +65,10 @@ importers:
         version: 5.9.3
 
 packages:
+
+  '@resvg/resvg-wasm@2.6.2':
+    resolution: {integrity: sha512-FqALmHI8D4o6lk/LRWDnhw95z5eO+eAa6ORjVg09YRR7BkcM6oPHU9uyC0gtQG5vpFLvgpeU4+zEAz2H8APHNw==}
+    engines: {node: '>= 10'}
 
   '@derhuerst/http-basic@8.2.4':
     resolution: {integrity: sha512-F9rL9k9Xjf5blCz8HsJRO4diy111cayL2vkY2XE4r4t3n0yPXVYy3KD3nJ1qbrSn9743UWSXH4IwuCa/HWlGFw==}
@@ -615,6 +622,8 @@ packages:
     engines: {node: '>=6.0'}
 
 snapshots:
+
+  '@resvg/resvg-wasm@2.6.2': {}
 
   '@derhuerst/http-basic@8.2.4':
     dependencies:

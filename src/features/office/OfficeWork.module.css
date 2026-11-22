@@ -7,6 +7,13 @@
 }
 .root, .card, .section, .stack, .subform { display: grid; gap: 14px; align-content: start; min-width: 0; }
 .root { gap: 18px; }
+.runHeading { display: flex; align-items: center; gap: 8px; }
+.runLink { color: var(--accent); text-underline-offset: 2px; }
+.stages { display: flex; flex-wrap: wrap; gap: 7px; list-style: none; padding: 0; margin: 0; }
+.stages li { flex: 1 1 115px; display: grid; gap: 3px; padding: 9px; border: 1px solid var(--line); border-radius: 8px; }
+.stages li[aria-current] { border-color: #bb9a64; }
+.stages strong, .stages span { font-size: .76rem; }
+.stages span { color: var(--soft); }
 .root h2, .root h3, .root h4, .root h5, .root p, .root dl, .root dd { margin: 0; }
 .root h2 { font-size: clamp(1.45rem, 3.2vw, 2rem); letter-spacing: -.035em; }
 .root h3 { font-size: 1.16rem; line-height: 1.4; }
@@ -63,6 +70,7 @@
 .body, .root h3, .root h5, .root dd { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
 .reviewResult, .details { font-size: .85rem; line-height: 1.55; }
 .details summary { cursor: pointer; color: var(--soft); padding: 4px 0; }
+.preview { display: block; width: auto; max-width: 100%; height: auto; max-height: 70vh; margin: 9px 0; border-radius: 8px; }
 .details .record { margin-top: 9px; }
 .timeline { display: grid; gap: 12px; list-style: none; padding: 0 0 0 10px; margin: 0; border-left: 2px solid var(--line); }
 .timeline li { display: grid; gap: 3px; min-width: 0; }

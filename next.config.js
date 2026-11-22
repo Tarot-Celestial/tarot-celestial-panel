@@ -10,6 +10,8 @@ const nextConfig = {
     // is not JavaScript, so include the whole package explicitly in the trace.
     outputFileTracingIncludes: {
       "/api/admin/social-ai": ["./node_modules/ffmpeg-static/**/*"],
+      "/api/admin/office/runs": ["./src/lib/server/office-art/*", "./node_modules/@resvg/resvg-wasm/index_bg.wasm", "./node_modules/next/dist/compiled/@vercel/og/noto-sans-v27-latin-regular.ttf"],
+      "/api/cron/office-runs": ["./src/lib/server/office-art/*", "./node_modules/@resvg/resvg-wasm/index_bg.wasm", "./node_modules/next/dist/compiled/@vercel/og/noto-sans-v27-latin-regular.ttf"],
     },
   },
 }
