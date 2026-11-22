@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { officeRequest } from "./office-client";
+import OfficeFormWhatsApp from "./OfficeFormWhatsApp";
 import s from "./OfficeMonthlyReport.module.css";
 
 const path = "/api/admin/office/capture-settings";
 const countries: Record<string, string> = { PR: "Puerto Rico", US: "Estados Unidos", ES: "España", DO: "República Dominicana", CL: "Chile" };
 const health: Record<string, string> = { connected: "Bandeja accesible", checked: "Sincronización comprobada", partial: "Sincronización parcial",
+  paused: "En pausa por la regla de autonomía",
   cooldown: "En espera de sincronización", blocked: "Revisar conexión", offline: "Sin conexión", not_configured: "Pendiente de conexión", unavailable: "No disponible",
   not_authorized: "Pendiente de autorización" };
 type Settings = { enabled: boolean; last_round_at: string | null; last_round: {social: {channel: string; state: string}[]; whatsapp: string} | null;
@@ -39,7 +41,7 @@ export default function OfficeCaptureSettings() {
     <h3 className={s.subheading}>Respuestas automáticas</h3>
     {error && <p role="alert" className={s.notice}>{error} <button type="button" onClick={() => setRefresh(n => n + 1)}>Volver a consultar</button></p>}
     {settings ? <>
-      <div className={s.controls}><p role="status" className={s.note}>{settings.enabled ? "Activas" : "En pausa"}</p>
+      <div className={s.controls}><p role="status" className={s.note}>{settings.enabled ? "Habilitadas según las reglas de Autonomía" : "En pausa"}</p>
         <button type="button" disabled={busy} onClick={() => change(!settings.enabled)}>{settings.enabled ? "Pausar respuestas" : "Activar respuestas"}</button></div>
       <p className={s.note}>Marketing atiende consultas en el canal de entrada. Si conoce el país, ofrece su línea habilitada o el Oráculo. Si necesita saber el país, lo pregunta.</p>
       {settings.last_round_at && <p className={s.note}>Última ronda · {new Intl.DateTimeFormat("es-ES", {timeZone:"Europe/Madrid",dateStyle:"short",timeStyle:"short"}).format(new Date(settings.last_round_at))} (Madrid)</p>}
@@ -51,6 +53,7 @@ export default function OfficeCaptureSettings() {
           </td></tr>)}</tbody></table></div>
         <p className={s.note}>Actualiza este directorio cuando cambie un encaminamiento en Premium Numbers.</p>
       </details>
+      <OfficeFormWhatsApp/>
     </> : !error && <p role="status" className={s.note}>Consultando las líneas y la actividad…</p>}
   </section>;
 }

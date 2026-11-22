@@ -1,0 +1,12 @@
+.inbox{display:grid;gap:1rem;color:#f4ecf8;background:#201a2a;padding:clamp(1rem,2.5vw,2rem);border:1px solid #4c3e53;border-radius:16px;min-width:0}
+.inbox header,.inbox nav{display:flex;justify-content:space-between;align-items:flex-start;gap:.8rem;flex-wrap:wrap}
+.inbox h2,.inbox h3,.inbox p,.inbox dl,.inbox dd{margin:0}
+.inbox p,.inbox dt,.inbox small{color:#d2c4d9}.inbox header p{margin-top:.3rem}.inbox nav{align-items:center}
+.inbox button,.inbox select,.inbox textarea{font:inherit;color:inherit;background:#302639;border:1px solid #76647c;border-radius:8px;padding:.55rem .8rem}
+.inbox button,.inbox summary{cursor:pointer}.inbox button{justify-self:start}.inbox button:disabled{opacity:.6;cursor:default}
+.inbox a,.inbox summary{color:#efcf91}.inbox :focus-visible{outline:2px solid #f0d69e;outline-offset:3px}
+.case{background:#292230;border:1px solid #504256;border-radius:12px;padding:1rem;display:grid;gap:.8rem;min-width:0;overflow-wrap:anywhere}
+.case dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,165px),1fr));gap:.7rem}.case dt{font-size:.83rem}.case dd{margin-top:.2rem}
+.state{border:1px solid #756342;border-radius:6px;color:#f2d8a8;padding:.25rem .55rem;font-size:.83rem}
+.case form,.case form label{display:grid;gap:.45rem}.case form{margin-top:.6rem;max-width:32rem}.case textarea{resize:vertical;min-height:3.5rem}.case details p{margin:.5rem 0}
+@media(max-width:580px){.inbox{padding:.85rem}.case{padding:.75rem}.inbox select{max-width:100%}}

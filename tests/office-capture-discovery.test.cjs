@@ -20,6 +20,7 @@ function setup(options={}){
    const b={select(){return b;},eq(){return b;},in(){return {data:options.known || [],error:null};}};return b;
  },async rpc(name,args){
    if(name==="office_capture_discover")return {data:{processed:9},error:null};
+   if(name==="office_autonomy_check")return {data:options.pausedAccount===args.p_account?"paused":"allow"};
    assert.equal(name,"office_capture_record_whatsapp");batches.push(args);return {data:args.p_rows.length,error:null};
  }};
  const gateway={whatsappGatewayConfig:()=>({configured:options.configured!==false,mode:"shared"}),async whatsappGatewayFetch(url,init){
@@ -38,8 +39,9 @@ function setup(options={}){
    const c=chats.find(c=>url.includes(encodeURIComponent(c.id)));
    assert.ok(c);return {status:200,json:{ok:true,chat:c,messages:histories[c.id]}};
  }};
- const mod=source("office-capture-discovery",{"./admin-access":{},"./whatsapp-attention":parser,"./whatsapp-gateway":gateway,"./office-social-policy":policy});
- return {discover:()=>mod.discoverOfficeCapture(db),calls,batches,mod};
+ const mod=source("office-capture-discovery",{"./admin-access":{},"./whatsapp-attention":parser,"./whatsapp-gateway":gateway,"./office-social-policy":policy,
+   "./office-discovery-policy":source("office-discovery-policy",{})});
+ return {discover:()=>mod.discoverOfficeCapture(db,"test-batch"),calls,batches,mod};
 }
 test("only explicit business inquiries are persisted; group and family texts never enter the private source batch",async()=>{
  const f=setup(),r=await f.discover();assert.equal(r.whatsapp.state,"connected");assert.equal(r.database.processed,9);
@@ -60,6 +62,10 @@ test("missing configuration and offline gateway preserve independently verified 
  for(const [options,expected] of [[{configured:false},"not_configured"],[{offline:true},"offline"]]){
    const f=setup(options),r=await f.discover();assert.equal(r.whatsapp.state,expected);assert.equal(r.database.processed,9);assert.equal(f.batches.length,0);
  }
+});
+test("una cuenta de WhatsApp en pausa solo se identifica, sin leer la atención ni abrir chats",async()=>{
+ const f=setup({pausedAccount:own});assert.equal((await f.discover()).whatsapp.state,"paused");
+ assert.deepEqual(f.calls,["/sessions/central/status"]);assert.equal(f.batches.length,0);
 });
 test("social metadata feed never receives private text while the service-only sink carries the exact source",async()=>{
  const native=[],office=[],db={from(t){assert.equal(t,"tc_social_inbox_activity");return {async upsert(rows){native.push(...rows);return {error:null};}};},

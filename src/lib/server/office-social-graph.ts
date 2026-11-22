@@ -1,8 +1,8 @@
 import "server-only";
-import { instagramGraph, InstagramError } from "./instagram-graph";
+import { instagramConnection, instagramGraph, InstagramError } from "./instagram-graph";
 import { instagramOfficeHistory, instagramSend } from "./instagram-inbox";
 import { verifyOfficeInstagramIdentity } from "./office-instagram-graph";
-import { facebookGraph, FacebookError } from "./facebook-graph";
+import { facebookConnection, facebookGraph, FacebookError } from "./facebook-graph";
 import { facebookOfficeHistory, facebookSend } from "./facebook-inbox";
 import { facebookReplyPermissions } from "./facebook-diagnostics";
 import { ensureInstagramFresh } from "./instagram-sync";
@@ -78,12 +78,13 @@ export async function readSocialProof(job: CaptureJob) {
   const context = job.channel === "instagram" ? await instagramOfficeHistory(job.thread_id,job.account_id) : await facebookOfficeHistory(job.thread_id,job.account_id);
   return verified(job,context);
 }
-export async function sendSocialReply(job: CaptureJob, proof: SocialProof, body: string, mode: "public" | "private") {
+export async function sendSocialReply(job: CaptureJob, proof: SocialProof, body: string, mode: "public" | "private", beforeSend: () => Promise<void>) {
   if (!job.actor_user_id) throw new DispatchDecision("DELEGATION_REQUIRED","blocked");
   const recheck = async (context: Context) => {
     const fresh = await verified(job,context);
     if (fresh.text !== proof.text || fresh.peerId !== proof.peerId || fresh.accountId !== proof.accountId ||
         fresh.lastReplyAt !== proof.lastReplyAt || !(mode === "private" ? fresh.privateAllowed : fresh.publicAllowed)) throw new DispatchDecision("SOURCE_CHANGED");
+    await beforeSend();
   };
   const command = { threadId:job.thread_id, requestId:job.request_id, text:body, replyMode:mode, expectedLastReplyAt:proof.lastReplyAt };
   const result = job.channel === "instagram" ? await instagramSend(job.actor_user_id,command,(account,row,loaded) => recheck({account,row,loaded})) :
@@ -92,11 +93,16 @@ export async function sendSocialReply(job: CaptureJob, proof: SocialProof, body:
   return String(result.messageId);
 }
 
-export async function syncOfficeSocialInboxes() {
-  const checks = await Promise.allSettled([ensureInstagramFresh(),ensureFacebookFresh()]);
+export async function syncOfficeSocialInboxes(allow:(channel:string,account:string)=>Promise<boolean>) {
+  const checks = await Promise.allSettled([
+    (async()=>{ const account=await instagramConnection();
+      return await allow("instagram",account.accountId) ? ensureInstagramFresh(account) : "paused" as const; })(),
+    (async()=>{ const account=facebookConnection();
+      return await allow("facebook",account.accountId) ? ensureFacebookFresh(account) : "paused" as const; })(),
+  ]);
   return checks.map((check,index) => {
     if (check.status === "rejected") return { channel:index ? "facebook" : "instagram",state:"blocked" };
     const cursor = check.value;
-    return { channel:index ? "facebook" : "instagram",state:cursor == null ? "cooldown" : cursor.messageError || cursor.commentError ? "partial" : "checked" };
+    return { channel:index ? "facebook" : "instagram",state:cursor === "paused" ? "paused" : cursor == null ? "cooldown" : cursor.messageError || cursor.commentError ? "partial" : "checked" };
   });
 }

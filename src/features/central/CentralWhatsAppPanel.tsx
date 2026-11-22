@@ -23,6 +23,7 @@ type GatewayState = "idle" | "connecting" | "qr" | "connected";
 
 type StatusPayload = {
   ok: boolean;
+  session?: string;
   error?: string;
   state?: GatewayState;
   reason?: string | null;
@@ -100,6 +101,7 @@ function dayLabel(ts: number) {
 
 function friendlyError(code: string | undefined) {
   switch (code) {
+    case "CASE_ACCOUNT_CHANGED": return "Cambió la cuenta de WhatsApp del caso. Comprueba la sesión antes de responder.";
     case "GATEWAY_NOT_CONFIGURED":
       return "La conexión de WhatsApp todavía no está preparada. Solicita al administrador que active el conector del PC.";
     case "GATEWAY_UNREACHABLE":
@@ -150,7 +152,9 @@ function Ticks({ status }: { status: number | null }) {
   return <CheckCheck size={14} className={status >= 4 ? styles.read : undefined} aria-label={status >= 4 ? "Leído" : "Entregado"} />;
 }
 
-export default function CentralWhatsAppPanel() {
+type CaseContact = {peer:string; account:string; session:string};
+export default function CentralWhatsAppPanel({initialContact}:{initialContact?:CaseContact} = {}) {
+  const expectedAccount=initialContact?.account, expectedSession=initialContact?.session, expectedPeer=initialContact?.peer;
   const sb = useMemo(() => supabaseBrowser(), []);
   const [status, setStatus] = useState<StatusPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -216,12 +220,13 @@ export default function CentralWhatsAppPanel() {
     const request = ++chatsRequestRef.current;
     const json = await api("chats");
     if (mountedRef.current && version === statusVersionRef.current && request === chatsRequestRef.current) {
-      const next = Array.isArray(json.chats) ? json.chats : [];
+      const next = Array.isArray(json.chats) ? json.chats.filter((c:Chat)=>!expectedPeer || (c.id===expectedPeer && !c.isGroup)) : [];
       chatsRef.current = next;
       setChats(next);
+      if(expectedPeer && next.some((c:Chat)=>c.id===expectedPeer)) setSelectedId(expectedPeer);
       setReadError(previous => previous && next.some((chat: Chat) => chat.id === previous.chatId && chat.unread === 0) ? null : previous);
     }
-  }, [api]);
+  }, [api,expectedPeer]);
 
   const markRead = useCallback(
     async (chatId: string) => {
@@ -295,6 +300,9 @@ export default function CentralWhatsAppPanel() {
       sessionChecked = true;
       setStatus(json);
       setError(null);
+      if(expectedAccount && (json.state!=="connected" || json.me?.id!==expectedAccount || json.session!==expectedSession)) {
+        setSelectedId(null);setChats([]);setMessages([]);lastRevRef.current=null;return;
+      }
 
       // La primera vez que se abre el apartado sin sesión, mostramos el QR directamente.
       if (json.state === "idle" && !json.reason && !autoStartRef.current) {
@@ -319,7 +327,7 @@ export default function CentralWhatsAppPanel() {
       }
       setError(friendlyError(code));
     } finally { pollingRef.current = false; }
-  }, [api, loadChats, loadMessages, start]);
+  }, [api, loadChats, loadMessages, start, expectedAccount, expectedSession]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -403,6 +411,10 @@ export default function CentralWhatsAppPanel() {
     ]);
     setDraft("");
     try {
+      if(expectedAccount){
+        const current:StatusPayload=await api("status");
+        if(current.state!=="connected" || current.me?.id!==expectedAccount || current.session!==expectedSession || chatId!==expectedPeer) throw new Error("CASE_ACCOUNT_CHANGED");
+      }
       await api("send", { method: "POST", body: { jid: chatId, text } });
       window.dispatchEvent(new Event("tc-whatsapp-changed"));
       await Promise.all([loadMessages(chatId), loadChats()]);
@@ -414,7 +426,7 @@ export default function CentralWhatsAppPanel() {
     } finally {
       if (mountedRef.current) setBusy(null);
     }
-  }, [api, busy, draft, loadChats, loadMessages]);
+  }, [api, busy, draft, loadChats, loadMessages, expectedAccount, expectedSession, expectedPeer]);
 
   const onComposerKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -425,6 +437,7 @@ export default function CentralWhatsAppPanel() {
 
   const startNewChat = async (event: FormEvent) => {
     event.preventDefault();
+    if(expectedPeer) return;
     const phone = newPhone.replace(/\D/g, "");
     const text = newText.trim();
     if (!phone || !text) return;
@@ -478,6 +491,9 @@ export default function CentralWhatsAppPanel() {
             ? { cls: styles.off, label: "Desconectado" }
             : { cls: styles.wait, label: "Comprobando…" };
 
+  if (expectedAccount && (!status || status.state!=="connected" || status.me?.id!==expectedAccount || status.session!==expectedSession)) {
+    return <p role="status">{status?"La sesión de WhatsApp que recibió esta consulta no está disponible.":"Comprobando la cuenta de WhatsApp…"}</p>;
+  }
   return (
     <section className={styles.wrap} aria-label="WhatsApp">
       <header className={styles.hero}>
@@ -498,7 +514,7 @@ export default function CentralWhatsAppPanel() {
             <i /> {badge.label}
             {state === "connected" && totalUnread > 0 ? <b>{totalUnread}</b> : null}
           </span>
-          {(state === "connected" || state === "qr" || state === "connecting") && (
+          {!expectedPeer && (state === "connected" || state === "qr" || state === "connecting") && (
             <button type="button" className={styles.ghostButton} onClick={logout} disabled={busy !== null}>
               <LogOut size={16} />
               {busy === "logout" ? "Cerrando…" : state === "connected" ? "Cerrar sesión" : "Reiniciar QR"}
@@ -570,7 +586,7 @@ export default function CentralWhatsAppPanel() {
       {state === "connected" && (
         <div className={`${styles.inbox} ${selectedId ? styles.hasSelection : ""}`}>
           <aside className={styles.chatList}>
-            <div className={styles.listTools}>
+            {!expectedPeer && <div className={styles.listTools}>
               <label className={styles.search}>
                 <Search size={15} />
                 <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar chat o número" />
@@ -584,7 +600,7 @@ export default function CentralWhatsAppPanel() {
               >
                 <MessageCirclePlus size={18} />
               </button>
-            </div>
+            </div>}
 
             {newChatOpen && (
               <form className={styles.newChat} onSubmit={startNewChat}>

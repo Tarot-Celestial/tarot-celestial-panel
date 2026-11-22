@@ -63,13 +63,13 @@ function mergeThreads(current: InstagramThread[], incoming: InstagramThread[]) {
   return [...entries.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-type Props = { provider?: SocialProvider; attention?: SocialProviderAttention };
+type Props = { provider?: SocialProvider; attention?: SocialProviderAttention; initialThread?: InstagramThread };
 
-export default function CentralInstagramPanel({ provider = "instagram", attention }: Props = {}) {
-  return <SocialInbox key={`${provider}:${attention?.accountId || ''}`} provider={provider} attention={attention} />;
+export default function CentralInstagramPanel({ provider = "instagram", attention, initialThread }: Props = {}) {
+  return <SocialInbox key={`${provider}:${attention?.accountId || ''}:${initialThread?.id || ''}`} provider={provider} attention={attention} initialThread={initialThread}/>;
 }
 
-function SocialInbox({ provider = "instagram", attention }: Props) {
+function SocialInbox({ provider = "instagram", attention, initialThread }: Props) {
   const network = provider === "facebook" ? "Facebook" : "Instagram";
   const NetworkIcon = provider === "facebook" ? Facebook : Instagram;
   const accountLabel = provider === "facebook" ? "Tarot Celestial" : "@tarotcelestialof";
@@ -77,12 +77,12 @@ function SocialInbox({ provider = "instagram", attention }: Props) {
   const inboxUrl = provider === "facebook" ? "https://business.facebook.com/latest/inbox/all?asset_id=112980835232394" : "https://www.instagram.com/direct/inbox/";
   const copy = useCallback((cause: unknown, context: RequestContext) => errorCopy(cause, context).replaceAll("Instagram", network).replaceAll("@tarotcelestialof", accountLabel), [network, accountLabel]);
   const sb = useMemo(() => supabaseBrowser(), []);
-  const [kind, setKind] = useState<Kind>("message");
+  const [kind, setKind] = useState<Kind>(initialThread?.kind || "message");
   const [connection, setConnection] = useState<InstagramConnection | null>(null);
   const [threads, setThreads] = useState<InstagramThread[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [partialHint, setPartialHint] = useState<string | null>(null);
-  const [selected, setSelected] = useState<InstagramThread | null>(null);
+  const [selected, setSelected] = useState<InstagramThread | null>(initialThread || null);
   const [detail, setDetail] = useState<ThreadDetail | null>(null);
   const [query, setQuery] = useState("");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -92,7 +92,7 @@ function SocialInbox({ provider = "instagram", attention }: Props) {
   const [detailError, setDetailError] = useState<{ threadId: string; message: string } | null>(null);
   const [readError, setReadError] = useState<{ threadId: string; message: string } | null>(null);
   const [sending, setSending] = useState(false);
-  const [replyMode, setReplyMode] = useState<"public" | "private">("private");
+  const [replyMode, setReplyMode] = useState<"public" | "private">(initialThread?.kind==="comment" ? "public" : "private");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [uncertain, setUncertain] = useState<Record<string, boolean>>({});

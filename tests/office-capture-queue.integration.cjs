@@ -37,11 +37,17 @@ before(async()=>{
  const directory=path.join(__dirname,"../supabase/migrations");
  await db.exec(fs.readFileSync(path.join(directory,fs.readdirSync(directory).find(f=>f.endsWith("_office_capture_opportunities.sql"))),"utf8"));
  await db.exec(fs.readFileSync(path.join(directory,fs.readdirSync(directory).find(f=>f.endsWith("_office_capture_discovery_performance.sql"))),"utf8"));
+ await db.exec(`alter table workers add primary key (id);
+   create table office_runs(id uuid);create table office_tasks(id uuid);create table office_departments(id text);
+   create table office_run_attempts(step int,lease_token uuid,claimed_at timestamptz);
+   create table office_instagram_posts(id uuid,persisted_account_id text,dispatch_started_at timestamptz);`);
+ await db.exec(fs.readFileSync(path.join(directory,fs.readdirSync(directory).find(f=>f.endsWith("_office_autonomy.sql"))),"utf8"));
  await q("insert into workers values($1,$2,true),($3,$4,true)",[id(1),id(2),id(3),id(4)]);
  await q("insert into office_capture_settings values(true,true,$1)",[id(2)]);
 });
 after(async()=>db?.close());
 beforeEach(async()=>{
+ await db.exec("truncate office_autonomy_usage,office_autonomy_rules");
  await db.exec("truncate office_capture_inbound,office_capture_events,office_capture_suppressions,office_capture_attempts,office_capture_opportunities,tc_social_inbox_activity,tc_instagram_sends,tc_instagram_threads,tc_facebook_threads,tc_social_connections_v2,office_crm_purchase_evidence,meta_lead_events,captacion_whatsapp_deliveries,crm_clientes,captacion_leads cascade");
  await q("update office_capture_settings set enabled=true,actor_user_id=$1",[id(2)]);
 });
@@ -129,4 +135,17 @@ test("discovery pages verifiable receipts past unmatched events and retains the 
  assert.equal((await discover()).processed,0);
  assert.equal(await scalar("select count(*)::int from office_capture_inbound"),260);
  assert.equal(await scalar("select count(*)::int from office_capture_events where action='discovered'"),1);
+});
+test("un límite de descubrimiento de Instagram omite una cuenta y permite la otra sin enviar respuestas",async()=>{
+ const when=at(-60000);
+ await q(`insert into tc_instagram_threads(id,account_id,kind,remote_id,recipient_id,remote_updated_at,remote_created_at)
+   values($1,'office-A','message','a','peer-a',$3,$3),($2,'office-B','message','b','peer-b',$3,$3)`,[id(61),id(62),when]);
+ await q("insert into tc_social_connections_v2 values ('instagram','office-A'),('instagram','office-B')");
+ await q(`insert into tc_social_inbox_activity(provider,account_id,kind,remote_id,thread_remote_id,occurred_at)
+   values('instagram','office-A','message','in-a','peer-a',$1),('instagram','office-B','message','in-b','peer-b',$1)`,[when]);
+ await q(`insert into office_autonomy_rules(department,action,channel,account,mode,updated_by)
+   values('','capture_discovery','instagram','office-A','paused',$1)`,[id(1)]);
+ await discover();
+ assert.deepEqual(await q("select account_id from office_capture_opportunities"),[{account_id:"office-B"}]);
+ assert.equal(await scalar("select count(*)::int from office_capture_attempts"),0);
 });

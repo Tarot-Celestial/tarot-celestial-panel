@@ -30,6 +30,7 @@ function harness(options = {}) {
       calls.push({name,args});
       if (name === "office_capture_claim") return {data:job};
       if (name === "office_capture_begin" && options.revoked) return {data:null};
+      if (name === "office_autonomy_dispatch") return {data:!options.pausedLate};
       return {data:true};
     },
     from(table) {
@@ -41,7 +42,8 @@ function harness(options = {}) {
       };
     },
   };
-  const transport = {readSocialProof:async()=>proof,sendSocialReply:async(job,proof,body,mode)=>{
+  const transport = {readSocialProof:async()=>proof,sendSocialReply:async(job,proof,body,mode,beforeSend)=>{
+    if(beforeSend)await beforeSend();
     calls.push({name:"send",body,mode});
     if (options.lost) throw Object.assign(Error("timeout"),{code:"SEND_UNCERTAIN"});
     return "receipt";
@@ -92,8 +94,14 @@ test("un comentario sin DM solo invita al privado; una baja, un código, un oper
 });
 test("el recibo sigue a un único despacho y un timeout conserva incertidumbre",async()=>{
   const f=harness({lost:true});const totals=await f.run();assert.equal(totals.uncertain,1);
-  assert.deepEqual(f.calls.map(c=>c.name),["office_capture_claim","office_capture_begin","send","office_capture_finish"]);
+  assert.deepEqual(f.calls.map(c=>c.name),["office_capture_claim","office_capture_begin","office_autonomy_dispatch","send","office_capture_finish"]);
   assert.equal(f.calls.at(-1).args.p_receipt,null);assert.equal(f.calls.at(-1).args.p_outcome,"uncertain");
+});
+test("el cambio de autonomía posterior al begin evita el transporte en la misma solicitud",async()=>{
+  const f=harness({pausedLate:true});assert.equal((await f.run()).handoff,1);
+  assert.equal(f.calls.some(c=>c.name==="send"),false);
+  assert.equal(f.calls.find(c=>c.name==="office_autonomy_dispatch").args.p_request,"req");
+  assert.equal(f.calls.at(-1).args.p_receipt,null);
 });
 test("la respuesta privada a un comentario con país utiliza la línea o el Oráculo general, sin atribución de un hilo DM",async()=>{
   for(const [text,lines,expected] of [["Quiero consultar, soy argentina",{},/example\.test\/cliente\/oraculo/],

@@ -22,7 +22,7 @@ const atlasPrompt = shared + ' Eres Atlas, director operativo de IA. Redacta un 
 const marketingPrompt = shared + ' Eres especialista en Marketing y Contenido. Entrega un titular de 20–44 caracteres (máximo 62), una a tres líneas distintas para el cartel (máximo 86 caracteres cada una) y un caption listo para copiar en Instagram (máximo 850 caracteres). Dirígete al público desde la primera frase. Omite rótulos de borrador, saludos a Álex, instrucciones y notas de revisión en todos los campos. El servidor compone el texto alternativo a partir de la imagen. Para tres preguntas, escribe exactamente tres preguntas abiertas, cortas y distintas, cada una con signos ¿ y ?. No numeres las líneas. Para un encargo comercial el servidor insertará después los datos económicos y las condiciones del catálogo: redacta solo el encabezado y la introducción editorial, sin cifras ni afirmaciones comerciales propias.';
 const maxOutput = 850;
 
-async function respond(step: number, input: unknown, questions = false) {
+async function respond(step: number, input: unknown, beforeProvider: () => Promise<void>, questions = false) {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new OfficeCreativeError('waiting_connection', 'Falta la conexión de OpenAI en este entorno.');
   const configured = process.env.OFFICE_TEXT_MODEL || process.env.ATLAS_ASSISTANT_MODEL || process.env.OPENAI_TEXT_MODEL || '';
@@ -39,6 +39,7 @@ async function respond(step: number, input: unknown, questions = false) {
     throw new OfficeCreativeError('limit_reached', 'El encargo y sus fuentes superan el límite de esta ejecución. Reduce su extensión.');
   }
   let response: Response;
+  await beforeProvider();
   try {
     response = await fetch('https://api.openai.com/v1/responses', { method: 'POST', cache: 'no-store', signal: AbortSignal.timeout(20000),
       headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body });
@@ -121,6 +122,13 @@ function validateCopy(raw: any, usage: CreativeUsage, snapshot: SourceSnapshot, 
   return { headline, caption, lines, questions: threeQuestions ? lines : [], alt: officeArtworkAlt({ headline, lines }, 1080, 1350) };
 }
 
+export async function checkCreativeAutonomy(db: any, run: { id: string; lease_token: string }) {
+  const result = await db.rpc('office_autonomy_creative', { p_run_id: run.id, p_lease: run.lease_token });
+  if (result.error) throw new OfficeCreativeError('waiting_connection', 'No se pudo verificar la política de autonomía.');
+  if (result.data !== 'allow') throw new OfficeCreativeError(result.data === 'limit' ? 'limit_reached' : 'waiting_input',
+    'La política de autonomía o la vigencia del encargo requieren revisión antes de continuar.');
+}
+
 export async function officeCreativeStep({ db, run, task, revision }: { db: any; run: any; task: any; revision: any }): Promise<{ output: any; usage: CreativeUsage }> {
   if (run.step !== 0 && run.step !== 1) throw new OfficeCreativeError('failed', 'Este paso no admite una llamada de texto.');
   if (run.task_revision != null && Number(run.task_revision) !== Number(task.revision)) throw new OfficeCreativeError('waiting_input', 'El encargo se modificó durante la ejecución. Inicia una nueva revisión.');
@@ -129,7 +137,7 @@ export async function officeCreativeStep({ db, run, task, revision }: { db: any;
   if (run.step === 0) {
     const snapshot = await readOfficeSources(db, task, correction?.note);
     if (snapshot.offer) offerLines(snapshot); // Detect an unreadable offer before consuming credits.
-    const { value, usage } = await respond(0, { task: publicTask, correction, sources: snapshot.sources.map(s => ({ label: s.label, text: s.text })), offer: snapshot.offer });
+    const { value, usage } = await respond(0, { task: publicTask, correction, sources: snapshot.sources.map(s => ({ label: s.label, text: s.text })), offer: snapshot.offer }, () => checkCreativeAutonomy(db,run));
     return { output: { brief: clippedText(value?.brief, 2000, usage), source_snapshot: snapshot, sources: snapshot.sources.map(({ id, version, label }) => ({ id, version, label })) }, usage };
   }
   const atlas = run.outputs?.['0'];
@@ -138,6 +146,6 @@ export async function officeCreativeStep({ db, run, task, revision }: { db: any;
   await validateOfficeSources(db, task, snapshot);
   const threeQuestions = !snapshot.offer && /\b(?:tres|3)\s+preguntas?\b/i.test([task.objective, task.expected_delivery, correction?.note].join(' '));
   const { value, usage } = await respond(1, { task: publicTask, correction, brief: atlas.brief, three_questions: threeQuestions,
-    sources: snapshot.sources.map((s: { label: string; text: string }) => ({ label: s.label, text: s.text })), commercial: !!snapshot.offer }, threeQuestions);
+    sources: snapshot.sources.map((s: { label: string; text: string }) => ({ label: s.label, text: s.text })), commercial: !!snapshot.offer }, () => checkCreativeAutonomy(db,run), threeQuestions);
   return { output: validateCopy(value, usage, snapshot, threeQuestions), usage };
 }

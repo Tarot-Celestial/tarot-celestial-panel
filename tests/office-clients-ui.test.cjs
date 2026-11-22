@@ -37,7 +37,9 @@ async function renderWorkspace({ search = "?departamento=clientes", request }) {
         if (url.pathname.endsWith("capture-totals")) return totals;
         return request(url.searchParams);
       } };
-      if (["./OfficeCatalog", "./OfficeMap", "./OfficeLiveMap", "./OfficeReportView", "./OfficeWork"].includes(spec)) return { default: () => null, DepartmentOwner: () => null };
+      if (spec === "./OfficeCommercialInbox") return { default: ({ opportunityId }) => React.createElement("section", { "data-case": opportunityId }) };
+      if (spec === "./OfficeCampaignPilot") return { default: ({ month }) => React.createElement("section", { "data-month": month }) };
+      if (["./OfficeCatalog", "./OfficeMap", "./OfficeLiveMap", "./OfficeReportView", "./OfficeWork", "./OfficeAutonomy"].includes(spec)) return { default: () => null, DepartmentOwner: () => null };
       if (spec.endsWith(".css")) return { default: {} };
       return spec.startsWith("./") ? load(spec.slice(2)) : require(spec);
     } });
@@ -131,5 +133,23 @@ test("una ficha fallida ofrece reintento antes de afirmar ausencia de compra o r
     assert.doesNotMatch(ui.text, /Sin reservas registradas|El CRM todavía no registra/);
     available = true; await ui.button("Reintentar ficha");
     assert.match(ui.text, /Sin reservas registradas/); assert.match(ui.text, /El CRM todavía no registra/);
+  } finally { await ui.close(); }
+});
+
+test("los enlaces del piloto abren un caso o mes concreto y no arrastran filtros al cambiar de vista", async () => {
+  const campaign = "?departamento=campanas&mes=2026-10&campana=12345";
+  const commercial = "?departamento=comercial&caso=" + firstId;
+  const ui = await renderWorkspace({ search: campaign, request() { return {}; } });
+  try {
+    assert.equal(ui.all("section").find(el => el.props["data-month"])?.props["data-month"], "2026-10");
+    await ui.follow("/admin/oficina?departamento=comercial");
+    assert.equal(ui.location.search, "?departamento=comercial");
+    await ui.backTo(commercial);
+    assert.equal(ui.all("section").find(el => el.props["data-case"])?.props["data-case"], firstId);
+    await ui.follow("/admin/oficina?departamento=autonomia");
+    assert.equal(ui.location.search, "?departamento=autonomia");
+    await ui.backTo(campaign);
+    assert.equal(ui.location.searchParams.get("campana"), "12345");
+    assert.equal(ui.all("section").find(el => el.props["data-month"])?.props["data-month"], "2026-10");
   } finally { await ui.close(); }
 });

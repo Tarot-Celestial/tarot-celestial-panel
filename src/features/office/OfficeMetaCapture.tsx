@@ -77,6 +77,7 @@ function CaptureReport({ month }: {month: string}) {
         <tbody>{items.map(row => <tr key={row.id}><td>{time.format(new Date(row.source_at))}</td><td>{row.display_name && <strong className={s.captureName}>{row.display_name}</strong>}{captureChannels[row.channel] || row.channel} · {kinds[row.kind] || row.kind}
           {row.lead_id && <div><a href={"/admin?tab=captacion&lead=" + encodeURIComponent(row.lead_id)}>Abrir contacto</a></div>}</td>
           <td>{states[row.status] || row.status}{row.provider_error && <small className={s.basis}>{row.provider_error}</small>}
+            {row.status === "handoff" && <div><a href={"/admin/oficina?departamento=comercial&caso=" + encodeURIComponent(row.id)}>Ver estado actual en Comercial</a></div>}
             {row.thread_id && (row.channel === "instagram" || row.channel === "facebook") && <OfficeCaptureThread channel={row.channel} id={row.thread_id}/>}</td>
           <td>{conversions[row.conversion] || row.conversion}{row.first_purchase_at && <small className={s.basis}>{time.format(new Date(row.first_purchase_at))}
             {row.first_purchase_source && " · " + (purchaseSources[row.first_purchase_source] || row.first_purchase_source)}
