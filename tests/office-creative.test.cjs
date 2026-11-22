@@ -32,7 +32,10 @@ function fixture(config = {}) {
     const req = JSON.parse(init.body); calls.push(req);
     if (config.failure) throw new Error('connection reset');
     if (config.status) return new Response(JSON.stringify({error:{code:config.code}}),{status:config.status});
-    const value = req.text.format.name === 'office_brief' ? {brief:'Pide tres preguntas para acompañar una consulta.'} : config.copy || creative;
+    const copy = config.copy || creative;
+    const value = req.text.format.name === 'office_brief' ? {brief:'Pide tres preguntas para acompañar una consulta.'}
+      : req.text.format.name === 'three_questions' ? { headline:copy.headline, caption:copy.caption, alt:copy.alt,
+        first_question:copy.lines[0], second_question:copy.lines[1], third_question:copy.lines[2] } : copy;
     return Response.json({ id:'resp-fixture', status:'completed', usage:{input_tokens:250,output_tokens:75},
       output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(value)}]}] });
   }
@@ -70,6 +73,7 @@ test('Atlas and Marketing call the configured server provider once per step with
   const rev={review_note:'Haz el cierre más cálido.',body:'Texto de la primera versión.'};
   const result=await f.step(1,task,atlas.output,rev);
   assert.equal(result.output.questions.length,3);assert.equal(result.usage.input_tokens,250);
+  assert.ok(['first_question','second_question','third_question'].every(field=>f.calls[1].text.format.schema.required.includes(field)));
   assert.ok(result.usage.estimated_cost_usd>0 && result.usage.estimated_cost_usd<.1);
   assert.equal(result.usage.response_id,'resp-fixture');
   assert.match(f.calls[1].input,/cierre más cálido/);
