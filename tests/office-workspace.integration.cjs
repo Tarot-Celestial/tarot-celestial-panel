@@ -30,7 +30,7 @@ before(async () => {
   // Reproduce the managed project's grants on newly created public tables/functions.
   await db.exec(`alter default privileges in schema public grant all on tables to anon,authenticated,service_role;
     alter default privileges in schema public grant execute on functions to anon,authenticated,service_role;`);
-  await db.exec(fs.readFileSync(path.join(__dirname,"../supabase/migrations/20261122185744_office_celestial_workspace.sql"),"utf8"));
+  await db.exec(fs.readFileSync(path.join(__dirname,"../supabase/migrations/20261122191931_office_celestial_workspace.sql"),"utf8"));
   await db.exec("set role service_role");
 });
 after(async () => { if (db) await db.close(); });

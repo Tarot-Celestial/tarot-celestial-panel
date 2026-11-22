@@ -8,7 +8,7 @@ const extraRPC = ['office_snapshot', 'office_apply', 'office_file'];
 async function setupDatabase(db) {
   await db.exec('create table public.workers(id uuid primary key,user_id uuid,display_name text,is_active boolean); grant select on public.workers to service_role;');
   await db.query('insert into public.workers values($1,$2,$3,true)', [WORKER_ID, USER_ID, 'Álex de prueba']);
-  await db.exec(fs.readFileSync(path.join(__dirname, '../supabase/migrations/20261122185744_office_celestial_workspace.sql'), 'utf8'));
+  await db.exec(fs.readFileSync(path.join(__dirname, '../supabase/migrations/20261122191931_office_celestial_workspace.sql'), 'utf8'));
 }
 
 function panelFixtureResponse(pathname, { user, worker }) {

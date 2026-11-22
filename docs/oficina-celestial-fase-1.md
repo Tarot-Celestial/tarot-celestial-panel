@@ -12,7 +12,7 @@ La asignación de trabajo a Atlas o a un equipo es un registro interno. La ejecu
 
 ## Instalación y acceso
 
-La página está en `/admin/oficina`. Las [rutas de la Oficina](../src/app/api/admin/oficina/route.ts) y [la descarga](../src/app/api/admin/oficina/archivo/route.ts) validan la sesión y el permiso administrativo en el servidor. La [migración](../supabase/migrations/20261122185744_office_celestial_workspace.sql) añade las tablas y funciones de Oficina. Las versiones almacenan los archivos privados en Postgres, dentro de la misma transacción que los metadatos y el evento de auditoría. Los roles de navegador carecen de acceso directo a esos datos.
+La página está en `/admin/oficina`. Las [rutas de la Oficina](../src/app/api/admin/oficina/route.ts) y [la descarga](../src/app/api/admin/oficina/archivo/route.ts) validan la sesión y el permiso administrativo en el servidor. La [migración](../supabase/migrations/20261122191931_office_celestial_workspace.sql) añade las tablas y funciones de Oficina. Las versiones almacenan los archivos privados en Postgres, dentro de la misma transacción que los metadatos y el evento de auditoría. Los roles de navegador carecen de acceso directo a esos datos.
 
 Para publicar, aplicar primero la migración revisada en el entorno de destino y desplegar después el código conforme al flujo del proyecto. Verificar con una sesión administrativa la entrada desde la cabecera. Para retirar el módulo, revertir la entrega de aplicación manteniendo las tablas y el historial.
 
