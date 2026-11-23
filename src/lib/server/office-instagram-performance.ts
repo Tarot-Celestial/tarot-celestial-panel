@@ -44,37 +44,83 @@ function postUrl(value: unknown): string | null {
   return match ? "https://www.instagram.com/" + match[1] + "/" + match[2] + "/" : null;
 }
 
+type ReadStage = "connection" | "identity" | "media" | "metrics";
+
+const safeCodes = new Set(["NOT_CONNECTED","WRONG_ACCOUNT","WRONG_TYPE","TOKEN_EXPIRED","TOKEN_MISSING","CONNECTION_CHANGED",
+  "META_OBJECT_UNAVAILABLE","META_PERMISSION","META_RATE_LIMIT","META_REJECTED","META_UNAVAILABLE","INVALID_RESPONSE"]);
+
+export class InstagramPerformanceError extends Error {
+  constructor(readonly stage: ReadStage, readonly code: string) {
+    super(stage + " · " + code);
+  }
+}
+
+async function readStage<T>(stage: ReadStage, operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error && typeof error.code === "string" && safeCodes.has(error.code)
+      ? error.code : "UNAVAILABLE";
+    throw new InstagramPerformanceError(stage, code);
+  }
+}
+
+const canReduceFields = (error: unknown) => error instanceof InstagramError &&
+  ["META_OBJECT_UNAVAILABLE", "META_PERMISSION", "META_REJECTED"].includes(error.code);
+
 async function ownMedia(account: Account, ids: string[], deadline: number) {
-  for (const id of ids) {
+  // A verified user's /media edge establishes ownership even when the per-media username is unavailable.
+  // Older grants can read the listing but reject an optional field for the entire edge.
+  const primary = ids[0];
+  const core = "id,caption,permalink,timestamp";
+  const counters = core + ",media_type,like_count,comments_count";
+  const requests = [
+    { id: primary, fields: counters + ",media_product_type,username" },
+    { id: primary, fields: counters },
+    { id: primary, fields: core },
+    ...ids.slice(1, 2).map(id => ({id,fields:counters})),
+    { id: "me", fields: core },
+  ];
+  let last: unknown;
+  for (const {id, fields} of requests) {
+    if (Date.now() >= deadline) break;
     try {
-      const page = await instagramGraph(account, id + "/media", {
-        fields: "id,username,caption,media_type,media_product_type,permalink,timestamp,like_count,comments_count",
-        limit: String(sampleLimit),
-      }, undefined, deadline);
-      if (!Array.isArray(page.data)) throw new Error("Instagram no devolvió la lista de publicaciones.");
+      const page = await instagramGraph(account, id + "/media", {fields,limit:String(sampleLimit)}, undefined, deadline);
+      if (!Array.isArray(page.data)) throw new InstagramError("INVALID_RESPONSE", "Formato de publicaciones inesperado.");
       return page.data;
     } catch (error) {
-      // Instagram Login can return two verified representations of the same account.
-      if (id === ids[ids.length - 1] || !(error instanceof InstagramError) ||
-        !["META_OBJECT_UNAVAILABLE", "META_REJECTED"].includes(error.code)) throw error;
+      if (!canReduceFields(error)) throw error;
+      last = error;
     }
   }
-  throw new Error("Instagram no devolvió la cuenta profesional.");
+  throw last || new InstagramError("META_UNAVAILABLE", "Tiempo de lectura agotado.");
+}
+
+async function optionalMetrics(account: Account, path: string, params: Record<string, string>, deadline: number) {
+  if (Date.now() >= deadline) return null;
+  try {
+    return await instagramGraph(account, path, params, undefined, deadline);
+  } catch (error) {
+    if (error instanceof InstagramError && error.code === "TOKEN_EXPIRED") throw error;
+    return null;
+  }
 }
 
 async function readPost(account: Account, row: Record<string, unknown>, deadline: number): Promise<OfficeInstagramPerformancePost> {
   const id = String(row.id);
-  const likes = count(row.like_count);
-  const comments = count(row.comments_count);
-  let reach: number | null = null;
-  try {
-    const insights = await instagramGraph(account, id + "/insights", { metric: "reach", period: "lifetime" }, undefined, deadline);
-    const metric = Array.isArray(insights.data) && insights.data.find(item => item?.name === "reach" && (!item.period || item.period === "lifetime"));
-    reach = count(metric?.values?.[0]?.value ?? metric?.total_value?.value);
-  } catch (error) {
-    // Insights has its own permission. A failed reach read cannot erase actual
-    // likes and comments. An invalid credential does invalidate the report.
-    if (!(error instanceof InstagramError) || error.code === "TOKEN_EXPIRED") throw error;
+  let likes = count(row.like_count);
+  let comments = count(row.comments_count);
+  // Meta's per-media reach defaults to lifetime. The period parameter belongs to the account-level insight query.
+  const insights = await optionalMetrics(account, id + "/insights", { metric: "reach" }, deadline);
+  const metric = Array.isArray(insights?.data) && insights.data.find(item => item?.name === "reach" && (!item.period || item.period === "lifetime"));
+  const reach = count(metric?.values?.[0]?.value ?? metric?.total_value?.value);
+  if (likes === null || comments === null) {
+    const fields = ["id", ...(likes === null ? ["like_count"] : []), ...(comments === null ? ["comments_count"] : [])];
+    const detail = await optionalMetrics(account, id, {fields:fields.join(",")}, deadline);
+    if (detail?.id === id) {
+      likes ??= count(detail.like_count);
+      comments ??= count(detail.comments_count);
+    }
   }
   return {
     id, caption: typeof row.caption === "string" ? row.caption.slice(0, 2200) : "",
@@ -86,22 +132,23 @@ async function readPost(account: Account, row: Record<string, unknown>, deadline
 }
 
 export async function readOfficeInstagramPerformance(): Promise<OfficeInstagramPerformance> {
-  const account = await instagramConnection();
-  const identity = await verifyOfficeInstagramIdentity(account);
+  const account = await readStage("connection", () => instagramConnection());
+  const identity = await readStage("identity", () => verifyOfficeInstagramIdentity(account));
   const now = Date.now();
   const deadline = now + 16_000;
-  const media = await ownMedia(account, identity.ids, deadline);
+  const media = await readStage("media", () => ownMedia(account, identity.ids, deadline));
   const seen = new Set<string>();
   const own = media.slice(0, sampleLimit).filter(row => {
     if (!row || typeof row.id !== "string" || !/^\d{1,40}$/.test(row.id) || seen.has(row.id) ||
-      String(row.username || "").toLowerCase() !== accountName || row.media_product_type === "STORY" ||
+      (row.username != null && String(row.username).toLowerCase() !== accountName) || row.media_product_type === "STORY" ||
       !Number.isFinite(Date.parse(row.timestamp)) || Date.parse(row.timestamp) > now) return false;
     seen.add(row.id);
     return true;
   });
   const posts: OfficeInstagramPerformancePost[] = [];
   for (let start = 0; start < own.length; start += 4) {
-    posts.push(...await Promise.all(own.slice(start, start + 4).map(row => readPost(account, row, deadline))));
+    const batch = own.slice(start, start + 4);
+    posts.push(...await readStage("metrics", () => Promise.all(batch.map(row => readPost(account, row, deadline)))));
   }
   // Compare the same two measured interactions on every ranked item. Recent
   // posts remain visible while Meta's lifetime insights may still be arriving.

@@ -25,7 +25,8 @@ function fixture(rows, reaches) {
       assert.equal(body,undefined);
       calls.push(route);
       if (route === "11/media") { assert.match(params.fields,/like_count,comments_count/); return {data:rows}; }
-      assert.equal(params.metric,"reach");
+      if (!route.endsWith("/insights")) return {id:route};
+      assert.deepEqual(Object.keys(params),["metric"]);assert.equal(params.metric,"reach");
       const value = reaches[route.split("/")[0]];
       if (typeof value === "string") throw new GraphError(value);
       return {data:value === undefined ? [] : [{name:"reach",period:"lifetime",values:[{value}]}]};
@@ -72,9 +73,41 @@ test("sin alcance autorizado usa recuentos completos; empates, ceros y muestras 
 test("rechaza una cuenta no verificada y un token inválido sin inventar un informe vacío",async()=>{
   const h=fixture([post("1",4,1,0)],{"1":"TOKEN_EXPIRED"});
   await assert.rejects(h.api.readOfficeInstagramPerformance(),/TOKEN_EXPIRED/);
-  h.calls.length=0;h.identity.verifyOfficeInstagramIdentity=async()=>{throw Error("WRONG_ACCOUNT")};
+  h.calls.length=0;h.identity.verifyOfficeInstagramIdentity=async()=>{throw Object.assign(Error("raw private detail"),{code:"WRONG_ACCOUNT"})};
   await assert.rejects(h.api.readOfficeInstagramPerformance(),/WRONG_ACCOUNT/);
   assert.equal(h.calls.length,0);
+});
+
+test("si el listado rechaza los campos opcionales recoge las métricas disponibles de los medios de la cuenta verificada",async()=>{
+  const a=post("101",4,0,0), b=post("102",5,0,0), foreign=post("103",5,30,11,{username:"otra_cuenta"});
+  const h=fixture([],{}), seen=[];
+  h.graph.instagramGraph=async (_account,route,params)=>{
+    seen.push(route);
+    if (route==="11/media") {
+      if (params.fields.includes("media_type")) throw new h.graph.InstagramError("META_PERMISSION");
+      return {data:[{...a,username:undefined,like_count:undefined,comments_count:undefined},
+        {...b,like_count:undefined},foreign]};
+    }
+    if (route==="101/insights") throw Error("optional API failure");
+    if (route==="102/insights") return {data:[]};
+    if (route==="101") return {id:"101",like_count:4,comments_count:2};
+    if (route==="102") return {id:"999",like_count:100};
+    assert.fail("unexpected route "+route);
+  };
+  const report=await h.api.readOfficeInstagramPerformance();
+  assert.equal(seen.filter(r=>r==="11/media").length,3);assert.equal(report.posts.length,2);
+  assert.equal(report.posts.find(p=>p.id==="101").interactions,6);assert.equal(report.posts.find(p=>p.id==="101").reach,null);
+  assert.equal(report.posts.find(p=>p.id==="102").likes,null);assert.equal(report.basis,null);
+  assert.equal(seen.some(r=>r.startsWith("103")),false);
+});
+
+test("diagnóstico acotado de etapa sin información remota y sin reintentar credenciales inválidas",async()=>{
+  const h=fixture([],{});let calls=0;
+  h.graph.instagramGraph=async()=>{calls++;throw new h.graph.InstagramError("TOKEN_EXPIRED")};
+  await assert.rejects(h.api.readOfficeInstagramPerformance(),e=>e.stage==="media" && e.code==="TOKEN_EXPIRED");
+  assert.equal(calls,1);
+  h.graph.instagramConnection=async()=>{throw Object.assign(Error("private"),{code:"sensitive-provider-string"})};
+  await assert.rejects(h.api.readOfficeInstagramPerformance(),e=>e.code==="UNAVAILABLE" && e.stage==="connection" && !String(e).includes("private"));
 });
 
 test("el endpoint de métricas solo llama a Instagram tras comprobar el acceso administrativo",async()=>{
