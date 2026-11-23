@@ -5,22 +5,29 @@ import type { OfficeSnapshot, OfficeTask, OfficeTaskInput } from "./model";
 import { AssigneeOptions, assigneeKey, Feedback, priorities, taskStatuses, useOfficeSave } from "./WorkControls";
 import { canonicalZone, deadlineCandidates, localMinute } from "./WorkTime";
 import { startOfficeRun } from "./office-runs";
+import { PublicationAttachmentField, readPublicationAttachment } from "./PublicationAttachmentField";
 import styles from "./OfficeWork.module.css";
 
 type Props = {
   task?: OfficeTask;
   departmentId?: string;
   atlas?: boolean;
+  publish?: boolean;
   data: OfficeSnapshot;
   reload: () => Promise<void>;
   onClose: () => void;
   onSaved: (id: string, startError?: { message: string; requestId: string }) => void;
 };
 
-export default function WorkTaskForm({ task, departmentId, atlas, data, reload, onClose, onSaved }: Props) {
+export default function WorkTaskForm({ task, departmentId, atlas, publish, data, reload, onClose, onSaved }: Props) {
   const [department, setDepartment] = useState(atlas ? "marketing" : task?.department_id || departmentId || "");
   const [objective, setObjective] = useState(task?.objective || "");
-  const [delivery, setDelivery] = useState(task?.expected_delivery || (atlas ? "Un texto y una pieza visual para revisión." : ""));
+  const [publication, setPublication] = useState<"draft"|"photo"|"reel">(publish ? "photo" : "draft");
+  const [publicationFile,setPublicationFile] = useState<File|null>(null);
+  const [publicationAlt,setPublicationAlt] = useState("");
+  const [delivery, setDelivery] = useState(task?.expected_delivery ?? "");
+  const expectedDelivery = delivery.trim() || (atlas ? publication === "draft" ? "Un texto y una pieza visual para revisión." :
+    (publication === "reel" ? "Un Reel" : "Una foto") + " con texto para publicar en @tarotcelestialof bajo revisión de Atlas." : "");
   const [priority, setPriority] = useState<OfficeTask["priority"]>(task?.priority || "media");
   const [status, setStatus] = useState<OfficeTask["status"]>(task?.status || "pendiente");
   const [assignee, setAssignee] = useState(task ? assigneeKey(task) : atlas ? "atlas" : "departamento");
@@ -37,14 +44,19 @@ export default function WorkTaskForm({ task, departmentId, atlas, data, reload, 
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!objective.trim() || !delivery.trim()) return operation.error("Escribe el objetivo y la entrega esperada.");
+    if (!objective.trim() || !expectedDelivery) return operation.error("Escribe el objetivo y la entrega esperada.");
     if (!dates) return operation.error("Introduce una zona horaria válida, por ejemplo Europe/Madrid.");
     if (date && !dates.length) return operation.error("Esta hora no existe en la zona elegida. Revisa la fecha o la hora.");
     if (dates.length > 1 && !dates.includes(instant)) return operation.error("Elige cuál de las dos horas corresponde al plazo.");
     const selectedInstant = dates.length > 1 ? instant : dates[0] || null;
     const keepDeadline = task?.due_at && zone === task.time_zone && date === originalDate && selectedInstant === originalInstant;
+    let attachment = {};
+    if (atlas && publication !== "draft" && publicationFile) {
+      try { attachment = await readPublicationAttachment(publicationFile,publication,publicationAlt); }
+      catch (e) { return operation.error(e instanceof Error ? e.message : "No se pudo leer el archivo."); }
+    }
     const input: OfficeTaskInput = {
-      department_id: department, objective: objective.trim(), expected_delivery: delivery.trim(),
+      department_id: department, objective: objective.trim(), expected_delivery: expectedDelivery,
       priority, status, time_zone: zone === task?.time_zone ? zone : canonicalZone(zone),
       due_at: keepDeadline ? task.due_at : selectedInstant,
       assignee_role: assignee === "atlas" || assignee === "departamento" ? assignee : null,
@@ -52,8 +64,8 @@ export default function WorkTaskForm({ task, departmentId, atlas, data, reload, 
     };
     await operation.save(task
       ? { action: "update_task", id: task.id, revision: task.revision, ...input }
-      : { action: "create_task", ...input }, "Encargo guardado.", async id => {
-        if (!atlas) return onSaved(id);
+      : { action: "create_task", ...input, ...(atlas && publication !== "draft" ? {instagram_publication:publication,...attachment} : {}) }, "Encargo guardado.", async id => {
+        if (!atlas || publication !== "draft") return onSaved(id);
         const requestId = crypto.randomUUID();
         try { await startOfficeRun(id, requestId); }
         catch (e) {
@@ -66,6 +78,15 @@ export default function WorkTaskForm({ task, departmentId, atlas, data, reload, 
   return <form className={styles.card} onSubmit={submit} aria-labelledby={id}>
     <h3 id={id}>{task ? "Editar encargo" : atlas ? "Encargar a Atlas" : "Nuevo encargo"}</h3>
     <fieldset disabled={operation.saving} className={styles.formGrid}>
+      {atlas && !task && <label className={styles.wide}><span>Entrega de Marketing</span>
+        <select value={publication} onChange={e => {setPublication(e.target.value as typeof publication); setPublicationFile(null); setPublicationAlt("");}}>
+          <option value="draft">Preparar borrador para mi revisión</option>
+          <option value="photo">Atlas aprueba y publica una foto en @tarotcelestialof</option>
+          <option value="reel">Atlas aprueba y publica un Reel en @tarotcelestialof</option>
+        </select>
+      </label>}
+      {atlas && publication !== "draft" && <PublicationAttachmentField key={publication} format={publication} file={publicationFile} alt={publicationAlt}
+        onChange={file=>{setPublicationFile(file);setPublicationAlt("");}} onAlt={setPublicationAlt} />}
       <label className={styles.wide}><span id={id + "-objective"}>Objetivo</span>
         <textarea aria-labelledby={id + "-objective"} aria-describedby={atlas ? id + "-brief-help" : undefined} autoFocus required maxLength={4000} rows={2} value={objective} onChange={e => setObjective(e.target.value)} />
         {atlas && <small id={id + "-brief-help"}>Indica qué quieres comunicar, en qué canal y para qué mercado. Si hay una promoción, indica también la moneda.</small>}
@@ -107,12 +128,12 @@ export default function WorkTaskForm({ task, departmentId, atlas, data, reload, 
         </select>
       </label>}
       <label className={styles.wide}><span id={id + "-delivery"}>Entrega esperada</span>
-        <textarea aria-labelledby={id + "-delivery"} required maxLength={4000} rows={3} value={delivery} onChange={e => setDelivery(e.target.value)} />
+        <textarea aria-labelledby={id + "-delivery"} required={!atlas} placeholder={atlas ? expectedDelivery : undefined} maxLength={4000} rows={3} value={delivery} onChange={e => setDelivery(e.target.value)} />
       </label>
     </fieldset>
     <Feedback value={operation.feedback} />
     <div className={styles.actions}>
-      <button type="submit" className={styles.primary} disabled={operation.saving}>{operation.saving ? "Guardando…" : atlas ? "Crear encargo e iniciar Atlas" : "Guardar encargo"}</button>
+      <button type="submit" className={styles.primary} disabled={operation.saving}>{operation.saving ? "Guardando…" : atlas && publication !== "draft" ? "Delegar publicación a Atlas" : atlas ? "Crear encargo e iniciar Atlas" : "Guardar encargo"}</button>
       <button type="button" className={styles.button} disabled={operation.saving} onClick={onClose}>Cancelar</button>
     </div>
   </form>;

@@ -8,7 +8,7 @@ import { processOfficeInstagram, saveOfficeMetrics } from "@/lib/server/office-i
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
-const fields = "id,version_id,status,scheduled_at,time_zone,container_id,external_post_id,permalink,last_error,metrics,updated_at";
+const fields = "id,version_id,status,scheduled_at,time_zone,container_id,external_post_id,permalink,last_error,metrics,updated_at,approval_agent,approved_by";
 async function destination(db: SupabaseClient, actor: string) {
   const conn = await officeInstagramConnection();
   if (conn.owner_id || !conn.persisted_account_id || !conn.connected_at) return { ...conn, bind_on_approval:false };
@@ -42,7 +42,7 @@ async function preview(db: SupabaseClient, id: string) {
       offer.paid + " min" + (offer.free ? " + " + offer.free + " min de regalo" : ""),
       offer.ends_at ? "Hasta " + new Intl.DateTimeFormat("es-ES",{ timeZone:offer.time_zone || "Europe/Madrid", dateStyle:"short",timeStyle:"short" }).format(new Date(offer.ends_at)) + " (" + offer.time_zone + ")" : "Hasta desactivación",
       offer.conditions].filter(Boolean).join(" · ") : null,
-    posts:posts.data };
+    posts:posts.data.map(post => ({...post, delegated_by:post.approval_agent === "atlas" ? post.approved_by : null})) };
 }
 function problem(error: unknown) {
   return error instanceof InstagramDraftError || error instanceof OfficeInstagramError ? officeError(error.message,422) :

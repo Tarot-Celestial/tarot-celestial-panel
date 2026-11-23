@@ -13,7 +13,7 @@ export async function GET(req: Request) {
     const task = new URL(req.url).searchParams.get("task_id");
     if (!officeUuid(task)) return officeError("Selecciona un encargo de la Oficina.", 400);
     const rows = await auth.admin.from("office_runs")
-      .select("id,task_id,step,status,outputs,last_error,created_at,updated_at,usage,revision_id,result_version_id")
+      .select("id,task_id,step,status,outputs,last_error,created_at,updated_at,usage,revision_id,result_version_id,instagram_publication,atlas_review_status,atlas_review_note,atlas_post_id,delegated_by:actor_id")
       .eq("task_id", task).order("created_at", { ascending: false }).limit(20);
     if (rows.error) return officeDatabaseError(rows.error);
     return officeJson({ runs: rows.data });

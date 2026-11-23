@@ -6,6 +6,7 @@ import type { OfficeSnapshot, OfficeTask } from "./model";
 import { AssigneeOptions, assigneeKey, assigneeName, Feedback, priorities, taskStatuses, useOfficeSave, workerName } from "./WorkControls";
 import WorkTaskForm from "./WorkTaskForm";
 import OfficeRuns from "./OfficeRuns";
+import OfficeInstagramPerformance from "./OfficeInstagramPerformance";
 import { WorkDeliverables, WorkReviews } from "./WorkDeliverables";
 import { displayTime } from "./WorkTime";
 import styles from "./OfficeWork.module.css";
@@ -63,7 +64,7 @@ function Tasks({ data, departmentId, composeAtlas, initialTask, preferredVersion
   const [priority, setPriority] = useState("");
   const [owner, setOwner] = useState("");
   const [selected, setSelected] = useState(initialTask || "");
-  const [editor, setEditor] = useState<{ task?: OfficeTask; atlas?: boolean } | null>(composeAtlas ? { atlas: true } : null);
+  const [editor, setEditor] = useState<{ task?: OfficeTask; atlas?: boolean; publish?: boolean } | null>(composeAtlas ? { atlas: true } : null);
   const [startError, setStartError] = useState<{ taskId: string; message: string; requestId: string }>();
   const [notice, setNotice] = useState("");
   const mounted = useRef(true);
@@ -96,13 +97,15 @@ function Tasks({ data, departmentId, composeAtlas, initialTask, preferredVersion
     <div className={styles.heading}>
       <h2>Encargos</h2>
       {!editor && <div className={styles.actions}><button className={styles.button} type="button" onClick={() => { setNotice(""); setEditor({ atlas: true }); }}>Nuevo encargo para Atlas</button>
+        {(!dept || dept === "marketing") && <button className={styles.button} type="button" onClick={() => { setNotice(""); setEditor({atlas:true,publish:true}); }}>Encargar publicación en Instagram</button>}
         <button className={styles.primary} type="button" onClick={() => { setNotice(""); setEditor({}); }}>
         <Plus size={16} aria-hidden /> Nuevo encargo
       </button></div>}
     </div>
     {notice && <p className={styles.success} role="status">{notice}</p>}
-    {editor ? <WorkTaskForm key={editor.task?.id || "new"} task={editor.task} atlas={editor.atlas} departmentId={dept} data={data} reload={reload}
+    {editor ? <WorkTaskForm key={editor.task?.id || "new"} task={editor.task} atlas={editor.atlas} publish={editor.publish} departmentId={dept} data={data} reload={reload}
       onClose={() => setEditor(null)} onSaved={onSaved} /> : <>
+      {(!dept || dept === "marketing") && <OfficeInstagramPerformance />}
       <div className={styles.filters} aria-label="Filtros de encargos">
         <label><span id={id + "-department"}>Departamento</span><select aria-labelledby={id + "-department"} value={dept} onChange={e => setDept(e.target.value)}>
           <option value="">Todos</option>{data.departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}

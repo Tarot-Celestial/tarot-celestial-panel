@@ -17,6 +17,7 @@ const statusNames = {
   invalidated: "Aprobación invalidada", failed: "Fallida", cancelled: "Cancelada",
 };
 type Post = {
+  approval_agent?: string | null;
   id: string; version_id?: string; status: keyof typeof statusNames; scheduled_at: string | null; time_zone: Zone;
   container_id: string | null; external_post_id: string | null; permalink: string | null;
   last_error: string | null; updated_at: string;
@@ -56,6 +57,7 @@ function Receipt({ post, busy, send }: { post: Post; busy: boolean; send: (actio
         <a className={s.runLink} href={permalink} target="_blank" rel="noopener noreferrer">Ver en Instagram</a>}
     </div>
     <dl className={s.fields}>
+      {post.approval_agent === "atlas" && <div><dt>Aprobación</dt><dd>Atlas · delegada al crear el encargo</dd></div>}
       <div><dt>Horario aprobado</dt><dd>{post.scheduled_at ? prettyTime(post.scheduled_at, zone) : "Publicación inmediata"}</dd></div>
       <div><dt>Última actualización</dt><dd>{prettyTime(post.updated_at, zone)}</dd></div>
       {post.container_id && <div><dt>Contenedor de Meta</dt><dd>{post.container_id}</dd></div>}

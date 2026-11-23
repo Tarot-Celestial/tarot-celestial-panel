@@ -15,7 +15,7 @@ const maxFile = 2 * 1024 * 1024;
 
 export function publicInstagramText(body: string) {
   const normalized = body.normalize("NFC").replace(/\r\n/g, "\n").trim();
-  const [captionPart, visual = ""] = normalized.split(/\n\nTexto de la imagen\n\n/u);
+  const [captionPart, visual = ""] = normalized.split(/\n\n(?:Texto de la imagen|Texto del vídeo)\n\n/u);
   const caption = captionPart.split(/\n\nTexto alternativo\n\n/u)[0].trim();
   const alt = (visual || normalized).split(/\n\nTexto alternativo\n\n/u)[1]?.trim() || "";
   if (!caption || [...caption].length > 2200 || [...alt].length > 1000 || /^borrador interno\b/iu.test(caption)) {
@@ -41,9 +41,14 @@ export async function prepareInstagramMedia(source: Buffer, mime: string): Promi
     if (isVideo) {
       const { stderr } = await execMedia(bin, [...common,"-map","0:v:0","-frames:v","1","-f","null","-"],
         { timeout: 15000, maxBuffer: 120000, windowsHide: true });
-      const duration = /Duration:\s*(\d+):(\d+):([\d.]+)/.exec(stderr);
+      const inputInfo = stderr.split('Stream mapping:')[0];
+      const duration = /Duration:\s*(\d+):(\d+):([\d.]+)/.exec(inputInfo);
       const seconds = duration ? Number(duration[1])*3600 + Number(duration[2])*60 + Number(duration[3]) : 0;
-      if (seconds < 3 || seconds > 900 || !/Video:\s*(h264|hevc)\b/i.test(stderr) || /Audio:(?!\s*aac\b)/i.test(stderr)) {
+      // FFmpeg also prints "audio:0kB" in the output summary of a silent video.
+      const streamLines = inputInfo.split(/\r?\n/).filter(line => /^\s*Stream #\d+:\d+/.test(line));
+      const video = streamLines.find(line => /:\s*Video:/.test(line));
+      const incompatibleAudio = streamLines.some(line => /:\s*Audio:(?!\s*aac\b)/i.test(line));
+      if (seconds < 3 || seconds > 900 || !video || !/Video:\s*(h264|hevc)\b/i.test(video) || incompatibleAudio) {
         throw new InstagramDraftError("El reel debe ser un MP4 de 3 segundos a 15 minutos, con vídeo H.264 o HEVC y audio AAC si incluye sonido.");
       }
       return { bytes: source, type: "video/mp4", sha: mediaDigest(source) };

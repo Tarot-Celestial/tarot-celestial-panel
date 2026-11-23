@@ -47,6 +47,8 @@ function fixture(config = {}) {
     const code=ts.transpileModule(fs.readFileSync(full,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
     vm.runInNewContext(code,{exports,fetch,Response,AbortSignal,Buffer,Date,Intl,process:{cwd:()=>path.join(__dirname,'..'),env:{OPENAI_API_KEY:config.key===false?'':'test-local',OFFICE_TEXT_MODEL:config.model||'unknown'}},require(name){
       if(name==='server-only')return {};
+      if(name==='./office-instagram-performance')return {readOfficeInstagramPerformance:async()=>config.performance};
+      if(name==='./office-instagram-attachment' && config.attachment) return {loadOfficePublicationAttachment:config.attachment};
       if(name.startsWith('@/'))return load('src/'+name.slice(2));
       if(name.startsWith('.'))return load(path.join(path.dirname(full),name));
       return require(name);
@@ -54,11 +56,23 @@ function fixture(config = {}) {
     return exports;
   }
   const provider=load('src/lib/server/office-creative');
-  const step=(i,details=task,brief,revision)=>provider.officeCreativeStep({db,run:{step:i,task_revision:details.revision,outputs:{'0':brief},source_snapshot:brief?.source_snapshot},task:details,revision});
+  const step=(i,details=task,brief,revision)=>provider.officeCreativeStep({db,run:{id:'00000000-0000-4000-8000-000000000003',instagram_publication:config.publication,step:i,task_revision:details.revision,outputs:{'0':brief},source_snapshot:brief?.source_snapshot},task:details,revision});
   return {step,calls,tables,db,validate:provider.validateOfficeSources, publicCaption:provider.officePublicCaption,
     worker:()=>load('src/lib/server/office-worker')};
 }
 const expected = status => error => error.status === status;
+test('Atlas conserva el resultado de Instagram y cambia el diseño de un referente conocido',async()=>{
+  const source={id:'9988',format:'IMAGE',caption:creative.caption,likes:17,comments:4,reach:98};
+  const f=fixture({publication:'photo',performance:{variant_source:source,posts:[source,{}],basis:'per_reach',checked_at:'2026-11-22T20:00:00Z'},
+    tables:{office_instagram_posts:[{external_post_id:'9988',username:'tarotcelestialof',status:'published',version_id:'v'}],
+      office_runs:[{result_version_id:'v',outputs:{'0':{visual_variant:'ritual'}}}]}});
+  const atlas=await f.step(0);
+  assert.equal(atlas.output.instagram_evidence.reference.comments,4);
+  assert.notEqual(atlas.output.visual_variant,'ritual');
+  await assert.rejects(f.step(1,task,atlas.output),expected('waiting_input'));
+  const withoutStats=fixture({publication:'reel'});
+  assert.equal((await withoutStats.step(0)).output.instagram_evidence.status,'unavailable');
+});
 test('la revisión de autonomía se realiza antes de enviar datos al proveedor', async()=>{
   for(const [autonomy,status] of [['paused','waiting_input'],['handoff','waiting_input'],['limit','limit_reached']]){
     const f=fixture({autonomy}); await assert.rejects(f.step(0),expected(status));assert.equal(f.calls.length,0);
@@ -139,17 +153,23 @@ test('el caption empieza con la voz pública y conserva el texto editorial despu
 });
 
 test('una entrega pendiente usa los textos renderizados y las dimensiones del PNG, incluso con texto alternativo antiguo',async()=>{
-  const f=fixture();
+  const hash = 'a'.repeat(64);
+  const f=fixture({attachment:async(db,id,sha,format)=>{
+    assert.equal(id,'run'); if(sha!==hash) throw Error('Attachment changed');
+    return {file_name:format==='photo'?'original.jpg':'original.mp4',file_type:format==='photo'?'image/jpeg':'video/mp4',
+      file_base64:'T3JpZ2luYWw=',alt_text:format==='photo'?'La foto elegida por Álex.':''};
+  }});
   const brief=(await f.step(0)).output;
   const copy={...creative,caption:'Borrador interno para revisión de Álex.\n\n'+creative.caption,alt:'Diseño cuadrado con cinco cartas.'};
-  let saved;
+  let saved, publication = null, attachment = null;
   const db={
     from(table){
       if(table!=='office_tasks') return f.db.from(table);
       return {select(){return this;},eq(){return this;},single:async()=>({data:{...task,department_id:'marketing'},error:null})};
     },
     async rpc(name,args){
-      if(name==='office_run_claim') return {data:{id:'run',task_id:task.id,lease_token:'lease',step:2,outputs:{0:brief,1:copy}},error:null};
+      if(name==='office_run_claim') return {data:{id:'run',task_id:task.id,lease_token:'lease',step:2,
+        instagram_publication:publication,instagram_source_sha256:attachment,outputs:{0:{...brief,visual_variant:'ritual'},1:copy}},error:null};
       if(name==='office_run_finish_step'){saved=args;return {data:{status:'review'},error:null};}
       return f.db.rpc(name,args);
     },
@@ -163,6 +183,30 @@ test('una entrega pendiente usa los textos renderizados y las dimensiones del PN
   assert.equal(width,1080);assert.equal(height,1350);
   assert.equal(alt,[`Cartel vertical de Tarot Celestial (${width} × ${height} px). «${copy.headline}».`,
     ...copy.lines.map((line,i)=>`0${i+1}. ${line}`)].join('\n'));
+  for (publication of ['photo','reel']) {
+    await f.worker().processOfficeRun(db,'run');
+    assert.equal(saved.p_status,'ok');
+    assert.equal(saved.p_delivery.file_type,publication==='reel'?'video/mp4':'image/png');
+    assert.equal(saved.p_output.format,publication==='reel'?'MP4':'PNG');
+    assert.ok(saved.p_delivery.body.startsWith(creative.caption+'\n\nTexto '));
+    assert.ok(saved.p_delivery.body.includes('Vela encendida'));
+    if (publication === 'reel') {
+      assert.equal(saved.p_output.width,720);assert.equal(saved.p_output.height,1280);
+      assert.equal(Buffer.from(saved.p_delivery.file_base64,'base64').subarray(4,8).toString('ascii'),'ftyp');
+    }
+  }
+  attachment=hash;
+  for(publication of ['photo','reel']) {
+    await f.worker().processOfficeRun(db,'run');
+    assert.equal(saved.p_delivery.file_base64,'T3JpZ2luYWw=');
+    assert.equal(saved.p_delivery.file_name,publication==='photo'?'original.jpg':'original.mp4');
+    assert.equal(saved.p_delivery.body,creative.caption+(publication==='photo'?'\n\nTexto alternativo\n\nLa foto elegida por Álex.':''));
+    assert.equal(saved.p_output.renderer,'archivo-adjunto');
+    assert.equal(saved.p_output.width,undefined); assert.equal(saved.p_output.height,undefined);
+  }
+  attachment='b'.repeat(64);
+  await f.worker().processOfficeRun(db,'run');
+  assert.equal(saved.p_status,'failed'); assert.equal(saved.p_delivery,null);
 });
 
 test('no fabricated content or retries on missing key, quota exhaustion, transport uncertainty or the request-size limit',async()=>{
