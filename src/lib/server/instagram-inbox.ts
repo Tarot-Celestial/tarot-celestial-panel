@@ -70,6 +70,7 @@ async function loadMessages(account: InstagramAccount, row: ThreadRow, office = 
   let recipientId: string | null = null;
   let lastInbound: string | null = null;
   let incompleteHistory = false;
+  let earlierMessagesHidden = false;
   if (row.kind === 'message') {
     // Meta documents listing message IDs first, then reading details. Only the
     // latest 20 can be retrieved; a removed message must not hide the others.
@@ -82,6 +83,7 @@ async function loadMessages(account: InstagramAccount, row: ThreadRow, office = 
     if (!conversationId) throw new InstagramError('CONVERSATION_PENDING','El mensaje ya está recibido. Instagram aún no permite consultar su conversación; vuelve a actualizar.');
     const list = await instagramGraph(account, conversationId, { fields: 'messages' });
     if (!Array.isArray(list.messages?.data)) throw new InstagramError('META_INVALID_RESPONSE', 'Instagram no devolvió el historial de esta conversación. Actualiza para volver a intentarlo.');
+    earlierMessagesHidden = list.messages.data.length > 20 || Boolean(list.messages.paging?.next);
     const details = await Promise.all(list.messages.data.slice(0, 20).map(async (item: any) => {
       if (!graphId(item?.id)) throw new InstagramError('META_INVALID_RESPONSE', 'Instagram devolvió un mensaje sin referencia válida. Actualiza la conversación.');
       try {
@@ -162,7 +164,7 @@ async function loadMessages(account: InstagramAccount, row: ThreadRow, office = 
   }
   messages.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   await recordSocialActivity('instagram',account.accountId,verifiedActivity);
-  return { messages, recipientId, lastInbound, incompleteHistory };
+  return { messages, recipientId, lastInbound, incompleteHistory, earlierMessagesHidden };
 }
 
 export async function instagramMessages(id: string, requestId?: string | null) {

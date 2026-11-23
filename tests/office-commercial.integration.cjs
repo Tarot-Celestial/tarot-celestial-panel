@@ -22,7 +22,7 @@ before(async()=>{
  create table public.tc_social_connections_v2(provider text,account_id text);
  create table public.tc_instagram_threads(id uuid,kind text,account_id text,recipient_id text,remote_id text,name text,remote_created_at timestamptz,remote_updated_at timestamptz,last_reply_at timestamptz,private_reply_sent boolean,merged_into uuid);
  create table public.tc_facebook_threads(like public.tc_instagram_threads,is_deleted boolean default false);
- create table public.tc_instagram_sends(request_id uuid,thread_id uuid,status text,created_at timestamptz,completed_at timestamptz);
+ create table public.tc_instagram_sends(request_id uuid,thread_id uuid,status text,created_at timestamptz,completed_at timestamptz,reply_mode text,remote_message_id text);
  create table public.tc_facebook_sends(like public.tc_instagram_sends);
  create table public.tc_social_inbox_activity(provider text,account_id text,kind text,remote_id text,thread_remote_id text,removed_at timestamptz,
    id bigint generated always as identity,occurred_at timestamptz);
@@ -50,6 +50,7 @@ before(async()=>{
  await db.exec(migration("office_commercial_reply_windows"));
  await db.exec(migration("office_instagram_immediate_reply"));
  await db.exec(migration("office_instagram_comment_claim"));
+ await db.exec(migration("office_instagram_comment_context"));
  assert.equal((await page()).items[0].opportunity_id,historic);
 });
 after(async()=>db?.close());
@@ -180,11 +181,11 @@ async function instagramFixture() {
     insert into tc_instagram_threads(id,kind,account_id,recipient_id,remote_id,remote_updated_at)
       values(gen_random_uuid(),'message','ig-fixture','peer','conversation',now());`);
 }
-async function receiveDm(sourceId,minutesAgo=1) {
+async function receiveDm(sourceId,minutesAgo=1,peer="peer") {
   await q(`insert into tc_social_inbox_activity(provider,account_id,kind,remote_id,thread_remote_id,occurred_at)
-    values('instagram','ig-fixture','message',$1,'peer',now() - $2 * interval '1 minute')`,[sourceId,minutesAgo]);
+    values('instagram','ig-fixture','message',$1,$3,now() - $2 * interval '1 minute')`,[sourceId,minutesAgo,peer]);
   assert.equal(await q("select office_capture_record_social('instagram','ig-fixture',$1)",[
-    JSON.stringify([{kind:"message",source_id:sourceId,thread_key:"peer",body:"Información sobre la consulta"}])]),1);
+    JSON.stringify([{kind:"message",source_id:sourceId,thread_key:peer,body:"Información sobre la consulta"}])]),1);
 }
 const claimDm=(sourceId,account="ig-fixture")=>q("select office_capture_claim_instagram_dm($1,$2)",[account,sourceId]);
 const beginDm=job=>q("select office_capture_begin($1,$2,'Fixture','ask_country')",[job.id,job.lease_token]);
@@ -199,6 +200,58 @@ async function receiveComment(sourceId,{root=sourceId,author=null,body="Quiero u
     JSON.stringify([{kind:"comment",source_id:sourceId,thread_key:root,body}])]),1);
 }
 const claimComment=(sourceId,account="ig-fixture")=>q("select office_capture_claim_instagram_comment($1,$2)",[account,sourceId]);
+
+test("un DM con lease sólo hereda la pregunta de país privada y confirmada del mismo destinatario",async()=>{
+  await instagramFixture();
+  const peer="789123",remote="native-comment-question";
+  await q("update tc_instagram_threads set recipient_id=$1 where kind='message'",[peer]);
+  await receiveComment("question",{author:peer,daysAgo:5/1440});
+  const comment=await claimComment("question");
+  await beginDm(comment);
+  await q("update tc_instagram_threads set private_reply_sent=true where id=$1",[comment.thread_id]);
+  await q(`insert into tc_instagram_sends(request_id,thread_id,status,created_at,completed_at,reply_mode,remote_message_id)
+    values($1,$2,'sent',now()-interval '4 minutes',now()-interval '3 minutes','private',$3)`,
+    [comment.request_id,comment.thread_id,remote]);
+  await finishDm(comment,"sent",null,remote);
+  await receiveDm("country",1,peer);
+  const dm=await claimDm("country");
+  const context=(lease=dm.lease_token)=>q("select office_capture_instagram_comment_context($1,$2)",[dm.id,lease]);
+  assert.equal(await context(randomUUID()),null);
+  const proof=await context();assert.equal(proof.route,"ask_country");assert.equal(proof.remote_id,remote);
+  await beginDm(dm);
+  assert.deepEqual(await context(),proof);
+  // A native reservation for this same transport is allowed at the last check.
+  await q("insert into tc_instagram_sends(request_id,thread_id,status,created_at,reply_mode) values($1,$2,'sending',now(),'private')",[dm.request_id,dm.thread_id]);
+  assert.deepEqual(await context(),proof);
+  async function rejected(sql,args) {
+    await db.exec("savepoint scenario");
+    await q(sql,args);
+    assert.equal(await context(),null);
+    await db.exec("rollback to scenario; release scenario");
+  }
+  await db.exec("begin");
+  try {
+    await rejected("update tc_instagram_sends set remote_message_id='other' where request_id=$1",[comment.request_id]);
+    await rejected("update tc_instagram_sends set reply_mode='public' where request_id=$1",[comment.request_id]);
+    await rejected("update office_capture_attempts set route='phone' where request_id=$1",[comment.request_id]);
+    await rejected("update tc_instagram_threads set recipient_id='899999' where id=$1",[comment.thread_id]);
+    await rejected("update tc_instagram_threads set account_id='unrelated' where id=$1",[comment.thread_id]);
+    await rejected("update tc_instagram_threads set private_reply_sent=false where id=$1",[comment.thread_id]);
+    await rejected("update tc_instagram_sends set completed_at=now() where request_id=$1",[comment.request_id]);
+    await rejected("update tc_instagram_sends set completed_at=now()-interval '25 hours' where request_id=$1",[comment.request_id]);
+    await rejected("update tc_social_inbox_activity set removed_at=now() where remote_id='question'");
+    await rejected("insert into tc_instagram_sends(request_id,thread_id,status,created_at,completed_at) values(gen_random_uuid(),$1,'sent',now(),now())",[comment.thread_id]);
+    await rejected("insert into tc_instagram_sends(request_id,thread_id,status,created_at) values(gen_random_uuid(),$1,'uncertain',now())",[comment.thread_id]);
+    await rejected("update office_capture_opportunities set lease_until=now()-interval '1 second' where id=$1",[dm.id]);
+    await rejected("insert into office_capture_suppressions(channel,account_id,peer_id) values('instagram','ig-fixture',$1)",[peer]);
+    await rejected("insert into office_commercial_cases(opportunity_id,state,reason,opened_at) values($1,'open','HUMAN_REQUEST',now())",[dm.id]);
+    for(const role of ["anon","authenticated"]) {
+      assert.equal(await q("select has_function_privilege($1,'office_capture_instagram_comment_context(uuid,uuid)','execute')",[role]),false);
+    }
+    await db.exec("set local role service_role");
+    assert.deepEqual(await context(),proof);
+  } finally { await db.exec("rollback"); }
+});
 
 test("el comentario firmado reclama su propio hilo por ID, incluso si Instagram omite el autor",async()=>{
   await instagramFixture();

@@ -84,6 +84,7 @@ function harness(options = {}) {
     async rpc(name,args) {
       calls.push({name,args});
       if (name === "office_capture_claim") return {data:job};
+      if (name === "office_capture_instagram_comment_context") return {data:options.commentPrompts?.shift() ?? options.commentPrompt ?? null};
       if (["office_capture_claim_instagram_dm","office_capture_claim_instagram_comment"].includes(name)) return {data:args.p_source_id === job.source_id ? job : null};
       if (name === "office_capture_begin" && options.revoked) return {data:null};
       if (name === "office_autonomy_dispatch") return {data:!options.pausedLate};
@@ -103,7 +104,7 @@ function harness(options = {}) {
     if(code) throw new policy.DispatchDecision(code);
     return proof;
   },sendSocialReply:async(job,proof,body,mode,beforeSend)=>{
-    if(beforeSend)await beforeSend();
+    if(beforeSend)await beforeSend(options.freshProof || proof);
     calls.push({name:"send",body,mode});
     if (options.lost) throw Object.assign(Error("timeout"),{code:"SEND_UNCERTAIN"});
     return "receipt";
@@ -228,6 +229,58 @@ test("un país solo responde a una pregunta enviada; saludo en comentario, datos
   const follow=harness({proof:{text:"Quiero consultar"},past:[{inbound_text:"Hola, vivo en Chile",source_at:new Date(Date.now()-60000).toISOString()}],
     lines:{CL:{country:"CL",enabled:true,phone:"+56 2 3210 0942"}}});
   await follow.run();assert.deepEqual(follow.links,["panel"]);
+});
+test("la respuesta privada al comentario vincula el país del mismo autor incluso si lo escribió dos veces", async()=>{
+  const time = Date.now()-3000, at=offset=>new Date(time+offset).toISOString();
+  const prompt={route:"ask_country",remote_id:"ask",completed_at:at(-119500)};
+  const older={route:"oracle",completed_at:at(-900000)};
+  const history=[{id:"old-oracle",fromMe:true,createdAt:older.completed_at,text:"Tu enlace"},
+    {id:"ask",fromMe:true,createdAt:at(-120000),text:"¿Desde qué país nos escribes?"},
+    {id:"first",fromMe:false,createdAt:at(-60000),text:"Desde Puerto Rico"},
+    {id:"in",fromMe:false,createdAt:at(0),text:"Puerto Rico"}];
+  const proofFor=(messages,more=false)=>{
+    const latest=messages.at(-1);
+    return {sourceAt:latest.createdAt,sourceId:latest.id,text:latest.text,lastReplyAt:older.completed_at,
+      countryHistory:policy.instagramCountryHistory(latest,messages,more)};
+  };
+  const pr={country:"PR",enabled:true,phone:"+1 787 945 0710"};
+  for(const messages of [[...history.slice(0,2),{...history[2],id:"in"}],history,history.filter(m=>m.id!=="ask")]){
+    const h=harness({proof:proofFor(messages),commentPrompt:prompt,questions:[older],lines:{PR:pr}});
+    await h.webhook("biz","in","in");
+    assert.equal(h.calls.filter(c=>c.name==="send").length,1);
+    assert.match(h.calls.find(c=>c.name==="send").body,/787 945 0710/);
+    assert.equal(h.calls.filter(c=>c.name==="office_capture_instagram_comment_context").length,2);
+  }
+  for(const text of ["Desde Puerto Rico","Hola, desde Puerto Rico","PUERTO RICO"])assert.equal(policy.countryAnswer(text),"PR");
+  for(const text of ["Desde Puerto Rico o España","Mi amiga es de Puerto Rico","No estoy en Puerto Rico"])assert.equal(policy.countryAnswer(text),null);
+  const human={id:"manual",fromMe:true,createdAt:at(-25000),text:"Te atiendo yo"};
+  for(const scenario of [
+    {proof:proofFor(history),commentPrompt:null}, {proof:proofFor(history),commentPrompt:{...prompt,completed_at:at(-90000000)}},
+    {proof:proofFor([history[2],history[3]],true),commentPrompt:prompt},
+    {proof:proofFor([...history.slice(0,-1),human,history.at(-1)]),commentPrompt:prompt},
+    {proof:proofFor([...history.slice(0,-1),{...human,fromMe:false,text:"Necesito una persona"},history.at(-1)]),commentPrompt:prompt},
+    {proof:proofFor(history),commentPrompt:prompt,freshProof:proofFor([...history.slice(0,-1),human,history.at(-1)])},
+    {proof:proofFor(history),commentPrompts:[prompt,null]},
+  ]) {
+    const h=harness({...scenario,questions:[older],lines:{PR:pr}});
+    assert.equal((await h.run()).handoff,1);assert.equal(h.calls.some(c=>c.name==="send"),false);
+  }
+});
+test("una confirmación repetida tras la línea con su recibo exacto no duplica el teléfono ni abre un caso Comercial",async()=>{
+  const time=Date.now()-60000,at=offset=>new Date(time+offset).toISOString();
+  const attempt={route:"phone",receipt_id:"line",source_id:"a",completed_at:at(12500)};
+  const history=[{id:"a",text:"Desde Puerto Rico",fromMe:false,createdAt:at(0)},
+    {id:"line",text:"Puedes llamar",fromMe:true,createdAt:at(12000)},
+    {id:"in",text:"Puerto Rico",fromMe:false,createdAt:at(21000)}];
+  const countryProof=messages=>({text:messages.at(-1).text,sourceAt:messages.at(-1).createdAt,sourceId:"in",lastReplyAt:at(12200),
+    countryHistory:policy.instagramCountryHistory(messages.at(-1),messages,false)});
+  const h=harness({proof:countryProof(history),questions:[attempt]});
+  assert.equal((await h.run()).blocked,1);assert.equal(h.calls.at(-1).args.p_reason,"COUNTRY_ALREADY_ANSWERED");
+  assert.equal(h.calls.some(c=>c.name==="send"||c.name==="office_capture_begin"),false);
+  for(const changed of [[...history.slice(0,2),{...history[2],text:"España"}],[history[0],{...history[1],id:"human"},history[2]]]){
+    const g=harness({proof:countryProof(changed),questions:[attempt]});
+    assert.equal((await g.run()).handoff,1);assert.equal(g.calls.some(c=>c.name==="send"),false);
+  }
 });
 test("un comentario sin DM solo invita al privado; una baja, un código, un operador o una revocación no envían",async()=>{
   const pub=harness({job:{kind:"comment"},proof:{privateAllowed:false,publicAllowed:true}});await pub.run();

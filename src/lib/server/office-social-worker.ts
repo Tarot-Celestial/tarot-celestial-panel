@@ -3,8 +3,8 @@ import { confirmMetaPanelCode, getMetaPanelLink } from "./office-meta-attributio
 import { CAPTACION_WHATSAPP_ORIGIN } from "./captacion-whatsapp";
 import { readSocialProof, sendSocialReply } from "./office-social-graph";
 import { readWhatsAppProof, sendWhatsAppReply, prepareFormReply } from "./office-social-whatsapp";
-import { asksToStop, consultationIntent, DispatchDecision, explicitMarket, messageMarket, readMessageMarket, openWindow, socialReplyText,
-  type CaptureJob, type ContactRoute, type SocialProof } from "./office-social-policy";
+import { alreadyAnsweredCountry, answersCommentPrompt, asksToStop, consultationIntent, countryAnswer, DispatchDecision, explicitMarket, messageMarket, readMessageMarket, openWindow, socialReplyText,
+  type CaptureJob, type ContactRoute, type InstagramCountryPrompt, type SocialProof } from "./office-social-policy";
 export { syncOfficeSocialInboxes } from "./office-social-graph";
 
 type Outcome = "sent" | "blocked" | "handoff" | "failed" | "uncertain";
@@ -36,7 +36,7 @@ async function currentConversation(db:any, job:CaptureJob) {
   const [past,question] = await Promise.all([
     db.from("office_capture_inbound").select("inbound_text,source_id,source_at").eq("opportunity_id",job.id)
       .eq("verified",true).lt("source_at",job.latest_inbound_at).order("source_at",{ascending:false}).limit(12),
-    db.from("office_capture_attempts").select("route,completed_at").eq("opportunity_id",job.id).eq("outcome","sent")
+    db.from("office_capture_attempts").select("route,completed_at,source_id,receipt_id").eq("opportunity_id",job.id).eq("outcome","sent")
       .lt("completed_at",job.latest_inbound_at).order("completed_at",{ascending:false}).limit(15),
   ]);
   if (past.error || question.error) throw new DispatchDecision("CONVERSATION_HISTORY_UNAVAILABLE","blocked");
@@ -49,7 +49,10 @@ async function currentConversation(db:any, job:CaptureJob) {
   }
   const lastSent = question.data?.[0];
   const previousRoute: ContactRoute | null = lastSent && openWindow(lastSent.completed_at, 24, Date.parse(job.latest_inbound_at)) ? lastSent.route : null;
-  return { previousRoute, historicalMarket:markets.size === 1 ? [...markets][0] : null };
+  return { previousRoute, lastSent, historicalMarket:markets.size === 1 ? [...markets][0] : null };
+}
+async function commentPrompt(db:any,job:CaptureJob):Promise<InstagramCountryPrompt|null> {
+  return rpc(db,"office_capture_instagram_comment_context",{p_id:job.id,p_lease_token:job.lease_token});
 }
 async function privatePlan(db:any,job:CaptureJob,proof:SocialProof):Promise<Plan> {
   if (!proof.privateAllowed && !proof.publicAllowed) throw new DispatchDecision("CHANNEL_UNAVAILABLE","blocked");
@@ -59,7 +62,18 @@ async function privatePlan(db:any,job:CaptureJob,proof:SocialProof):Promise<Plan
   }
   if (!openWindow(proof.sourceAt, job.kind === "comment" ? 168 : 24)) throw new DispatchDecision("WINDOW_CLOSED");
   const history = await currentConversation(db,job), location = readMessageMarket(proof.text);
-  const intent = consultationIntent(proof.text,job.channel,job.kind,proof.followsConsultation ? "ask_country" : history.previousRoute);
+  let previousRoute = proof.followsConsultation ? "ask_country" as const : history.previousRoute;
+  let prompt:InstagramCountryPrompt|null = null;
+  if (job.channel === "instagram" && job.kind === "message" && countryAnswer(proof.text)) {
+    prompt = await commentPrompt(db,job);
+    if (prompt) {
+      if (!answersCommentPrompt(proof,prompt) || (history.lastSent && Date.parse(history.lastSent.completed_at) >= Date.parse(prompt.completed_at))) {
+        throw new DispatchDecision("CONVERSATION_CHANGED");
+      }
+      previousRoute = "ask_country";
+    } else if (alreadyAnsweredCountry(proof,history.lastSent)) throw new DispatchDecision("COUNTRY_ALREADY_ANSWERED","blocked");
+  }
+  const intent = consultationIntent(proof.text,job.channel,job.kind,previousRoute);
   if (!intent) throw new DispatchDecision("NEEDS_PERSONAL_RESPONSE");
   const market = location.needsCountry ? null : location.market || history.historicalMarket || explicitMarket(job.market);
   const mode = proof.privateAllowed ? "private" : "public";
@@ -83,7 +97,15 @@ async function privatePlan(db:any,job:CaptureJob,proof:SocialProof):Promise<Plan
       await beforeTransport(db,job);
       return sendWhatsAppReply(job,proof,body);
     }
-    return sendSocialReply(job,proof,body,mode,() => beforeTransport(db,job));
+    return sendSocialReply(job,proof,body,mode,async fresh => {
+      if (prompt) {
+        const current = await commentPrompt(db,job);
+        if (!current || current.remote_id !== prompt.remote_id || current.completed_at !== prompt.completed_at || !answersCommentPrompt(fresh,current)) {
+          throw new DispatchDecision("CONVERSATION_CHANGED");
+        }
+      }
+      await beforeTransport(db,job);
+    });
   }};
 }
 function decision(error:unknown,committed:boolean): { outcome:Outcome; reason:string } {

@@ -15,7 +15,9 @@ export type SocialProof = {
   accountId: string; peerId: string | null; sourceId: string; sourceAt: string; text: string;
   privateAllowed: boolean; publicAllowed: boolean; lastReplyAt: string | null; senderPhone?: string;
   followsConsultation?: boolean;
+  countryHistory?: { earlierHidden:boolean; events:{id:string; at:string; kind:"sent"|"country"|"other"}[] };
 };
+export type InstagramCountryPrompt = {route:"ask_country"; remote_id:string; completed_at:string};
 const plain = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const countryNames = new Intl.DisplayNames(["es"], { type: "region" });
 const names = new Map<string, string>();
@@ -36,9 +38,14 @@ export function explicitMarket(value?: string | null): string | null {
   const trimmed = value.trim(), code = trimmed.toUpperCase();
   return countries.has(code) ? code : names.get(plain(trimmed)) || null;
 }
+/** Accept an entire country answer. A place named in someone else's story is not a reply to the question. */
+export function countryAnswer(text:string):string|null {
+  const answer = text.trim().replace(/^(?:hola[,!\s]+)?(?:desde|soy de|estoy en|vivo en|(?:te |les )?escribo desde)\s+(?:(?:el|la|los)\s+)?/iu,"");
+  return names.get(plain(answer)) || (/^[A-Z]{2}$/.test(answer) ? explicitMarket(answer) : null);
+}
 export function readMessageMarket(text: string): {market: string | null; needsCountry: boolean} {
   const normalized = plain(text);
-  const wholeAnswer = names.get(normalized) || (/^[A-Z]{2}$/.test(text.trim()) ? explicitMarket(text) : null);
+  const wholeAnswer = countryAnswer(text);
   if (wholeAnswer) return {market:wholeAnswer, needsCountry:false};
   const origins = new Set<string>(), locations = new Set<string>();
   const deniedOrigins = new Set<string>(), deniedLocations = new Set<string>();
@@ -104,6 +111,35 @@ export function socialReplyText(route: ContactRoute, value?: string, panelLink?:
 }
 
 type HistoryMessage = { id: string; fromMe: boolean; createdAt: string; text: string };
+export function instagramCountryHistory(incoming:HistoryMessage,messages:HistoryMessage[],earlierHidden:boolean):SocialProof["countryHistory"] {
+  const market = countryAnswer(incoming.text);
+  if (!market) return undefined;
+  return {earlierHidden,events:messages.map(message => ({id:message.id,at:message.createdAt,
+    kind:message.fromMe ? "sent" : countryAnswer(message.text) === market ? "country" : "other"}))};
+}
+export function answersCommentPrompt(proof:SocialProof,prompt:InstagramCountryPrompt) {
+  const history=proof.countryHistory, completed=Date.parse(prompt.completed_at);
+  if (!history || !history.events.length || prompt.route !== "ask_country" || typeof prompt.remote_id !== "string" || !prompt.remote_id ||
+      !openWindow(prompt.completed_at,24,Date.parse(proof.sourceAt)) || Date.parse(proof.sourceAt) <= completed) return false;
+  const incoming=history.events[history.events.length-1];
+  if (incoming.id!==proof.sourceId || incoming.kind!=="country" || incoming.at!==proof.sourceAt) return false;
+  // Graph timestamps have second precision. Treat any other activity in that second as ambiguous.
+  const threshold=Math.floor(completed/1000)*1000;
+  if (proof.lastReplyAt && Date.parse(proof.lastReplyAt) >= threshold) return false;
+  if (history.earlierHidden && !history.events.some(e=>Date.parse(e.at)<=threshold || (e.kind==="sent" && e.id===prompt.remote_id))) return false;
+  return history.events.every(e=>Number.isFinite(Date.parse(e.at)) && (Date.parse(e.at)<threshold || e.kind==="country" ||
+    (e.kind==="sent" && e.id===prompt.remote_id)));
+}
+/** The previous country DM, our confirmed line, and the same country again must be adjacent in live Graph history. */
+export function alreadyAnsweredCountry(proof:SocialProof,attempt:{route:string; receipt_id?:string; source_id?:string; completed_at:string}|null) {
+  const events = proof.countryHistory?.events;
+  if (attempt?.route !== "phone" || !attempt.receipt_id || !events || events.length < 3) return false;
+  const [first,sent,repeat] = events.slice(-3);
+  const firstAt=Date.parse(first.at), sentAt=Date.parse(sent.at), repeatAt=Date.parse(repeat.at);
+  return first.kind==="country" && first.id===attempt.source_id && sent.kind==="sent" && sent.id===attempt.receipt_id &&
+    repeat.kind==="country" && repeat.id===proof.sourceId && firstAt<sentAt && sentAt<repeatAt && repeatAt-firstAt<=5*60000 &&
+    Date.parse(attempt.completed_at)<repeatAt && (!proof.lastReplyAt || Date.parse(proof.lastReplyAt)<=Date.parse(attempt.completed_at));
+}
 /** Two consecutive DMs can split the request and country. Use only the adjacent, unanswered request. */
 export function followsInstagramConsultation(incoming:HistoryMessage, messages:HistoryMessage[], lastReplyAt:string|null) {
   if (!messageMarket(incoming.text)) return false;
