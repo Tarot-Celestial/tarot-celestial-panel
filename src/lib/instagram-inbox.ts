@@ -1,8 +1,15 @@
 export const ACTIVE_CONSULTATION_LINES = [
-  { country: "Puerto Rico", flag: "🇵🇷", display: "+1 787 945 0710", href: "tel:+17879450710" },
-  { country: "Estados Unidos", flag: "🇺🇸", display: "+1 786 539 4750", href: "tel:+17865394750" },
-  { country: "España", flag: "🇪🇸", display: "93 050 25 86", href: "tel:+34930502586" },
+  { market: "PR", country: "Puerto Rico", flag: "🇵🇷", display: "+1 787 945 0710", href: "tel:+17879450710", firstConsultationFree: true },
+  { market: "US", country: "Estados Unidos", flag: "🇺🇸", display: "+1 786 539 4750", href: "tel:+17865394750", firstConsultationFree: true },
+  { market: "ES", country: "España", flag: "🇪🇸", display: "93 050 25 86", href: "tel:+34930502586", firstConsultationFree: true },
 ] as const;
+
+export function hasInstagramFirstConsultationOffer(market: string | null, phone: string | null) {
+  if (!phone || !market) return false;
+  const digits = phone.replace(/\D/g,"");
+  return ACTIVE_CONSULTATION_LINES.some(line => line.market === market && line.firstConsultationFree &&
+    (line.display.replace(/\D/g,"") === digits || line.href.replace(/\D/g,"") === digits));
+}
 
 export const INSTAGRAM_REPLY_TEMPLATES = [
   {
