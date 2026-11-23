@@ -55,13 +55,74 @@ before(async()=>{
   await db.query("insert into public.tc_client_promotions(id,name,status,starts_at,active_until_disabled,promotion_kind,updated_at) values($1,'Oferta sintética','active',now()-interval '1 day',true,'standard',now())",[promo]);
   await db.query("insert into public.tc_client_promotion_packages(id,promotion_id,name,price,currency,paid_minutes,free_minutes,is_active,updated_at) values($1,$2,'Paquete',15,'EUR',20,5,true,now())",[pack,promo]);
   const migrations=path.join(__dirname,"../supabase/migrations");
-  const publicationSchema = /^\d+_office_(?:celestial_workspace|campaign_runs|run_reconciliation|tasks_delivery_review|instagram_.+)\.sql$/;
+  const publicationSchema = /^\d+_office_(?:celestial_workspace|campaign_runs|run_reconciliation|tasks_delivery_review|instagram_publications|atlas_publication_orders)\.sql$/;
   for (const name of fs.readdirSync(migrations).filter(name => publicationSchema.test(name)).sort()) {
     await db.exec(fs.readFileSync(path.join(migrations, name), "utf8"));
   }
+  await db.exec("create function public.office_autonomy_check(text,text,text,text,boolean) returns text language sql as $$ select coalesce(nullif(current_setting('test.publication_policy',true),''),'allow') $$");
   await db.exec("set role service_role");
 });
 after(async()=>{if(db)await db.close();});
+
+test("Atlas aprueba únicamente el resultado del encargo nuevo, con cuenta, formato y mandato vigentes",async()=>{
+  await db.exec("reset role; update tc_social_connections_v2 set username='tarotcelestialof'; set role service_role");
+  const input=(format="photo")=>({ action:"create_task",department_id:"marketing",objective:"Publicar una pieza",expected_delivery:"Instagram",
+    priority:"media",status:"pendiente",due_at:null,time_zone:"Europe/Madrid",assignee_worker_id:null,assignee_role:"atlas",
+    instagram_publication:format,request_id:randomUUID() });
+  const order=i=>rpc("office_create_instagram_order",user,JSON.stringify(i));
+  const ready=async(request,type)=>{
+    const receipt=await order(request);
+    const v=await version(receipt.id,null,type);
+    await db.query(`update office_runs set status='review',result_version_id=$2,
+      outputs='{"1":{"caption":"Una consulta en español","headline":"Prueba interna"}}' where id=$1`,[receipt.run_id,v]);
+    return {rid:receipt.run_id,task:receipt.id,v};
+  };
+  const review=async(item,more={})=>rpc("office_atlas_decide_publication",item.rid,item.v,JSON.stringify({
+    username:"tarotcelestialof",account_id:account,persisted_account_id:stored,media_type:"image/jpeg",caption:"Una consulta en español",
+    alt_text:"Una imagen de prueba",media_sha256:hash,connected_at:await scalar("select connected_at::text v from tc_social_connections_v2"),
+    ...more}));
+  const status=item=>scalar("select atlas_review_status v from office_runs where id=$1",[item.rid]);
+  const i=input();
+  const legacy=input(); await office(legacy); await assert.rejects(order(legacy),/OFFICE_CONFLICT/);
+  const normalTask=await newTask();const draft=await rpc("office_run_enqueue",user,normalTask,randomUUID(),null);
+  assert.equal(await rpc("office_atlas_review_candidate",draft),null);
+  assert.equal(await rpc("office_atlas_decide_publication",draft,randomUUID(),"{}"),null);
+  const first=await ready(i,"image/png");
+  assert.equal((await order(i)).run_id,first.rid);
+  await assert.rejects(order({...i,instagram_publication:"reel"}),/OFFICE_CONFLICT/);
+  assert.equal((await rpc("office_atlas_review_candidate",first.rid)).version_id,first.v);
+  assert.equal(await rpc("office_atlas_review_candidate",first.rid),null);
+  assert.equal(await review({...first,v:randomUUID()}),null);
+  const pid=await review(first);
+  assert.ok(pid);assert.equal(await review(first),pid);
+  assert.equal((await post(pid)).status,"queued");
+  assert.equal((await post(pid)).approval_agent,"atlas");
+  assert.match((await versionInfo(first.v)).review_note,/Atlas/);
+  assert.equal((await rpc("office_snapshot",user)).versions.find(v=>v.id===first.v).reviewed_by_agent,"atlas");
+  assert.equal(await scalar("select count(*)::int v from office_events where task_id=$1 and kind='atlas_publication_approved'",[first.task]),1);
+  await db.query("update office_tasks set revision=revision+1 where id=$1",[first.task]);
+  assert.equal((await post(pid)).status,"invalidated");
+  const updated=await ready(input(),"image/png");await version(updated.task,await versionInfo(updated.v));
+  assert.equal(await review(updated),null);assert.equal(await status(updated),"human");
+  const mismatched=await ready(input("reel"),"image/png");
+  assert.equal(await review(mismatched,{media_type:"video/mp4"}),null);assert.equal(await status(mismatched),"human");
+  const denied=await ready(input(),"image/png");
+  await office({action:"review_version",id:denied.v,decision:"rechazado",note:"Por revisar"});
+  assert.equal(await review(denied),null);assert.equal((await versionInfo(denied.v)).status,"rechazado");
+  const transient=await ready(input("reel"),"video/mp4");
+  assert.equal(await review(transient,{retry:"Meta no disponible"}),null);assert.equal(await status(transient),"pending");
+  await db.exec("set test.publication_policy='paused'");
+  assert.equal(await review(transient,{media_type:"video/mp4"}),null);assert.equal(await status(transient),"pending");
+  await db.exec("set test.publication_policy='allow'");
+  assert.ok(await review(transient,{media_type:"video/mp4"}));
+  const rule=await ready(input(),"image/png");await db.exec("set test.publication_policy='handoff'");
+  assert.equal(await review(rule),null);assert.equal(await status(rule),"human");await db.exec("set test.publication_policy='allow'");
+  const wrongCopy=await ready(input(),"image/png");
+  assert.equal(await review(wrongCopy,{caption:"Otro texto"}),null);assert.equal(await status(wrongCopy),"human");
+  const rebound=await ready(input(),"image/png");
+  await db.exec("reset role; update tc_social_connections_v2 set connected_at=now(),username='ejemplo_sintetico'; set role service_role");
+  assert.equal(await review(rebound),null);assert.equal(await status(rebound),"human");
+});
 
 test("explicit approval binds owner, account, final bytes, caption, private version and schedule",async()=>{
   const t=await newTask(),v=await version(t),req=randomUUID(),when="2050-01-04T12:00:00Z";

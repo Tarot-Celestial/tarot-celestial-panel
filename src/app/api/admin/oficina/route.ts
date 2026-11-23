@@ -5,6 +5,7 @@ import { officeAccess, officeDatabaseError, officeError, officeInput, officeJson
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const maxDuration = 300;
 
 export async function GET(req: Request) {
   try {
@@ -31,8 +32,16 @@ export async function POST(req: Request) {
     if (!access.ok) return access.response;
     const input = await officeInput(req);
     if ("response" in input) return input.response;
-    const { data, error } = await access.admin.rpc("office_apply", { p_user: access.authUserId, p_input: input.data });
+    const publication = input.data.action === "create_task" && input.data.instagram_publication !== undefined;
+    if (publication && process.env.VERCEL_ENV !== "production") return officeError("Crea el encargo de publicación en la Oficina de producción.",409);
+    const operation = publication ? (input.data.file_sha256 ? "office_create_instagram_order_with_file" : "office_create_instagram_order") : "office_apply";
+    const { data, error } = await access.admin.rpc(operation, { p_user: access.authUserId, p_input: input.data });
     if (error) return officeDatabaseError(error);
+    if (publication && data.run_id) {
+      const [{ waitUntil }, { processOfficeRun }] = await Promise.all([import("@vercel/functions"),import("@/lib/server/office-worker")]);
+      waitUntil(processOfficeRun(access.admin,data.run_id).catch(() => { console.error("[office-worker] Encargo de publicación pendiente de la ronda."); }));
+      return officeJson({ ok:true, id:data.id, run_id:data.run_id },202);
+    }
     return officeJson({ ok: true, id: data.id });
   } catch { return officeError("No se pudo confirmar el cambio. Actualiza la Oficina y revisa el historial.",503); }
 }

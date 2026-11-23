@@ -3,7 +3,7 @@
 import { FormEvent, useId, useState } from "react";
 import { Download, FileText } from "lucide-react";
 import type { OfficeSnapshot, OfficeTask, OfficeVersion } from "./model";
-import { OFFICE_FILE_LIMIT } from "./model";
+import { fileData } from "./office-attachment-file";
 import { Feedback, reviewStatuses, useOfficeSave, workerName } from "./WorkControls";
 import { officeDownload } from "./office-client";
 import OfficeInstagram from "./OfficeInstagram";
@@ -11,22 +11,6 @@ import OfficeMedia, { previewableMedia } from "./OfficeMedia";
 import { latestVersions } from "./office-versions";
 import { displayTime } from "./WorkTime";
 import styles from "./OfficeWork.module.css";
-
-async function fileData(file: File) {
-  if (file.size > OFFICE_FILE_LIMIT || file.size === 0) throw new Error("El archivo debe contener datos y ocupar como máximo 2 MiB.");
-  const types: Record<string, string> = {
-    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", mp4: "video/mp4", pdf: "application/pdf", txt: "text/plain",
-  };
-  const mime = types[file.name.split(".").pop()?.toLowerCase() || ""];
-  if (!mime || (file.type && file.type !== mime)) throw new Error("Adjunta un PDF, PNG, JPEG, WebP, MP4 o TXT válido.");
-  const url = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("No se pudo leer el archivo seleccionado."));
-    reader.readAsDataURL(file);
-  });
-  return { file_name: file.name, file_type: mime, file_base64: url.slice(url.indexOf(",") + 1) };
-}
 
 function MediaPreview({ version }: { version: OfficeVersion }) {
   const [open, setOpen] = useState(false);
@@ -57,7 +41,7 @@ export function VersionContent({ version, data }: { version: OfficeVersion; data
     </button>}
     {error && <p role="alert" className={styles.error}>{error}</p>}
     {version.reviewed_at && <div className={styles.reviewResult}>
-      <strong>{reviewStatuses[version.status]}</strong> · {workerName(data, version.reviewed_by)} · {displayTime(version.reviewed_at)} (Madrid)
+      <strong>{reviewStatuses[version.status]}</strong> · {version.reviewed_by_agent === "atlas" ? "Atlas, por delegación de " : ""}{workerName(data, version.reviewed_by)} · {displayTime(version.reviewed_at)} (Madrid)
       {version.review_note && <p className={styles.body}>{version.review_note}</p>}
     </div>}
   </div>;

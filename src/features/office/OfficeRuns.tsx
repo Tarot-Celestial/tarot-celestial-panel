@@ -27,9 +27,15 @@ function RunSummary({ run }: { run: OfficeRun }) {
   const caption = run.outputs?.["1"]?.caption;
   const brief = run.outputs?.["0"]?.brief;
   const sources = run.outputs?.["0"]?.sources;
+  const evidence = run.outputs?.["0"]?.instagram_evidence;
   const artwork = run.outputs?.["2"];
   return <div className={styles.stack}>
     <p className={styles.meta}>Iniciado el {displayTime(run.created_at)} (Madrid)</p>
+    {run.instagram_publication && <p className={styles.body}>
+      {run.instagram_publication === "reel" ? "Reel" : "Foto"} para @tarotcelestialof · {run.atlas_review_status === "approved"
+        ? "Atlas aprobó la publicación" : run.atlas_review_status === "human" ? "Atlas solicita revisión" : "Aprobación delegada a Atlas"}
+      {run.atlas_review_note && <> · {run.atlas_review_note}</>}
+    </p>}
     <ol className={styles.stages} aria-label="Etapas del encargo">
       {stages.map((stage, i) => {
         const done = run.status === "review" || i < run.step;
@@ -41,6 +47,9 @@ function RunSummary({ run }: { run: OfficeRun }) {
     </ol>
     {run.last_error && <p className={styles.body}>{run.last_error}</p>}
     {brief && <details className={styles.details}><summary>Briefing de Atlas</summary><p className={styles.body}>{brief}</p>
+      {evidence && <p className={styles.meta}>{evidence.reference ? "Referencia en Instagram · " + evidence.reference.caption.slice(0,90) +
+        " · " + (evidence.reference.likes ?? "Sin dato") + " me gusta · " + (evidence.reference.comments ?? "Sin dato") + " comentarios" :
+        evidence.status === "unavailable" ? "Instagram no facilitó estadísticas para este encargo." : "Idea nueva. Ninguna publicación destacó en la muestra comparable."}</p>}
       {sources && sources.length > 0 && <ul aria-label="Fuentes del briefing">{sources.map(s => <li key={s.id + s.version}>{s.label} · v{s.version}</li>)}</ul>}
     </details>}
     {caption && <details className={styles.details}><summary>Texto de Marketing</summary><p className={styles.body}>{caption}</p></details>}
@@ -51,7 +60,7 @@ function RunSummary({ run }: { run: OfficeRun }) {
     {typeof run.usage?.input_tokens === "number" && typeof run.usage?.output_tokens === "number" &&
       <p className={styles.meta}>Consumo registrado · {run.usage.input_tokens} tokens de entrada y {run.usage.output_tokens} de salida</p>}
     {typeof run.usage?.cost_usd === "number" && <p className={styles.meta}>Coste calculado · {run.usage.cost_usd} USD</p>}
-    {typeof run.usage?.estimated_cost_usd === "number" && <p className={styles.meta}>Coste estimado · {run.usage.estimated_cost_usd} USD</p>}
+    {typeof run.usage?.estimated_cost_usd === "number" && <p className={styles.meta}>API de OpenAI · Coste estimado del encargo · {run.usage.estimated_cost_usd} USD</p>}
   </div>;
 }
 
@@ -84,13 +93,14 @@ export default function OfficeRuns({ task, versions, reload, onEdit, retryId, st
         if (stopped) return;
         const history = [...data.runs].sort((a, b) => b.created_at.localeCompare(a.created_at));
         setRuns(history);
-        const deliveries = history.filter(r => r.status === "review" && !observed.current.has(r.id));
+        const deliveryKey = (r:OfficeRun) => r.id + ":" + (r.atlas_review_status || "manual");
+        const deliveries = history.filter(r => r.status === "review" && !observed.current.has(deliveryKey(r)));
         if (deliveries.length) {
           await reload();
           if (stopped) return;
-          deliveries.forEach(r => observed.current.add(r.id));
+          deliveries.forEach(r => observed.current.add(deliveryKey(r)));
         }
-        if (history.some(isActiveRun)) {
+        if (history.some(r=>isActiveRun(r) || (r.status === "review" && r.atlas_review_status === "pending"))) {
           if (++checks < POLL_LIMIT) timer = setTimeout(read, POLL_DELAY_MS);
           else setPaused(true);
         }

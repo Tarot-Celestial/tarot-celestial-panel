@@ -27,6 +27,7 @@ export type OfficeVersion = {
   file_name: string | null; file_type: string | null; file_size: number | null;
   status: "pendiente" | OfficeDecision; review_note: string | null; reviewed_by: string | null;
   reviewed_at: string | null; created_at: string; created_by: string;
+  reviewed_by_agent?: "atlas" | null;
 };
 export type OfficeEvent = {
   id: string; department_id: string; task_id: string | null; actor_id: string;
@@ -38,7 +39,7 @@ export type OfficeSnapshot = {
 };
 export type OfficeData = OfficeSnapshot;
 export type OfficeMutation = { request_id: string } & (
-  | ({ action: "create_task" } & OfficeTaskInput)
+  | ({ action: "create_task"; instagram_publication?: "photo" | "reel" } & OfficeTaskInput)
   | ({ action: "update_task"; id: string; revision: number } & OfficeTaskInput)
   | { action: "set_lead"; department_id: string; revision: number; lead_worker_id: string | null }
   | { action: "add_note"; task_id: string; note: string }

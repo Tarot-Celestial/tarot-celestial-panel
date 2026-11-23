@@ -1,3 +1,5 @@
+const officeCreativeFiles = ["./src/lib/server/office-art/*", "./node_modules/ffmpeg-static/**/*", "./node_modules/@resvg/resvg-wasm/index_bg.wasm", "./node_modules/next/dist/compiled/@vercel/og/noto-sans-v27-latin-regular.ttf"];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -14,8 +16,9 @@ const nextConfig = {
       "/api/admin/office/instagram/preview": ["./node_modules/ffmpeg-static/**/*"],
       "/api/office/instagram-media": ["./node_modules/ffmpeg-static/**/*"],
       "/api/cron/office-instagram": ["./node_modules/ffmpeg-static/**/*"],
-      "/api/admin/office/runs": ["./src/lib/server/office-art/*", "./node_modules/@resvg/resvg-wasm/index_bg.wasm", "./node_modules/next/dist/compiled/@vercel/og/noto-sans-v27-latin-regular.ttf"],
-      "/api/cron/office-runs": ["./src/lib/server/office-art/*", "./node_modules/@resvg/resvg-wasm/index_bg.wasm", "./node_modules/next/dist/compiled/@vercel/og/noto-sans-v27-latin-regular.ttf"],
+      "/api/admin/oficina": officeCreativeFiles,
+      "/api/admin/office/runs": officeCreativeFiles,
+      "/api/cron/office-runs": officeCreativeFiles,
     },
   },
 }

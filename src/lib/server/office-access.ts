@@ -1,4 +1,5 @@
 import { requireAdmin } from "@/lib/admin/require-admin";
+import { createHash } from "node:crypto";
 import { OFFICE_FILE_LIMIT } from "@/features/office/model";
 
 export const officeHeaders = { "Cache-Control": "private, no-store, max-age=0", "X-Content-Type-Options": "nosniff" };
@@ -56,7 +57,7 @@ async function readBody(req: Request) {
 }
 
 type Input = Record<string, unknown>;
-function validFile(input: Input) {
+function validatedFile(input: Input) {
   const { file_name: name, file_type: type, file_base64: base64 } = input;
   if (name == null && type == null && base64 == null) return false;
   if (typeof name !== "string" || !name.trim() || name.length > 180 || /[/\\:*?"<>|\x00-\x1f\x7f]/.test(name) ||
@@ -79,7 +80,7 @@ function validFile(input: Input) {
       break;
   }
   if (!accepted) throw new InputError("El contenido debe coincidir con la extensión PDF, PNG, JPG, WEBP, MP4 o TXT.");
-  return true;
+  return bytes;
 }
 
 const nonempty = (v: unknown, max: number) => typeof v === "string" && v.trim().length > 0 && v.length <= max;
@@ -102,6 +103,22 @@ export async function officeInput(req: Request): Promise<{ data: Input } | { res
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new InputError("Revisa los datos de la operación.");
     const i = raw as Input;
     if (!officeUuid(i.request_id)) throw new InputError("Falta el identificador de la solicitud.");
+    if (i.instagram_publication !== undefined && (i.action !== "create_task" || i.department_id !== "marketing" ||
+      !oneOf(i.instagram_publication,["photo","reel"]) || !oneOf(i.status,["pendiente","en_curso"]))) {
+      throw new InputError("La publicación en @tarotcelestialof requiere un encargo nuevo de Marketing con formato de foto o reel.");
+    }
+    if ("instagram_source_digest" in i) throw new InputError("El identificador del archivo se verifica en la Oficina.");
+    const hasOrderFile = ["file_name","file_type","file_base64","file_sha256","file_alt"].some(key => key in i);
+    if (hasOrderFile && i.action !== "add_version") {
+      if (!i.instagram_publication) throw new InputError("Este adjunto requiere un encargo de publicación.");
+      const bytes = validatedFile(i);
+      const photo = i.instagram_publication === "photo";
+      if (!bytes || (photo ? !oneOf(i.file_type,["image/png","image/jpeg","image/webp"]) : i.file_type !== "video/mp4") ||
+        (photo ? !nonempty(i.file_alt,1000) : i.file_alt !== "") ||
+        typeof i.file_sha256 !== "string" || i.file_sha256 !== createHash("sha256").update(bytes).digest("hex")) {
+        throw new InputError("Revisa el formato, la descripción y el contenido del archivo del encargo.");
+      }
+    }
     let valid = false;
     switch (i.action) {
       case "create_task": valid = validTask(i); break;
@@ -109,7 +126,7 @@ export async function officeInput(req: Request): Promise<{ data: Input } | { res
       case "set_lead": valid = nonempty(i.department_id,80) && nullableId(i.lead_worker_id) && revision(i.revision); break;
       case "add_note": valid = officeUuid(i.task_id) && nonempty(i.note,4000); break;
       case "add_version": {
-        const hasFile = validFile(i);
+        const hasFile = !!validatedFile(i);
         valid = officeUuid(i.task_id) && nullableId(i.deliverable_id) && revision(i.base_version,0) &&
           nonempty(i.title,200) && requiredText(i.body,32000) && (hasFile || nonempty(i.body,32000));
         break;

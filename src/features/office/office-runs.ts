@@ -10,9 +10,15 @@ export const runStatus = {
 export type OfficeRun = {
   id: string;
   task_id: string;
+  instagram_publication?: "photo" | "reel" | null;
+  atlas_review_status?: "pending" | "human" | "approved" | null;
+  atlas_review_note?: string | null;
   step: 0 | 1 | 2 | 3;
   status: keyof typeof runStatus;
-  outputs: { "0"?: { brief?: string; sources?: { id: string; version: string; label: string }[] }; "1"?: { caption?: string }; "2"?: Record<string, unknown> } | null;
+  outputs: { "0"?: {
+    brief?: string; sources?: { id: string; version: string; label: string }[];
+    instagram_evidence?: {status:string; reference?:{caption:string;likes:number|null;comments:number|null;reach:number|null}|null};
+  }; "1"?: { caption?: string }; "2"?: Record<string, unknown> } | null;
   last_error: string | null;
   usage: Record<string, unknown> | null;
   revision_id: string | null;

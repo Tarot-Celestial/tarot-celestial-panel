@@ -4,6 +4,7 @@ import { processOfficeRun } from "@/lib/server/office-worker";
 import { officeJson } from "@/lib/server/office-access";
 
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 export const runtime = "nodejs";
 export const maxDuration = 120;
 

@@ -15,7 +15,10 @@ function fixture(options = {}) {
     const code = ts.transpileModule(fs.readFileSync(path.join(__dirname,"..",file),"utf8"),{
       compilerOptions: { module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022 },
     }).outputText;
-    vm.runInNewContext(code,{ exports,URL,Request,Response,Buffer,Uint8Array,TextDecoder,require(name) {
+    vm.runInNewContext(code,{ exports,URL,Request,Response,Buffer,Uint8Array,TextDecoder,process:{env:{VERCEL_ENV:options.env || "production"}},require(name) {
+      if (name === "@vercel/functions") return {waitUntil(){}};
+      if (name === "node:crypto") return require("node:crypto");
+      if (name === "@/lib/server/office-worker") return {processOfficeRun:async(_db,id)=>calls.push({name:"creative_run",id})};
       if (name === "@/lib/admin/require-admin") return { requireAdmin:async () => options.denied
         ? { ok:false,error:options.denied } : { ok:true,admin,authUserId:verifiedUser } };
       if (name.startsWith("@/")) return load("src/"+name.slice(2)+".ts");
@@ -41,6 +44,37 @@ test("all three Office HTTP operations reject missing or unauthorized identities
     }
     assert.equal(f.calls.length,0);
   }
+});
+
+test("la Oficina lanza una sola ejecución para una orden de publicación estructurada",async ()=>{
+  const runId=randomUUID(), id=randomUUID();
+  const f=fixture({reply:{data:{id,run_id:runId},error:null}});
+  const base={action:"create_task",request_id:randomUUID(),department_id:"marketing",objective:"Publicar en Instagram",
+    expected_delivery:"Foto",priority:"media",status:"pendiente",due_at:null,time_zone:"Europe/Madrid",assignee_worker_id:null,assignee_role:"atlas"};
+  for(const change of [{instagram_publication:"other"},{instagram_publication:"photo",status:"completado"},
+    {instagram_publication:"photo",department_id:"clientes"},{instagram_publication:"reel",action:"update_task",id,revision:1}]) {
+    assert.equal((await f.post({...base,...change})).status,400);
+  }
+  assert.equal(f.calls.length,0);
+  assert.equal((await f.post(base)).status,200);
+  assert.deepEqual(f.calls.map(c=>c.name),["office_apply"]);
+  const r=await f.post({...base,instagram_publication:"photo"});
+  assert.equal(r.status,202);
+  assert.deepEqual(await r.json(),{ok:true,id,run_id:runId});
+  assert.deepEqual(f.calls.slice(1).map(c=>c.name),["office_create_instagram_order","creative_run"]);
+  assert.equal(f.calls[1].args.p_user,f.verifiedUser);
+  const bytes=Buffer.from("89504e470d0a1a0a","hex");
+  const file={file_name:"foto.png",file_type:"image/png",file_base64:bytes.toString("base64"),file_alt:"Foto de la tirada",
+    file_sha256:require("node:crypto").createHash("sha256").update(bytes).digest("hex")};
+  for(const invalid of [{...file},{...file,instagram_publication:"reel",file_alt:""},{...file,instagram_publication:"photo",file_alt:""},
+    {...file,instagram_publication:"photo",file_sha256:"a".repeat(64)}]) {
+    assert.equal((await f.post({...base,...invalid})).status,400);
+  }
+  assert.equal((await f.post({...base,...file,instagram_publication:"photo"})).status,202);
+  assert.equal(f.calls.at(-2).name,"office_create_instagram_order_with_file");
+  const preview=fixture({env:"preview"});
+  assert.equal((await preview.post({...base,instagram_publication:"reel"})).status,409);
+  assert.equal(preview.calls.length,0);
 });
 
 test("Office validates request size, file type, UUIDs, explicit timezone and task inputs on the server",async () => {
