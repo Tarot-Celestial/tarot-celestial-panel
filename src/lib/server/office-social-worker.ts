@@ -8,6 +8,8 @@ import { asksToStop, consultationIntent, DispatchDecision, explicitMarket, messa
 export { syncOfficeSocialInboxes } from "./office-social-graph";
 
 type Outcome = "sent" | "blocked" | "handoff" | "failed" | "uncertain";
+const pendingInstagramHistory = new Set(["CONVERSATION_PENDING","INBOUND_UNVERIFIED","INCOMPLETE_HISTORY",
+  "RECIPIENT_UNVERIFIED","META_UNAVAILABLE","META_RATE_LIMIT","META_OBJECT_UNAVAILABLE","META_MESSAGE_UNAVAILABLE"]);
 type Plan = { body:string; route:ContactRoute; send:()=>Promise<string> };
 async function rpc(db:any,name:string,args:Record<string,unknown> = {}) {
   const {data,error} = await db.rpc(name,args);
@@ -57,7 +59,7 @@ async function privatePlan(db:any,job:CaptureJob,proof:SocialProof):Promise<Plan
   }
   if (!openWindow(proof.sourceAt, job.kind === "comment" ? 168 : 24)) throw new DispatchDecision("WINDOW_CLOSED");
   const history = await currentConversation(db,job), location = readMessageMarket(proof.text);
-  const intent = consultationIntent(proof.text,job.channel,job.kind,history.previousRoute);
+  const intent = consultationIntent(proof.text,job.channel,job.kind,proof.followsConsultation ? "ask_country" : history.previousRoute);
   if (!intent) throw new DispatchDecision("NEEDS_PERSONAL_RESPONSE");
   const market = location.needsCountry ? null : location.market || history.historicalMarket || explicitMarket(job.market);
   const mode = proof.privateAllowed ? "private" : "public";
@@ -97,7 +99,22 @@ function decision(error:unknown,committed:boolean): { outcome:Outcome; reason:st
   }
   return {outcome:committed ? "uncertain" : "blocked",reason:committed ? "PROVIDER_UNCONFIRMED" : "SOURCE_UNAVAILABLE"};
 }
-async function dispatch(db:any,job:CaptureJob):Promise<Outcome> {
+async function readWebhookProof(job:CaptureJob) {
+  try { return await readSocialProof(job); }
+  catch (error) {
+    const code = (error as {code?:string})?.code || "";
+    if (code === "META_RATE_LIMIT") return null;
+    if (!pendingInstagramHistory.has(code)) throw error;
+  }
+  // A signed notification can arrive before Graph exposes its conversation.
+  await new Promise(resolve => setTimeout(resolve, 1200));
+  try { return await readSocialProof(job); }
+  catch (error) {
+    if (!pendingInstagramHistory.has((error as {code?:string})?.code || "")) throw error;
+    return null;
+  }
+}
+async function dispatch(db:any,job:CaptureJob,fromInstagramWebhook = false):Promise<Outcome | "deferred"> {
   const lease = {p_id:job.id,p_lease_token:job.lease_token};
   let committed = false, outcome:Outcome = "sent", reason:string|null = null, receipt:string|null = null;
   try {
@@ -109,7 +126,10 @@ async function dispatch(db:any,job:CaptureJob):Promise<Outcome> {
       const template = await prepareFormReply(db,job,() => beforeTransport(db,job));
       plan = {...template,route:"whatsapp_template"};
     } else {
-      const proof = job.channel === "whatsapp" ? await readWhatsAppProof(job) : await readSocialProof(job);
+      const proof = fromInstagramWebhook ? await readWebhookProof(job) :
+        job.channel === "whatsapp" ? await readWhatsAppProof(job) : await readSocialProof(job);
+      // No send attempt exists. The cron returns expired claimed leases to pending.
+      if (!proof) return "deferred";
       if (asksToStop(proof.text)) { await markStop(db,job); return "handoff"; }
       plan = await privatePlan(db,job,proof);
     }
@@ -127,7 +147,7 @@ async function dispatch(db:any,job:CaptureJob):Promise<Outcome> {
   return outcome;
 }
 export async function runOfficeSocialDispatch(db:any,{limit = 1,deadlineAt = Date.now()+150000}:{limit?:number;deadlineAt?:number} = {}) {
-  const totals = {claimed:0,sent:0,blocked:0,handoff:0,uncertain:0,failed:0};
+  const totals = {claimed:0,sent:0,blocked:0,handoff:0,uncertain:0,failed:0,deferred:0};
   const cap = Number.isSafeInteger(limit) ? Math.max(0,Math.min(5,limit)) : 1;
   for (let count=0;count<cap;count++) {
     if (Date.now()+45000 >= deadlineAt) break;
@@ -137,4 +157,19 @@ export async function runOfficeSocialDispatch(db:any,{limit = 1,deadlineAt = Dat
     totals[await dispatch(db,job)]++;
   }
   return totals;
+}
+
+export async function dispatchInstagramWebhookMessages(db:any,accountId:string,messageIds:string[]) {
+  const deadline = Date.now() + 180000;
+  for (const sourceId of new Set(messageIds)) {
+    if (Date.now() >= deadline) break;
+    const job = await rpc(db,"office_capture_claim_instagram_dm",{
+      p_account:accountId, p_source_id:sourceId,
+    }) as CaptureJob | null;
+    if (!job) continue;
+    if (job.account_id !== accountId || job.source_id !== sourceId || job.channel !== "instagram" || job.kind !== "message") {
+      throw new Error("OFFICE_CAPTURE_SOURCE_MISMATCH");
+    }
+    await dispatch(db,job,true);
+  }
 }

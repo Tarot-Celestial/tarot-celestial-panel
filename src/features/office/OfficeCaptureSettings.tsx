@@ -12,6 +12,7 @@ const health: Record<string, string> = { connected: "Bandeja accesible", checked
   cooldown: "En espera de sincronización", blocked: "Revisar conexión", offline: "Sin conexión", not_configured: "Pendiente de conexión", unavailable: "No disponible",
   not_authorized: "Pendiente de autorización" };
 type Settings = { enabled: boolean; last_round_at: string | null; last_round: {social: {channel: string; state: string}[]; whatsapp: string} | null;
+  latest_instagram_reply?: {sent_at: string; elapsed_seconds: number} | null;
   lines: {country: string; phone: string; enabled: boolean}[] };
 
 export default function OfficeCaptureSettings() {
@@ -37,6 +38,7 @@ export default function OfficeCaptureSettings() {
     finally { saving.current = false; setBusy(false); }
   }
   const last = settings?.last_round;
+  const reply = settings?.latest_instagram_reply;
   return <section className={s.section} aria-label="Respuestas automáticas">
     <h3 className={s.subheading}>Respuestas automáticas</h3>
     {error && <p role="alert" className={s.notice}>{error} <button type="button" onClick={() => setRefresh(n => n + 1)}>Volver a consultar</button></p>}
@@ -44,7 +46,9 @@ export default function OfficeCaptureSettings() {
       <div className={s.controls}><p role="status" className={s.note}>{settings.enabled ? "Habilitadas según las reglas de Autonomía" : "En pausa"}</p>
         <button type="button" disabled={busy} onClick={() => change(!settings.enabled)}>{settings.enabled ? "Pausar respuestas" : "Activar respuestas"}</button></div>
       <p className={s.note}>Marketing atiende consultas en el canal de entrada. Si conoce el país, ofrece su línea habilitada o el Oráculo. Si necesita saber el país, lo pregunta.</p>
-      {settings.last_round_at && <p className={s.note}>Última ronda · {new Intl.DateTimeFormat("es-ES", {timeZone:"Europe/Madrid",dateStyle:"short",timeStyle:"short"}).format(new Date(settings.last_round_at))} (Madrid)</p>}
+      {reply && <p className={s.note}>Última respuesta automática confirmada por Instagram · {new Intl.DateTimeFormat("es-ES", { timeZone: "Europe/Madrid", dateStyle: "short", timeStyle: "medium" }).format(new Date(reply.sent_at))} (Madrid)
+        {" · "}{reply.elapsed_seconds >= 60 && Math.floor(reply.elapsed_seconds / 60) + " min "}{reply.elapsed_seconds % 60} s desde el mensaje.</p>}
+      {settings.last_round_at && <p className={s.note}>Última ronda programada · {new Intl.DateTimeFormat("es-ES", {timeZone:"Europe/Madrid",dateStyle:"short",timeStyle:"short"}).format(new Date(settings.last_round_at))} (Madrid)</p>}
       {last && <p className={s.note}>{[...last.social.map(ch => ch.channel + " · " + (health[ch.state] || ch.state)), "WhatsApp · " + (health[last.whatsapp] || last.whatsapp)].join(" / ")}</p>}
       <details className={s.details}><summary>Líneas de atención por país</summary>
         <div className={s.scroll}><table className={s.table}><caption>Directorio de Marketing · números contrastados con Premium Numbers</caption><thead><tr><th>País</th><th>Línea</th><th>Uso en respuestas</th></tr></thead>

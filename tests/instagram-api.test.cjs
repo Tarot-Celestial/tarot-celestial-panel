@@ -14,4 +14,60 @@ test('webhook validates raw signature and both Instagram event formats; ignores 
 test('verified webhook aliases route to canonical ledger and reject foreign recipients, echoes and own actors',()=>{const w=load('src/lib/server/instagram-webhook.ts'),canonical='38731579339820579',alias='17841451159294130',foreign='17841499999999999',timestamp=Date.now()-1000;const dm=(mid,sender='222',recipient=alias,echo=false)=>({sender:{id:sender},recipient:{id:recipient},timestamp,message:{mid,text:'fixture',is_echo:echo}});const body={object:'instagram',entry:[{id:alias,time:timestamp/1000,messaging:[dm('valid'),dm('echo','222',alias,true),dm('self',alias),dm('self-canonical',canonical),dm('foreign-recipient','222',foreign)],changes:[{field:'comments',value:{id:'comment',from:{id:'222'},text:'fixture'}},{field:'comments',value:{id:'own-comment',from:{id:alias},text:'fixture'}}]},{id:canonical,messaging:[dm('valid')]},{id:foreign,messaging:[dm('foreign-entry')]}]};assert.equal(w.instagramInboundEvents(body,canonical,'tarotcelestialof').length,0);const incoming=w.instagramInboundEvents(body,canonical,'tarotcelestialof',[alias]);assert.deepEqual(Array.from(incoming,e=>e.remoteId),['valid','comment']);assert.ok(incoming.every(e=>e.senderId==='222'));const ledger=w.instagramWebhookEvents(body,canonical,[alias]);assert.ok(ledger.every(e=>e.account_id===canonical&&e.event_key.startsWith(canonical+':')));assert.ok(!ledger.some(e=>e.remote_id==='foreign-entry'));});
 test('connection exposes only validated server metadata aliases without replacing canonical account ID',async()=>{const canonical='38731579339820579',alias='17841451159294130',chain={};chain.select=()=>chain;chain.eq=()=>chain;chain.maybeSingle=async()=>({data:{account_id:canonical,username:'tarotcelestialof',access_token_ciphertext:'encrypted',metadata:{instagram_verified_account_ids:[alias,alias,123,null,'not-an-id','https://foreign']}}});const mod=load('src/lib/server/instagram-graph.ts',{'@/lib/supabase-admin':{supabaseAdmin:()=>({from:()=>chain})},'@/lib/server/social-connections':{decryptSecret:()=> 'PRIVATE'}});const account=await mod.instagramConnection();assert.equal(account.accountId,canonical);assert.deepEqual(Array.from(account.verifiedAccountIds),[alias]);});
 
-test('signed route uses aliases only from server connection metadata, never payload metadata',async()=>{const canonical='38731579339820579',alias='17841451159294130',foreign='17841499999999999',seen=[];let dbReads=0;const webhook=load('src/lib/server/instagram-webhook.ts');const chain={};chain.select=()=>chain;chain.eq=()=>chain;chain.maybeSingle=async()=>{dbReads++;return {data:{account_id:canonical,username:'tarotcelestialof',metadata:{instagram_verified_account_ids:[alias]}}}};chain.upsert=async()=>({error:null});const mod=load('src/app/api/webhooks/instagram/route.ts',{'next/server':{NextResponse:{json:(body,options)=>({body,...options})}},'@/lib/supabase-admin':{supabaseAdmin:()=>({from:()=>chain})},'@/lib/server/social-connections':{SOCIAL_CONNECTIONS_TABLE:'connections'},'@/lib/server/instagram-webhook':webhook,'@/lib/server/instagram-sync':{processInstagramWebhook:async(body,account)=>{seen.push(...webhook.instagramInboundEvents(body,account.accountId,account.username,account.verifiedAccountIds));assert.deepEqual(Array.from(account.verifiedAccountIds),[alias]);assert.equal(account.accountId,canonical);}}},{process:{env:{INSTAGRAM_APP_SECRET:'fixture-secret'}}});const timestamp=Date.now()-1000,entry=id=>({id,messaging:[{sender:{id:'222'},recipient:{id},timestamp,message:{mid:'m-'+id,text:'fixture'}}]});const raw=JSON.stringify({object:'instagram',metadata:{instagram_verified_account_ids:[foreign]},entry:[entry(alias),entry(foreign)]});const signature='sha256='+crypto.createHmac('sha256','fixture-secret').update(raw).digest('hex');const rejected=await mod.POST(new Request('https://local.test',{method:'POST',body:raw,headers:{'x-hub-signature-256':'sha256='+'0'.repeat(64)}}));assert.equal(rejected.status,401);assert.equal(dbReads,0);const accepted=await mod.POST(new Request('https://local.test',{method:'POST',body:raw,headers:{'x-hub-signature-256':signature}}));assert.equal(accepted.status,200);assert.equal(seen.length,1);assert.equal(seen[0].remoteId,'m-'+alias);});
+test('signed webhook schedules only newly recorded inbound DMs on its verified account',async()=>{
+ const canonical='38731579339820579',alias='17841451159294130',foreign='17841499999999999';
+ const queued=[], ledger=new Set(), dispatched=[];
+ let dbReads=0, failStorage=false, release;
+ const blockedWorker=new Promise(resolve=>{release=resolve;});
+ const webhook=load('src/lib/server/instagram-webhook.ts');
+ const store={select:()=>store,eq:()=>store,maybeSingle:async()=>{
+   dbReads++;
+   return {data:{account_id:canonical,username:'tarotcelestialof',metadata:{instagram_verified_account_ids:[alias]}}};
+ },upsert:(events,options)=>({select:async columns=>{
+   assert.equal(options.ignoreDuplicates,true); assert.equal(columns,'kind,remote_id');
+   if(failStorage)return {error:{message:'transient'}};
+   const inserted=events.filter(event=>!ledger.has(event.event_key));
+   for(const event of inserted)ledger.add(event.event_key);
+   return {data:inserted};
+ }})};
+ const mod=load('src/app/api/webhooks/instagram/route.ts',{
+   'next/server':{NextResponse:{json:(body,options)=>({body,...options})}},
+   '@vercel/functions':{waitUntil:promise=>queued.push(promise)},
+   '@/lib/supabase-admin':{supabaseAdmin:()=>({from:()=>store})},
+   '@/lib/server/social-connections':{SOCIAL_CONNECTIONS_TABLE:'connections'},
+   '@/lib/server/instagram-webhook':webhook,
+   '@/lib/server/instagram-sync':{processInstagramWebhook:async(body,account)=>{
+     assert.deepEqual(Array.from(account.verifiedAccountIds),[alias]);
+     const inbound=webhook.instagramInboundEvents(body,account.accountId,account.username,account.verifiedAccountIds);
+     return {messageIds:inbound.filter(e=>e.kind==='message').map(e=>e.remoteId)};
+   }},
+   '@/lib/server/office-social-worker':{dispatchInstagramWebhookMessages:async(db,account,ids)=>{
+     dispatched.push({account,ids:Array.from(ids)}); await blockedWorker; throw Error('background offline');
+   }},
+ },{Response,process:{env:{INSTAGRAM_APP_SECRET:'fixture-secret',INSTAGRAM_WEBHOOK_VERIFY_TOKEN:'fixture-verify'}},console:{warn:()=>{}}});
+ const timestamp=Date.now()-1000;
+ const entry=(id,mid,sender='222',echo=false)=>({id,messaging:[{sender:{id:sender},recipient:{id},timestamp,message:{mid,text:'fixture',is_echo:echo}}]});
+ const post=(entries,invalid=false)=>{
+   const body=JSON.stringify({object:'instagram',metadata:{instagram_verified_account_ids:[foreign]},entry:entries});
+   const signature='sha256='+crypto.createHmac('sha256','fixture-secret').update(body).digest('hex');
+   return mod.POST(new Request('https://local.test',{method:'POST',body,headers:{'x-hub-signature-256':invalid?'sha256='+'0'.repeat(64):signature}}));
+ };
+ const challenge=await mod.GET(new Request('https://local.test?hub.mode=subscribe&hub.verify_token=fixture-verify&hub.challenge=test'));
+ assert.equal(await challenge.text(),'test');
+ assert.equal((await post([entry(alias,'one')],true)).status,401);
+ assert.equal(dbReads,0);
+ const noise=[entry(foreign,'foreign'),entry(alias,'echo','222',true),entry(alias,'self',canonical)];
+ assert.equal((await post(noise)).status,200);
+ assert.equal(queued.length,0);
+ const batch=[...noise,entry(alias,'one'),entry(canonical,'one')];
+ failStorage=true;
+ assert.equal((await post(batch)).status,503);
+ assert.equal(queued.length,0);
+ failStorage=false;
+ assert.equal((await post(batch)).status,200);
+ assert.deepEqual(dispatched,[{account:canonical,ids:['one']}]);
+ assert.equal((await post(batch)).status,200);
+ assert.equal(queued.length,1);
+ release();
+ await queued[0];
+});

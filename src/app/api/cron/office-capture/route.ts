@@ -6,6 +6,9 @@ import { allowOfficeDiscovery } from "@/lib/server/office-discovery-policy";
 import { runOfficeSocialDispatch, syncOfficeSocialInboxes } from "@/lib/server/office-social-worker";
 
 export const dynamic = "force-dynamic";
+// Next 14 can cache fetches inside dynamic GET handlers, including RPC POSTs.
+// Connections, autonomy rules and work leases must be fresh for every round.
+export const fetchCache = "force-no-store";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 

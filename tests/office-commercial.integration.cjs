@@ -24,7 +24,8 @@ before(async()=>{
  create table public.tc_facebook_threads(like public.tc_instagram_threads,is_deleted boolean default false);
  create table public.tc_instagram_sends(request_id uuid,thread_id uuid,status text,created_at timestamptz,completed_at timestamptz);
  create table public.tc_facebook_sends(like public.tc_instagram_sends);
- create table public.tc_social_inbox_activity(provider text,account_id text,kind text,remote_id text,thread_remote_id text,removed_at timestamptz);
+ create table public.tc_social_inbox_activity(provider text,account_id text,kind text,remote_id text,thread_remote_id text,removed_at timestamptz,
+   id bigint generated always as identity,occurred_at timestamptz);
  create table public.captacion_whatsapp_deliveries(lead_id uuid,submission_key text);
  create table public.purchases(client_id uuid);
  create table public.office_departments(id text primary key);
@@ -43,10 +44,11 @@ before(async()=>{
  }
  const historic=await source("whatsapp","hist","old","Fixture","handoff");
  await q("insert into office_capture_settings values(true,true,$1)",[id(3)]);
- await db.exec("insert into office_departments values('captacion-reservas'),('marketing'),('seguridad-accesos');grant select on all tables in schema public to service_role");
+ await db.exec("insert into office_departments values('captacion-reservas'),('marketing'),('seguridad-accesos');grant select on all tables in schema public to service_role;grant update on office_capture_settings to service_role");
  await db.exec(migration("office_autonomy"));
  await db.exec(migration("office_commercial_inbox"));
  await db.exec(migration("office_commercial_reply_windows"));
+ await db.exec(migration("office_instagram_immediate_reply"));
  assert.equal((await page()).items[0].opportunity_id,historic);
 });
 after(async()=>db?.close());
@@ -169,4 +171,87 @@ test("real autonomy and capture RPCs hand off, then permit only fresh input and 
  assert.equal(await q("select office_autonomy_dispatch($1,$2,$3)",[op,job.lease_token,job.request_id]),false);
  await q("insert into purchases values($1)",[id(102)]);
  assert.equal(await q("select office_capture_guard($1,true)",[other]),"purchased");
+});
+
+async function instagramFixture() {
+  await db.exec(`truncate tc_social_inbox_activity,tc_instagram_threads,tc_instagram_sends,tc_social_connections_v2;
+    insert into tc_social_connections_v2 values ('instagram','ig-fixture');
+    insert into tc_instagram_threads(id,kind,account_id,recipient_id,remote_id,remote_updated_at)
+      values(gen_random_uuid(),'message','ig-fixture','peer','conversation',now());`);
+}
+async function receiveDm(sourceId,minutesAgo=1) {
+  await q(`insert into tc_social_inbox_activity(provider,account_id,kind,remote_id,thread_remote_id,occurred_at)
+    values('instagram','ig-fixture','message',$1,'peer',now() - $2 * interval '1 minute')`,[sourceId,minutesAgo]);
+  assert.equal(await q("select office_capture_record_social('instagram','ig-fixture',$1)",[
+    JSON.stringify([{kind:"message",source_id:sourceId,thread_key:"peer",body:"Información sobre la consulta"}])]),1);
+}
+const claimDm=(sourceId,account="ig-fixture")=>q("select office_capture_claim_instagram_dm($1,$2)",[account,sourceId]);
+const beginDm=job=>q("select office_capture_begin($1,$2,'Fixture','ask_country')",[job.id,job.lease_token]);
+const finishDm=(job,outcome,reason,receipt=null)=>q("select office_capture_finish($1,$2,$3,$4,$5)",[job.id,job.lease_token,outcome,receipt,reason]);
+
+test("el webhook sólo reclama su DM verificado; duplicados, pausas y la ronda comparten autorización y lease",async()=>{
+  await instagramFixture();
+  const other=await source("whatsapp","otro","anterior","Fixture");
+  await receiveDm("first",3);
+  await receiveDm("newest",2);
+  for(const [msg,account] of [["first","ig-fixture"],["newest","otra"],[null,null],["ausente","ig-fixture"]]) {
+    assert.equal(await claimDm(msg,account),null);
+  }
+  await q("update office_capture_settings set enabled=false");
+  assert.equal(await claimDm("newest"),null);
+  await q("update office_capture_settings set enabled=true");
+  await q("insert into office_autonomy_rules(action,channel,account,mode,updated_by) values('capture_reply','instagram','ig-fixture','paused',$1)",[id(13)]);
+  assert.equal(await claimDm("newest"),null);
+  await q("update office_autonomy_rules set mode='automatic' where account='ig-fixture'");
+  assert.equal(await q("select status from office_capture_opportunities where id=$1",[other]),"pending");
+  assert.equal(await q("select has_function_privilege('authenticated','office_capture_claim_instagram_dm(text,text)','execute')"),false);
+  await db.exec("set role service_role");
+  try {
+    const job=await claimDm("newest");
+    assert.equal(job.source_id,"newest");
+    assert.equal(await claimDm("newest"),null);
+    assert.equal((await q("select office_capture_claim()")).id,other);
+    assert.equal(await q("select office_capture_claim()"),null);
+    assert.equal((await beginDm(job)).request_id,job.request_id);
+    assert.equal(await finishDm(job,"sent",null,"receipt"),true);
+    assert.equal(await claimDm("newest"),null);
+  } finally { await db.exec("reset role"); }
+});
+
+test("un DM nuevo durante una preparación obsoleta se recupera sin abrir un caso humano ni repetir la fuente anterior",async()=>{
+  await instagramFixture();
+  await receiveDm("a",3);
+  const first=await claimDm("a");
+  await beginDm(first);
+  await receiveDm("b",2);
+  assert.equal(await claimDm("b"),null);
+  assert.equal(await finishDm(first,"blocked","NEWER_INSTAGRAM_DM"),true);
+  const second=await claimDm("b");
+  assert.equal(second.id,first.id);
+  assert.notEqual(second.request_id,first.request_id);
+  assert.equal(await claimDm("a"),null);
+  assert.equal(await q("select count(*)::int from office_commercial_cases"),0);
+  await beginDm(second);
+  await receiveDm("c",1);
+  assert.equal(await finishDm(second,"sent",null,"receipt-b"),true);
+  assert.equal((await q("select office_capture_claim()")).source_id,"c");
+});
+
+test("un nuevo DM no reactiva una entrega incierta ni un relevo humano",async()=>{
+  await instagramFixture();
+  await receiveDm("original",3);
+  const first=await claimDm("original");
+  await beginDm(first);
+  await receiveDm("waiting",2);
+  assert.equal(await finishDm(first,"uncertain","PROVIDER_UNCONFIRMED"),true);
+  assert.equal(await claimDm("waiting"),null);
+  assert.equal(await finishDm(first,"blocked","NEWER_INSTAGRAM_DM"),false);
+  // An eventual provider receipt releases the newer input through normal gates.
+  assert.equal(await finishDm(first,"sent",null,"late-receipt"),true);
+  const second=await claimDm("waiting");
+  await beginDm(second);
+  await receiveDm("third",1);
+  assert.equal(await finishDm(second,"handoff","CONVERSATION_CHANGED"),true);
+  assert.equal(await claimDm("third"),null);
+  assert.equal(await q("select state from office_commercial_cases where opportunity_id=$1",[second.id]),"open");
 });
