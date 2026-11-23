@@ -1,12 +1,16 @@
 import { timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
+import { waitUntil } from '@vercel/functions';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { SOCIAL_CONNECTIONS_TABLE } from '@/lib/server/social-connections';
 import { validInstagramSignature, instagramWebhookEvents } from '@/lib/server/instagram-webhook';
 import { processInstagramWebhook } from '@/lib/server/instagram-sync';
+import { dispatchInstagramWebhookMessages } from '@/lib/server/office-social-worker';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+export const maxDuration = 300;
 const json = (data: object, status = 200) => NextResponse.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 export async function GET(req: Request) {
   const params = new URL(req.url).searchParams;
@@ -22,16 +26,26 @@ export async function POST(req: Request) {
   try {
     let body;
     try { body = JSON.parse(raw || '{}'); } catch { return json({ ok: false }, 400); }
+    if (body?.object !== 'instagram' || !Array.isArray(body.entry) || !body.entry.length) return json({ok:true});
     const db = supabaseAdmin();
     const connection = await db.from(SOCIAL_CONNECTIONS_TABLE).select('account_id,username,metadata').eq('provider', 'instagram').maybeSingle();
     if (connection.error || !connection.data?.account_id) return json({ ok: false }, 503);
     const verified=connection.data.metadata?.instagram_verified_account_ids;
     const verifiedAccountIds=Array.isArray(verified)?verified.filter((value:unknown):value is string=>typeof value==='string'&&/^\d{1,40}$/.test(value)).slice(0,10):[];
-    await processInstagramWebhook(body, {accountId:String(connection.data.account_id),username:String(connection.data.username || ''),token:'',verifiedAccountIds});
-    const events = instagramWebhookEvents(body, String(connection.data.account_id), verifiedAccountIds);
+    const accountId = String(connection.data.account_id);
+    const {messageIds} = await processInstagramWebhook(body, {accountId,username:String(connection.data.username || ''),token:'',verifiedAccountIds});
+    const events = instagramWebhookEvents(body, accountId, verifiedAccountIds);
     if (events.length) {
-      const saved = await db.from('tc_instagram_webhook_events').upsert(events, { onConflict: 'event_key', ignoreDuplicates: true });
+      const saved = await db.from('tc_instagram_webhook_events').upsert(events, { onConflict: 'event_key', ignoreDuplicates: true })
+        .select('kind,remote_id');
       if (saved.error) return json({ ok: false }, 503);
+      const inserted = new Set((saved.data || []).filter(row => row.kind === 'message').map(row => row.remote_id));
+      const fresh = messageIds.filter(id => inserted.has(id));
+      if (fresh.length) {
+        waitUntil(dispatchInstagramWebhookMessages(db,accountId,fresh).catch(() => {
+          console.warn('office-instagram-webhook-dispatch-unavailable');
+        }));
+      }
     }
     return json({ ok: true });
   } catch { return json({ ok: false }, 503); }

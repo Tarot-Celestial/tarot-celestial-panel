@@ -14,6 +14,7 @@ export class DispatchDecision extends Error {
 export type SocialProof = {
   accountId: string; peerId: string | null; sourceId: string; sourceAt: string; text: string;
   privateAllowed: boolean; publicAllowed: boolean; lastReplyAt: string | null; senderPhone?: string;
+  followsConsultation?: boolean;
 };
 const plain = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const countryNames = new Intl.DisplayNames(["es"], { type: "region" });
@@ -103,6 +104,16 @@ export function socialReplyText(route: ContactRoute, value?: string, panelLink?:
 }
 
 type HistoryMessage = { id: string; fromMe: boolean; createdAt: string; text: string };
+/** Two consecutive DMs can split the request and country. Use only the adjacent, unanswered request. */
+export function followsInstagramConsultation(incoming:HistoryMessage, messages:HistoryMessage[], lastReplyAt:string|null) {
+  if (!messageMarket(incoming.text)) return false;
+  const index = messages.findIndex(message => message.id === incoming.id);
+  const prior = messages[index - 1];
+  if (!prior || prior.fromMe) return false;
+  const elapsed = Date.parse(incoming.createdAt) - Date.parse(prior.createdAt);
+  if (!(elapsed > 0 && elapsed <= 5 * 60000) || (lastReplyAt && Date.parse(lastReplyAt) >= Date.parse(prior.createdAt))) return false;
+  return consultationIntent(prior.text,"instagram","message",null) === "consultation";
+}
 /** Compare the actual inbound with the trigger. A manual/provider reply or later peer message cancels the prepared answer. */
 export function verifyHistory(job: Pick<CaptureJob, "channel" | "kind" | "source_id" | "latest_inbound_at">,
   messages: HistoryMessage[], partial: boolean, lastReplyAt: string | null) {
@@ -112,6 +123,13 @@ export function verifyHistory(job: Pick<CaptureJob, "channel" | "kind" | "source
   if (!incoming || !incoming.text || !Number.isFinite(Date.parse(incoming.createdAt))) throw new DispatchDecision("INBOUND_UNVERIFIED");
   const t = Date.parse(incoming.createdAt);
   if (Math.abs(t - Date.parse(job.latest_inbound_at)) >= 60000 || !Number.isFinite(Date.parse(job.latest_inbound_at))) throw new DispatchDecision("INBOUND_TIME_CHANGED");
-  if (messages.some(msg => msg.id !== incoming.id && Date.parse(msg.createdAt) >= t) || (lastReplyAt && Date.parse(lastReplyAt) >= t)) throw new DispatchDecision("CONVERSATION_CHANGED");
+  const later = messages.filter(msg => msg.id !== incoming.id && Date.parse(msg.createdAt) >= t);
+  if (lastReplyAt && Date.parse(lastReplyAt) >= t) throw new DispatchDecision("CONVERSATION_CHANGED");
+  if (later.length) {
+    if (job.channel === "instagram" && job.kind === "message" && later.every(msg => !msg.fromMe && Date.parse(msg.createdAt) > t)) {
+      throw new DispatchDecision("NEWER_INSTAGRAM_DM","blocked");
+    }
+    throw new DispatchDecision("CONVERSATION_CHANGED");
+  }
   return incoming;
 }

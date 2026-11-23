@@ -126,5 +126,8 @@ export async function processInstagramWebhook(body: unknown, account: InstagramA
     recipient_id:event.senderId || null,name:event.senderName,username:event.username,preview:event.text,
     remote_created_at:event.kind==='comment'?event.occurredAt:null,remote_updated_at:event.occurredAt}));
   await persistInstagramThreads(account,rows,events);
-  return {received:events.length};
+  const messageIds = events.filter(event => event.kind === 'message' && event.text.trim() &&
+    !event.text.startsWith('[Contenido adjunto') && Date.parse(event.occurredAt) > Date.now() - 86400000)
+    .map(event => event.remoteId);
+  return {received:events.length, messageIds};
 }

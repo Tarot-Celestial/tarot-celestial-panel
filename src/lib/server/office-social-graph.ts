@@ -7,7 +7,7 @@ import { facebookOfficeHistory, facebookSend } from "./facebook-inbox";
 import { facebookReplyPermissions } from "./facebook-diagnostics";
 import { ensureInstagramFresh } from "./instagram-sync";
 import { ensureFacebookFresh } from "./facebook-inbox";
-import { DispatchDecision, openWindow, verifyHistory, type CaptureJob, type SocialProof } from "./office-social-policy";
+import { DispatchDecision, followsInstagramConsultation, openWindow, verifyHistory, type CaptureJob, type SocialProof } from "./office-social-policy";
 
 type IG = Awaited<ReturnType<typeof instagramOfficeHistory>>;
 type FB = Awaited<ReturnType<typeof facebookOfficeHistory>>;
@@ -71,6 +71,7 @@ async function verified(job: CaptureJob, context: Context): Promise<SocialProof>
   }
   if (!privateAllowed && !publicAllowed) throw new DispatchDecision("MISSING_REPLY_PERMISSION","blocked");
   return { accountId:job.account_id, peerId:peer, sourceId:job.source_id, sourceAt:incoming.createdAt,
+    followsConsultation: job.channel === "instagram" && dm && followsInstagramConsultation(incoming,context.loaded.messages,context.row.last_reply_at),
     text:incoming.text, privateAllowed, publicAllowed, lastReplyAt:context.row.last_reply_at };
 }
 export async function readSocialProof(job: CaptureJob) {
@@ -82,7 +83,7 @@ export async function sendSocialReply(job: CaptureJob, proof: SocialProof, body:
   if (!job.actor_user_id) throw new DispatchDecision("DELEGATION_REQUIRED","blocked");
   const recheck = async (context: Context) => {
     const fresh = await verified(job,context);
-    if (fresh.text !== proof.text || fresh.peerId !== proof.peerId || fresh.accountId !== proof.accountId ||
+    if (fresh.text !== proof.text || fresh.peerId !== proof.peerId || fresh.accountId !== proof.accountId || fresh.followsConsultation !== proof.followsConsultation ||
         fresh.lastReplyAt !== proof.lastReplyAt || !(mode === "private" ? fresh.privateAllowed : fresh.publicAllowed)) throw new DispatchDecision("SOURCE_CHANGED");
     await beforeSend();
   };

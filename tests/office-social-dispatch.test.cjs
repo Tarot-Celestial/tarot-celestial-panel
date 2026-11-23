@@ -11,7 +11,7 @@ function load(file, imports = {}) {
   const exports = {};
   const source = fs.readFileSync(path.join(__dirname,"..",file),"utf8");
   const js = ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-  vm.runInNewContext(js,{exports,Date,Intl,URL,require(name) {
+  vm.runInNewContext(js,{exports,Date,Intl,URL,setTimeout,require(name) {
     if (name === "server-only") return {};
     if (name in imports) return imports[name];
     throw Error(name);
@@ -19,6 +19,40 @@ function load(file, imports = {}) {
   return exports;
 }
 const policy = load("src/lib/server/office-social-policy.ts",{"@/lib/countries":load("src/lib/countries.ts")});
+test("las rondas del cron vuelven a consultar los permisos y a reclamar los trabajos en origen", async t => {
+  const route = load("src/app/api/cron/office-capture/route.ts", {
+    "node:crypto": require("node:crypto"), "@/lib/admin/require-admin": {}, "@/lib/server/office-access": {},
+    "@/lib/server/office-capture-discovery": {}, "@/lib/server/office-discovery-policy": {}, "@/lib/server/office-social-worker": {},
+  });
+  const { AsyncLocalStorage } = require("node:async_hooks");
+  const { patchFetch } = require("next/dist/server/lib/patch-fetch");
+  const storage = new AsyncLocalStorage(), entries = new Map();
+  const incrementalCache = {
+    fetchCacheKey: async url => url,
+    get: async key => entries.get(key),
+    set: async (key, value) => entries.set(key, { value, isStale: false }),
+    lock: async () => async () => {},
+  };
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  let revision = 0;
+  globalThis.fetch = async () => new Response(String(++revision));
+  patchFetch({ staticGenerationAsyncStorage: storage, serverHooks: { DynamicServerError: Error } });
+  function round() {
+    return storage.run({
+      pagePath: "/api/cron/office-capture/route", urlPathname: "/api/cron/office-capture",
+      isStaticGeneration: false, forceDynamic: route.dynamic === "force-dynamic", revalidate: route.revalidate ?? false,
+      fetchCache: route.fetchCache, incrementalCache,
+    }, async () => {
+      const headers = { Authorization: "Bearer local-fixture" };
+      const settings = await fetch("https://database.invalid/connection", { headers });
+      const claim = await fetch("https://database.invalid/rpc/claim", { method: "POST", headers, body: "{}" });
+      return [await settings.text(), await claim.text()];
+    });
+  }
+  assert.deepEqual(await round(), ["1", "2"]);
+  assert.deepEqual(await round(), ["3", "4"]);
+});
 test("una ronda informa la etapa rechazada y conserva el canal sano sin revelar el error original", async () => {
   let failure = "connection";
   const sensitive = "mensaje privado de prueba";
@@ -50,6 +84,7 @@ function harness(options = {}) {
     async rpc(name,args) {
       calls.push({name,args});
       if (name === "office_capture_claim") return {data:job};
+      if (name === "office_capture_claim_instagram_dm") return {data:args.p_source_id === job.source_id ? job : null};
       if (name === "office_capture_begin" && options.revoked) return {data:null};
       if (name === "office_autonomy_dispatch") return {data:!options.pausedLate};
       return {data:true};
@@ -63,7 +98,11 @@ function harness(options = {}) {
       };
     },
   };
-  const transport = {readSocialProof:async()=>proof,sendSocialReply:async(job,proof,body,mode,beforeSend)=>{
+  const transport = {readSocialProof:async()=>{
+    const code=options.readErrors?.shift();
+    if(code) throw new policy.DispatchDecision(code);
+    return proof;
+  },sendSocialReply:async(job,proof,body,mode,beforeSend)=>{
     if(beforeSend)await beforeSend();
     calls.push({name:"send",body,mode});
     if (options.lost) throw Object.assign(Error("timeout"),{code:"SEND_UNCERTAIN"});
@@ -77,8 +116,47 @@ function harness(options = {}) {
     "./office-meta-attribution":{confirmMetaPanelCode:async(_db,_opp,_source,t)=>/^TC-/.test(t)?"confirmed":"not_code",
       getMetaPanelLink:async(_db,_id,_site,to)=>{links.push(to);return "https://example.test/cliente/meta/test";}},
   });
-  return {run:()=>worker.runOfficeSocialDispatch(db),calls,links};
+  return {run:()=>worker.runOfficeSocialDispatch(db),webhook:(account,...ids)=>worker.dispatchInstagramWebhookMessages(db,account,ids),calls,links};
 }
+test("el webhook reclama el DM exacto una vez, respeta la revocación y no toca otra cuenta",async()=>{
+  const f=harness();
+  await f.webhook("biz","old","in","in");
+  assert.deepEqual(f.calls.filter(c=>c.name==="office_capture_claim_instagram_dm").map(c=>c.args.p_source_id),["old","in"]);
+  assert.equal(f.calls.filter(c=>c.name==="send").length,1);
+  assert.equal(f.calls.some(c=>c.name==="office_capture_claim"),false);
+  const other=harness();
+  await assert.rejects(other.webhook("wrong-account","in"),/SOURCE_MISMATCH/);
+  assert.equal(other.calls.some(c=>c.name==="send"),false);
+  const paused=harness({pausedLate:true});
+  await paused.webhook("biz","in");
+  assert.equal(paused.calls.some(c=>c.name==="send"),false);
+});
+test("un DM aún invisible en Graph se vuelve a leer; si sigue pendiente el cron puede recuperarlo",async()=>{
+  const temporary=harness({readErrors:["CONVERSATION_PENDING"]});
+  await temporary.webhook("biz","in");
+  assert.equal(temporary.calls.filter(c=>c.name==="send").length,1);
+  const delayed=harness({readErrors:["INBOUND_UNVERIFIED","INBOUND_UNVERIFIED"]});
+  await delayed.webhook("biz","in");
+  assert.deepEqual(delayed.calls.map(c=>c.name),["office_capture_claim_instagram_dm"]);
+  assert.equal((await delayed.run()).sent,1);
+});
+test("dos DMs seguidos unen la consulta con el país verificado y respetan respuestas humanas o empates",async()=>{
+  const now=Date.now()-500;
+  const a={id:"a",createdAt:new Date(now-3000).toISOString(),fromMe:false,text:"Quiero información de mi primera consulta gratis"};
+  const b={id:"b",createdAt:new Date(now).toISOString(),fromMe:false,text:"Soy de Argentina"};
+  const job={channel:"instagram",kind:"message",source_id:"a",latest_inbound_at:a.createdAt};
+  assert.throws(()=>policy.verifyHistory(job,[a,b],false,null),err=>err.code==="NEWER_INSTAGRAM_DM"&&err.outcome==="blocked");
+  for(const changed of [{...b,fromMe:true},{...b,createdAt:a.createdAt}]) {
+    assert.throws(()=>policy.verifyHistory(job,[a,changed],false,null),err=>err.code==="CONVERSATION_CHANGED");
+  }
+  assert.equal(policy.followsInstagramConsultation(b,[a,b],null),true);
+  assert.equal(policy.followsInstagramConsultation(b,[a,b],a.createdAt),false);
+  assert.equal(policy.followsInstagramConsultation(b,[{...a,fromMe:true},b],null),false);
+  assert.equal(policy.followsInstagramConsultation(b,[{...a,createdAt:new Date(now-310000).toISOString()},b],null),false);
+  const followup=harness({proof:{text:b.text,followsConsultation:true}});
+  await followup.webhook("biz","in");
+  assert.deepEqual(followup.links,["oracle"]);
+});
 test("la línea depende del directorio habilitado, la alternativa en Argentina explica la primera tirada y posteriores pagos",async()=>{
   const f=harness();assert.equal((await f.run()).sent,1);
   assert.deepEqual(f.links,["oracle"]);assert.match(f.calls.find(c=>c.name==="send").body,/primera tirada es gratis.*pago/);
