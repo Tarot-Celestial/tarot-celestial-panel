@@ -110,6 +110,7 @@ function harness(options = {}) {
     return "receipt";
   }};
   const worker = load("src/lib/server/office-social-worker.ts",{
+    "@/lib/instagram-inbox":load("src/lib/instagram-inbox.ts"),
     "./office-social-policy":policy,"./office-social-graph":transport,
     "./office-social-whatsapp":{readWhatsAppProof:transport.readSocialProof,sendWhatsAppReply:transport.sendSocialReply,
       prepareFormReply:async()=>{throw new policy.DispatchDecision("WHATSAPP_CONSENT_REQUIRED");}},
@@ -172,9 +173,13 @@ test("dos DMs seguidos unen la consulta con el país verificado y respetan respu
 test("la línea depende del directorio habilitado, la alternativa en Argentina explica la primera tirada y posteriores pagos",async()=>{
   const f=harness();assert.equal((await f.run()).sent,1);
   assert.deepEqual(f.links,["oracle"]);assert.match(f.calls.find(c=>c.name==="send").body,/primera tirada es gratis.*pago/);
-  for(const [country,iso,phone] of [["España","ES","93 050 25 86"],["Puerto Rico","PR","+1 787 945 0710"],["Chile","CL","+56 2 3210 0942"]]){
+  for(const [country,iso,phone,offer] of [["España","ES","93 050 25 86",true],["España","ES","+34 930 502 586",true],
+    ["Puerto Rico","PR","+1 787 945 0710",true],["Estados Unidos","US","+1 (786) 539-4750",true],
+    ["Chile","CL","+56 2 3210 0942",false],["Puerto Rico","PR","+1 787 555 0100",false],["España","ES","+1 787 945 0710",false]]){
     const g=harness({proof:{text:"Quiero consultar, vivo en "+country},lines:{[iso]:{country:iso,enabled:true,phone}}});
-    await g.run();assert.ok(g.calls.find(c=>c.name==="send").body.includes(phone));assert.deepEqual(g.links,["panel"]);
+    await g.run();
+    const body=g.calls.find(c=>c.name==="send").body;
+    assert.ok(body.includes(phone));assert.deepEqual(g.links,["panel"]);assert.equal(body.includes("primera consulta de tarot por teléfono es gratis"),offer);
   }
   const unavailable=harness({lookupError:true});assert.equal((await unavailable.run()).blocked,1);assert.equal(unavailable.links.length,0);
 });

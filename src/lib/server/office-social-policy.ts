@@ -97,12 +97,14 @@ export function openWindow(sourceAt: string, hours: number, now = Date.now()) {
   const t = Date.parse(sourceAt);
   return Number.isFinite(t) && t <= now && now - t < hours * 3600000;
 }
-export function socialReplyText(route: ContactRoute, value?: string, panelLink?: string) {
+export function socialReplyText(route: ContactRoute, value?: string, panelLink?: string, firstConsultationFree = false) {
   switch (route) {
     case "clarify_request": return "¡Hola! Gracias por escribir a Tarot Celestial. ¿En qué podemos ayudarte?";
     case "public_invite": return "Gracias por escribir a Tarot Celestial. Envíanos un mensaje privado y te indicaremos cómo consultar desde tu país.";
     case "ask_country": return "Hola, somos el equipo de Tarot Celestial. ¿Desde qué país nos escribes? Así podemos indicarte cómo consultar.";
-    case "phone": return "Puedes llamar a Tarot Celestial al " + value + " para consultar. " + (panelLink
+    case "phone": return (firstConsultationFree
+      ? "Tu primera consulta de tarot por teléfono es gratis. Para pedirla, llama al " + value + ". "
+      : "Puedes llamar a Tarot Celestial al " + value + " para consultar. ") + (panelLink
       ? "Si quieres vincular esta conversación con tu ficha de cliente, puedes hacerlo en tu panel: " + panelLink
       : "Si necesitas ayuda, responde por aquí y continuamos en privado.");
     case "oracle": return "Puedes consultar desde tu país con el Oráculo de Tarot Celestial. La primera tirada es gratis al registrarte. Después puedes elegir las opciones de pago del panel. Entra aquí: " + value;

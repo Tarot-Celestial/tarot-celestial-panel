@@ -1,4 +1,5 @@
 import "server-only";
+import { hasInstagramFirstConsultationOffer } from "@/lib/instagram-inbox";
 import { confirmMetaPanelCode, getMetaPanelLink } from "./office-meta-attribution";
 import { CAPTACION_WHATSAPP_ORIGIN } from "./captacion-whatsapp";
 import { readSocialProof, sendSocialReply } from "./office-social-graph";
@@ -89,7 +90,8 @@ async function privatePlan(db:any,job:CaptureJob,proof:SocialProof):Promise<Plan
     }
   }
   const panelLink = route === "phone" && job.kind === "message" ? await getMetaPanelLink(db,job.id,CAPTACION_WHATSAPP_ORIGIN,"panel") : undefined;
-  const body = socialReplyText(route,value,panelLink) + (route === "oracle" && job.kind === "comment"
+  const firstConsultationFree = job.channel === "instagram" && route === "phone" && hasInstagramFirstConsultationOffer(market,phone);
+  const body = socialReplyText(route,value,panelLink,firstConsultationFree) + (route === "oracle" && job.kind === "comment"
     ? " Si respondes a este mensaje, podemos ayudarte a vincular tu ficha." : "");
   return {body,route,send:async () => {
     if (market && intent === "consultation" && mode === "private" && await activeLine(db,market) !== phone) throw new DispatchDecision("MARKET_LINE_CHANGED");
