@@ -159,15 +159,20 @@ export async function runOfficeSocialDispatch(db:any,{limit = 1,deadlineAt = Dat
   return totals;
 }
 
-export async function dispatchInstagramWebhookMessages(db:any,accountId:string,messageIds:string[]) {
+export async function dispatchInstagramWebhookReplies(db:any,accountId:string,sources:{kind:"comment"|"message";id:string}[]) {
   const deadline = Date.now() + 180000;
-  for (const sourceId of new Set(messageIds)) {
+  const seen = new Set<string>();
+  for (const {kind,id} of sources) {
     if (Date.now() >= deadline) break;
-    const job = await rpc(db,"office_capture_claim_instagram_dm",{
-      p_account:accountId, p_source_id:sourceId,
+    const key = kind + ":" + id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const claim = kind === "comment" ? "office_capture_claim_instagram_comment" : "office_capture_claim_instagram_dm";
+    const job = await rpc(db,claim,{
+      p_account:accountId, p_source_id:id,
     }) as CaptureJob | null;
     if (!job) continue;
-    if (job.account_id !== accountId || job.source_id !== sourceId || job.channel !== "instagram" || job.kind !== "message") {
+    if (job.account_id !== accountId || job.source_id !== id || job.channel !== "instagram" || job.kind !== kind) {
       throw new Error("OFFICE_CAPTURE_SOURCE_MISMATCH");
     }
     await dispatch(db,job,true);

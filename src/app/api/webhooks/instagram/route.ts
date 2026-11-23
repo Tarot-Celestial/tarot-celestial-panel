@@ -5,7 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { SOCIAL_CONNECTIONS_TABLE } from '@/lib/server/social-connections';
 import { validInstagramSignature, instagramWebhookEvents } from '@/lib/server/instagram-webhook';
 import { processInstagramWebhook } from '@/lib/server/instagram-sync';
-import { dispatchInstagramWebhookMessages } from '@/lib/server/office-social-worker';
+import { dispatchInstagramWebhookReplies } from '@/lib/server/office-social-worker';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,16 +33,16 @@ export async function POST(req: Request) {
     const verified=connection.data.metadata?.instagram_verified_account_ids;
     const verifiedAccountIds=Array.isArray(verified)?verified.filter((value:unknown):value is string=>typeof value==='string'&&/^\d{1,40}$/.test(value)).slice(0,10):[];
     const accountId = String(connection.data.account_id);
-    const {messageIds} = await processInstagramWebhook(body, {accountId,username:String(connection.data.username || ''),token:'',verifiedAccountIds});
+    const {replySources} = await processInstagramWebhook(body, {accountId,username:String(connection.data.username || ''),token:'',verifiedAccountIds});
     const events = instagramWebhookEvents(body, accountId, verifiedAccountIds);
     if (events.length) {
       const saved = await db.from('tc_instagram_webhook_events').upsert(events, { onConflict: 'event_key', ignoreDuplicates: true })
         .select('kind,remote_id');
       if (saved.error) return json({ ok: false }, 503);
-      const inserted = new Set((saved.data || []).filter(row => row.kind === 'message').map(row => row.remote_id));
-      const fresh = messageIds.filter(id => inserted.has(id));
+      const inserted = new Set((saved.data || []).map(row => row.kind + ':' + row.remote_id));
+      const fresh = replySources.filter(source => inserted.has(source.kind + ':' + source.id));
       if (fresh.length) {
-        waitUntil(dispatchInstagramWebhookMessages(db,accountId,fresh).catch(() => {
+        waitUntil(dispatchInstagramWebhookReplies(db,accountId,fresh).catch(() => {
           console.warn('office-instagram-webhook-dispatch-unavailable');
         }));
       }

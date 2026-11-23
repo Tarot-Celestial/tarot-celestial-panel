@@ -86,16 +86,22 @@ test('several distinct non-self identities produce an ambiguous recipient instea
   assert.equal(identity()(account, [own, person], [{ from: { id: otherCustomer }, to: { data: [own] } }]).recipientId, null);
 });
 
-function inboxHarness({ participants = [own, person], messages = [], storedRecipient = ownAlias, detailErrors = {}, detailOverrides = {} } = {}) {
+function inboxHarness({ participants = [own, person], messages = [], storedRecipient = ownAlias, detailErrors = {}, detailOverrides = {}, comment, replyPages = [], evidence = {} } = {}) {
   const calls = [], writes = [], updates = [], rpcCalls = [];
   let row = { id: '00000000-0000-4000-8000-000000000001', account_id: account.accountId, kind: 'message', remote_id: 'conversation-1', recipient_id: storedRecipient, name: 'Old cached name', username: 'old_cached', preview: 'Abrir conversación', remote_updated_at: new Date().toISOString(), last_reply_at: null, private_reply_sent: false };
+  if (comment) row = { ...row, kind: 'comment', remote_id: 'comment-1', recipient_id: customer, username:person.username, remote_created_at: comment.timestamp };
   const db = {
     from(table) {
       let patch;
+      const filters = {};
       const query = {
-        select: () => query, eq: () => query, in: () => query,
+        select: () => query, eq: (key,value) => { filters[key] = value; return query; }, in: () => query,
         update: value => { patch = value; updates.push(value); row = { ...row, ...value }; return query; },
-        maybeSingle: async () => ({ data: table === 'tc_instagram_threads' ? row : null, error: null }),
+        maybeSingle: async () => {
+          if (table === 'tc_instagram_threads') return {data:row,error:null};
+          const record = evidence[table];
+          return {data:record && Object.entries(filters).every(([key,value])=>record[key] === value) ? record : null,error:null};
+        },
         limit: async () => ({ data: [], error: null }),
         then: (resolve, reject) => Promise.resolve({ data: patch ? [row] : [], error: null }).then(resolve, reject),
         upsert(rows, options) {
@@ -118,6 +124,12 @@ function inboxHarness({ participants = [own, person], messages = [], storedRecip
       InstagramError, graphId, replyWindowOpen, instagramConnection: async () => account,
       instagramGraph: async (selected, resource, params, body) => {
         assert.equal(selected, account); calls.push({ resource, params, body });
+        if (comment && resource === row.remote_id) return comment;
+        if (comment && resource === row.remote_id + '/replies' && !body) {
+          const index = calls.filter(call => call.resource === resource).length - 1;
+          assert.ok(index < replyPages.length, 'Unexpected replies page');
+          return replyPages[index];
+        }
         if (resource === `${account.accountId}/conversations`) return { data: [{ id: 'conversation-1', updated_time: new Date().toISOString(), participants: { data: participants } }] };
         if (resource === 'conversation-1') return { messages: { data: messages.map(message => ({ id: message.id })) } };
         if (Object.hasOwn(detailErrors, resource)) throw detailErrors[resource];
@@ -238,3 +250,57 @@ test('an attachment without message text remains readable when identity and time
 });
 
 test('server-verified own alias stays own even when Meta omits usernames',()=>{const verified='17841451159294130';const result=identity()({...account,verifiedAccountIds:[verified]},[{id:verified},{id:customer}],[]);assert.equal(result.recipientId,customer);assert.equal(result.isOwnActor({id:verified}),true);const unknown=identity()(account,[{id:verified},{id:customer}],[]);assert.equal(unknown.recipientId,null);});
+
+const liveComment = {
+  id: 'comment-1', text: 'Hola quiero mi primera consulta', timestamp: new Date().toISOString(), from: person,
+};
+
+test('comment history exhausts the replies edge and sees replies that would cancel a prepared invitation', async () => {
+  const reply = { id:'reply-2', text:'Respuesta de la central', timestamp:liveComment.timestamp, from:{id:account.accountId} };
+  const h = inboxHarness({ comment:liveComment, replyPages:[
+    {data:[],paging:{next:'https://never-follow.invalid',cursors:{after:'cursor-1'}}}, {data:[reply]},
+  ]});
+  const { loaded } = await h.mod.instagramOfficeHistory(h.id,account.accountId);
+  assert.equal(loaded.incompleteHistory,false);
+  assert.equal(loaded.messages.length,2);
+  assert.equal(loaded.messages[1].fromMe,true);
+  assert.equal(h.calls[2].resource,'comment-1/replies');
+  assert.equal(h.calls[2].params.after,'cursor-1');
+});
+
+test('an empty replies list is complete while absent, malformed or unfinished reply history stays blocked', async () => {
+  for (const [pages, incomplete] of [
+    [[{data:[]}],false], [[{}],true], [[{data:null}],true], [[{data:{}}],true], [[{data:[null]}],true],
+    [[{data:[{id:'reply-2',from:person}]}],true],
+    [[{data:[],paging:{next:'next'}}],true],
+    [[{data:[],paging:{next:'next',cursors:{after:'foo'}}},{data:[],paging:{next:'next',cursors:{after:'foo'}}}],true],
+    [[1,2,3].map(i=>({data:[],paging:{next:'next',cursors:{after:'cursor-'+i}}})),true],
+  ]) {
+    const h = inboxHarness({comment:liveComment,replyPages:pages});
+    const {loaded} = await h.mod.instagramOfficeHistory(h.id,account.accountId);
+    assert.equal(loaded.incompleteHistory,incomplete);
+    assert.equal(h.calls.filter(call=>call.body).length,0);
+  }
+});
+
+test('an omitted comment author requires both its signed notification and an exactly matched inbound record', async () => {
+  const comment = {...liveComment,from:undefined,username:person.username};
+  const notice = {event_key:account.accountId+':comment:comment-1',account_id:account.accountId,kind:'comment',remote_id:comment.id};
+  const incoming = {
+    account_id:account.accountId,channel:'instagram',kind:'comment',thread_key:comment.id,source_id:comment.id,
+    verified:true,recipient_id:customer,inbound_text:comment.text,source_at:comment.timestamp,
+  };
+  for (const [live, receipt, inbound, incomplete] of [
+    [comment,notice,incoming,false], [comment,null,incoming,true], [comment,notice,null,true],
+    [comment,{...notice,account_id:'another-account'},incoming,true], [comment,notice,{...incoming,verified:false},true],
+    [comment,notice,{...incoming,recipient_id:otherCustomer},true], [comment,notice,{...incoming,thread_key:'other-comment'},true],
+    [comment,notice,{...incoming,inbound_text:'Other text'},true], [comment,notice,{...incoming,source_at:'2020-01-01T00:00:00Z'},true],
+    [{...comment,id:'other-comment'},notice,incoming,true], [{...comment,username:'different_user'},notice,incoming,true],
+    [{...comment,from:{id:otherCustomer}},notice,incoming,true], [{...comment,from:{id:'bad/id'}},notice,incoming,true],
+    [{...comment,from:'unknown'},notice,incoming,true], [{...comment,timestamp:null},notice,incoming,true],
+  ]) {
+    const h = inboxHarness({comment:live,replyPages:[{data:[]}],evidence:{tc_instagram_webhook_events:receipt,office_capture_inbound:inbound}});
+    const {loaded} = await h.mod.instagramOfficeHistory(h.id,account.accountId);
+    assert.equal(loaded.incompleteHistory,incomplete);
+  }
+});

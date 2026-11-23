@@ -12,11 +12,6 @@ type ThreadRow = { id: string; account_id: string; kind: 'message' | 'comment'; 
 const present = (row: ThreadRow): InstagramThread => ({ id: row.id, kind: row.kind, name: row.name, username: row.username, preview: row.preview, updatedAt: row.remote_updated_at, permalink: row.permalink });
 const iso = (value: unknown) => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : new Date().toISOString();
 const verifiedDate = (value: unknown) => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null;
-function afterCursor(value: string | null): Record<string, string> {
-  if (!value) return {};
-  if (value.length > 2048 || !/^[A-Za-z0-9_=+/-]+$/.test(value)) throw new InstagramError('INVALID_CURSOR', 'Actualiza la bandeja.', 400);
-  return { after: value };
-}
 export async function instagramInbox(kind: 'message' | 'comment', cursor: string | null) {
   const account=await instagramConnection();
   let page: {before:string;id:string} | null=null;
@@ -50,7 +45,26 @@ async function threadForAccount(id: string, account: InstagramAccount): Promise<
   return data as ThreadRow;
 }
 
-async function loadMessages(account: InstagramAccount, row: ThreadRow) {
+// A comment read can omit its author ID. Bind the live object to the signed notification
+// and its separately stored inbound evidence; the thread preview alone is insufficient.
+async function signedCommentAuthor(account: InstagramAccount, row: ThreadRow, root: Record<string, any>, createdAt: string) {
+  if (!/^\d{1,40}$/.test(row.recipient_id || '') || !root.text || typeof root.text !== 'string' ||
+      ownInstagramActor(account,{id:row.recipient_id,username:row.username})) return false;
+  const usernames = [root.from?.username, root.username].filter(value => value != null);
+  if (usernames.some(name => typeof name !== 'string' || !row.username || name.toLowerCase() !== row.username.toLowerCase())) return false;
+  const db = supabaseAdmin();
+  const [notice, inbound] = await Promise.all([
+    db.from('tc_instagram_webhook_events').select('event_key').eq('event_key',`${account.accountId}:comment:${row.remote_id}`)
+      .eq('account_id',account.accountId).eq('kind','comment').eq('remote_id',row.remote_id).maybeSingle(),
+    db.from('office_capture_inbound').select('source_at,inbound_text').eq('channel','instagram').eq('account_id',account.accountId)
+      .eq('kind','comment').eq('source_id',row.remote_id).eq('thread_key',row.remote_id).eq('verified',true)
+      .eq('recipient_id',row.recipient_id!).maybeSingle(),
+  ]);
+  return !notice.error && !!notice.data && !inbound.error && inbound.data?.inbound_text === root.text &&
+    Math.abs(Date.parse(inbound.data.source_at) - Date.parse(createdAt)) < 60000;
+}
+
+async function loadMessages(account: InstagramAccount, row: ThreadRow, office = false) {
   const messages: InstagramMessage[] = [];
   const verifiedActivity: Array<{kind:'message'|'comment';remoteId:string;threadRemoteId:string;occurredAt:string;text:string}> = [];
   let recipientId: string | null = null;
@@ -100,21 +114,51 @@ async function loadMessages(account: InstagramAccount, row: ThreadRow) {
       messages.push({ id: String(message.id), text: String(message.message || '[Contenido adjunto: consúltalo en Instagram]'), fromMe, createdAt: iso(message.created_time), senderName: message.from?.username || (fromMe ? account.username : row.name) });
     }
   } else {
-    const root = await instagramGraph(account, row.remote_id, { fields: 'id,text,timestamp,from' });
-    incompleteHistory = root.id !== row.remote_id || !verifiedDate(root.timestamp) || !graphId(root.from?.id);
-    if (!incompleteHistory && !ownInstagramActor(account,root.from)) {
+    const root = await instagramGraph(account, row.remote_id, { fields: 'id,text,timestamp,from,username' });
+    const rootDate = verifiedDate(root.timestamp);
+    const authorId = root.from?.id;
+    const authorMissing = authorId == null && (root.from == null || (typeof root.from === 'object' && !Array.isArray(root.from)));
+    const authorVerified = graphId(authorId) ? !row.recipient_id || row.recipient_id === authorId :
+      Boolean(office && authorMissing && root.id === row.remote_id && rootDate && await signedCommentAuthor(account,row,root,rootDate));
+    const rootVerified = root.id === row.remote_id && !!rootDate && authorVerified;
+    const rootFromMe = ownInstagramActor(account,root.from) || ownInstagramActor(account,{username:root.username});
+    if (rootVerified && !rootFromMe) {
       verifiedActivity.push({kind:'comment',remoteId:root.id,threadRemoteId:row.remote_id,occurredAt:root.timestamp,text:root.text});
     }
-    messages.push({ id: String(root.id), text: String(root.text || ''), fromMe: ownInstagramActor(account, root.from), createdAt: iso(root.timestamp), senderName: root.from?.username || row.name });
-    const replies = await instagramGraph(account, `${row.remote_id}/replies`, { fields: 'id,text,timestamp,from', limit: '50' });
-    incompleteHistory ||= !Array.isArray(replies.data) || Boolean(replies.paging?.next);
-    for (const reply of replies.data || []) {
-      const fromMe=ownInstagramActor(account,reply.from);
-      messages.push({id:String(reply.id),text:String(reply.text || ''),fromMe,createdAt:iso(reply.timestamp),senderName:reply.from?.username || 'Instagram'});
-      if (!fromMe && graphId(reply.id) && graphId(reply.from?.id) && verifiedDate(reply.timestamp)) {
-        verifiedActivity.push({kind:'comment',remoteId:reply.id,threadRemoteId:row.remote_id,occurredAt:reply.timestamp,text:reply.text});
+    messages.push({ id: String(root.id), text: String(root.text || ''), fromMe:rootFromMe, createdAt: iso(root.timestamp), senderName: root.from?.username || root.username || row.name });
+    const cursors = new Set<string>();
+    let after: string | null = null;
+    for (let page = 0; page < 3; page++) {
+      const replies = await instagramGraph(account, `${row.remote_id}/replies`, {
+        fields: 'id,text,timestamp,from', limit: '50', ...(after ? {after} : {}),
+      });
+      if (!Array.isArray(replies.data)) { incompleteHistory = true; break; }
+      for (const reply of replies.data) {
+        const createdAt = verifiedDate(reply?.timestamp);
+        if (!graphId(reply?.id) || !createdAt || reply.id === row.remote_id || (rootDate && createdAt < rootDate)) {
+          incompleteHistory = true;
+          continue;
+        }
+        if (!graphId(reply.from?.id)) incompleteHistory = true;
+        const fromMe = ownInstagramActor(account,reply.from);
+        messages.push({id:reply.id,text:String(reply.text || ''),fromMe,createdAt,senderName:reply.from?.username || 'Instagram'});
+        if (graphId(reply.from?.id) && !fromMe) {
+          verifiedActivity.push({kind:'comment',remoteId:reply.id,threadRemoteId:row.remote_id,occurredAt:createdAt,text:reply.text});
+        }
       }
+      if (!replies.paging?.next) break;
+      const cursor = replies.paging.cursors?.after;
+      if (page === 2 || typeof cursor !== 'string' || !/^[A-Za-z0-9_=+/-]{1,2048}$/.test(cursor) || cursors.has(cursor)) {
+        incompleteHistory = true;
+        break;
+      }
+      cursors.add(cursor);
+      after = cursor;
     }
+    if (office && (!rootVerified || incompleteHistory)) console.warn('instagram-comment-incomplete', {
+      rootIdMatches:root.id === row.remote_id, validDate:!!rootDate, hasAuthorId:graphId(authorId), authorVerified, repliesComplete:!incompleteHistory,
+    });
+    incompleteHistory ||= !rootVerified;
   }
   messages.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   await recordSocialActivity('instagram',account.accountId,verifiedActivity);
@@ -153,7 +197,7 @@ export async function instagramOfficeHistory(threadId: string, expectedAccount: 
   const account = await instagramConnection();
   if (account.accountId !== expectedAccount) throw new InstagramError('WRONG_ACCOUNT','La cuenta de la entrada ha cambiado.');
   const row = await threadForAccount(threadId,account);
-  const loaded = await loadMessages(account,row);
+  const loaded = await loadMessages(account,row,true);
   return { account, row, loaded };
 }
 
@@ -173,7 +217,7 @@ export async function instagramSend(userId: string, input: any,
     if (['sent', 'confirmed_sent'].includes(existing.data.status)) return { ok: true, duplicate: true, messageId: existing.data.remote_message_id };
     throw new InstagramError(existing.data.status === 'failed' ? 'META_REJECTED' : 'SEND_UNCERTAIN', 'Este envío ya se ha intentado. Actualiza y comprueba la conversación antes de repetirlo.', 409);
   }
-  const loaded = await loadMessages(account, row);
+  const loaded = await loadMessages(account, row, Boolean(verify));
   if (verify) await verify(account,row,loaded);
   if (row.kind === 'message' && loaded.incompleteHistory) throw new InstagramError('INCOMPLETE_HISTORY', 'Instagram no permite verificar todo el historial reciente. Actualiza o continúa desde Instagram antes de responder.', 409);
   if (row.kind === 'message' && !loaded.recipientId) throw new InstagramError('RECIPIENT_UNVERIFIED', 'No hemos podido verificar el destinatario. Actualiza o revisa la conversación en Instagram antes de responder.', 409);

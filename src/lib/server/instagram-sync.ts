@@ -126,8 +126,10 @@ export async function processInstagramWebhook(body: unknown, account: InstagramA
     recipient_id:event.senderId || null,name:event.senderName,username:event.username,preview:event.text,
     remote_created_at:event.kind==='comment'?event.occurredAt:null,remote_updated_at:event.occurredAt}));
   await persistInstagramThreads(account,rows,events);
-  const messageIds = events.filter(event => event.kind === 'message' && event.text.trim() &&
-    !event.text.startsWith('[Contenido adjunto') && Date.parse(event.occurredAt) > Date.now() - 86400000)
-    .map(event => event.remoteId);
-  return {received:events.length, messageIds};
+  const replySources = events.filter(event => {
+    const windowHours = event.kind === 'comment' ? 168 : 24;
+    return event.senderId && event.text.trim() && !event.text.startsWith('[Contenido adjunto') &&
+      Date.parse(event.occurredAt) > Date.now() - windowHours * 3600000;
+  }).map(event => ({kind:event.kind, id:event.remoteId}));
+  return {received:events.length, replySources};
 }
