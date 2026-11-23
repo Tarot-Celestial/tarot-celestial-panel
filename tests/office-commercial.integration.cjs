@@ -49,6 +49,7 @@ before(async()=>{
  await db.exec(migration("office_commercial_inbox"));
  await db.exec(migration("office_commercial_reply_windows"));
  await db.exec(migration("office_instagram_immediate_reply"));
+ await db.exec(migration("office_instagram_comment_claim"));
  assert.equal((await page()).items[0].opportunity_id,historic);
 });
 after(async()=>db?.close());
@@ -188,6 +189,70 @@ async function receiveDm(sourceId,minutesAgo=1) {
 const claimDm=(sourceId,account="ig-fixture")=>q("select office_capture_claim_instagram_dm($1,$2)",[account,sourceId]);
 const beginDm=job=>q("select office_capture_begin($1,$2,'Fixture','ask_country')",[job.id,job.lease_token]);
 const finishDm=(job,outcome,reason,receipt=null)=>q("select office_capture_finish($1,$2,$3,$4,$5)",[job.id,job.lease_token,outcome,receipt,reason]);
+
+async function receiveComment(sourceId,{root=sourceId,author=null,body="Quiero una consulta",daysAgo=0}={}) {
+  await q(`insert into tc_instagram_threads(id,kind,account_id,recipient_id,remote_id,remote_updated_at,private_reply_sent)
+    values(gen_random_uuid(),'comment','ig-fixture',$1,$2,now(),false)`,[author,root]);
+  await q(`insert into tc_social_inbox_activity(provider,account_id,kind,remote_id,thread_remote_id,occurred_at)
+    values('instagram','ig-fixture','comment',$1,$2,now()-interval '1 minute'-$3*interval '1 day')`,[sourceId,root,daysAgo]);
+  assert.equal(await q("select office_capture_record_social('instagram','ig-fixture',$1)",[
+    JSON.stringify([{kind:"comment",source_id:sourceId,thread_key:root,body}])]),1);
+}
+const claimComment=(sourceId,account="ig-fixture")=>q("select office_capture_claim_instagram_comment($1,$2)",[account,sourceId]);
+
+test("el comentario firmado reclama su propio hilo por ID, incluso si Instagram omite el autor",async()=>{
+  await instagramFixture();
+  await receiveDm("same-id",5);
+  await receiveComment("same-id");
+  await receiveComment("other-comment",{author:"other-author"});
+  assert.equal(await claimComment("absent"),null);
+  assert.equal(await claimComment("same-id","another-account"),null);
+  assert.equal(await claimComment(null),null);
+  for(const role of ["anon","authenticated"]) {
+    assert.equal(await q("select has_function_privilege($1,'office_capture_claim_instagram_comment(text,text)','execute')",[role]),false);
+  }
+  await db.exec("set role service_role");
+  try {
+    const job=await claimComment("same-id");
+    assert.equal(job.kind,"comment");
+    assert.equal(job.thread_key,"same-id");
+    assert.equal(job.recipient_id,null);
+    assert.equal(await claimComment("same-id"),null);
+    const dm=await q("select office_capture_claim()");
+    assert.equal(dm.kind,"message");
+    const cronComment=await q("select office_capture_claim()");
+    assert.equal(cronComment.source_id,"other-comment");
+    assert.equal(await claimComment("other-comment"),null);
+    assert.equal((await beginDm(job)).request_id,job.request_id);
+    assert.equal(await finishDm(job,"sent",null,"receipt-comment"),true);
+    assert.equal(await claimComment("same-id"),null);
+    assert.equal(await q("select office_capture_claim()"),null);
+  } finally { await db.exec("reset role"); }
+});
+
+test("la reserva inmediata de comentarios respeta identidad, retirada, ventana y respuesta privada previa",async()=>{
+  await instagramFixture();
+  await receiveComment("child",{root:"root"});
+  await receiveComment("expired",{daysAgo:8});
+  await receiveComment("managed");
+  await receiveComment("deleted");
+  await receiveComment("mismatch",{author:"source-author"});
+  await receiveComment("unverified");
+  await receiveComment("empty",{body:" "});
+  await receiveComment("disabled");
+  await q("update tc_instagram_threads set private_reply_sent=true where remote_id='managed'");
+  await q("update tc_social_inbox_activity set removed_at=now() where remote_id='deleted'");
+  await q("update office_capture_inbound set recipient_id='other-author' where source_id='mismatch'");
+  await q("update office_capture_inbound set verified=false where source_id='unverified'");
+  for(const sourceId of ["child","root","expired","managed","deleted","mismatch","unverified","empty"]) {
+    assert.equal(await claimComment(sourceId),null,sourceId);
+  }
+  try {
+    await q("update office_capture_settings set enabled=false");
+    assert.equal(await claimComment("disabled"),null);
+  } finally { await q("update office_capture_settings set enabled=true"); }
+  assert.equal((await claimComment("disabled")).source_id,"disabled");
+});
 
 test("el webhook sólo reclama su DM verificado; duplicados, pausas y la ronda comparten autorización y lease",async()=>{
   await instagramFixture();

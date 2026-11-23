@@ -14,7 +14,7 @@ test('webhook validates raw signature and both Instagram event formats; ignores 
 test('verified webhook aliases route to canonical ledger and reject foreign recipients, echoes and own actors',()=>{const w=load('src/lib/server/instagram-webhook.ts'),canonical='38731579339820579',alias='17841451159294130',foreign='17841499999999999',timestamp=Date.now()-1000;const dm=(mid,sender='222',recipient=alias,echo=false)=>({sender:{id:sender},recipient:{id:recipient},timestamp,message:{mid,text:'fixture',is_echo:echo}});const body={object:'instagram',entry:[{id:alias,time:timestamp/1000,messaging:[dm('valid'),dm('echo','222',alias,true),dm('self',alias),dm('self-canonical',canonical),dm('foreign-recipient','222',foreign)],changes:[{field:'comments',value:{id:'comment',from:{id:'222'},text:'fixture'}},{field:'comments',value:{id:'own-comment',from:{id:alias},text:'fixture'}}]},{id:canonical,messaging:[dm('valid')]},{id:foreign,messaging:[dm('foreign-entry')]}]};assert.equal(w.instagramInboundEvents(body,canonical,'tarotcelestialof').length,0);const incoming=w.instagramInboundEvents(body,canonical,'tarotcelestialof',[alias]);assert.deepEqual(Array.from(incoming,e=>e.remoteId),['valid','comment']);assert.ok(incoming.every(e=>e.senderId==='222'));const ledger=w.instagramWebhookEvents(body,canonical,[alias]);assert.ok(ledger.every(e=>e.account_id===canonical&&e.event_key.startsWith(canonical+':')));assert.ok(!ledger.some(e=>e.remote_id==='foreign-entry'));});
 test('connection exposes only validated server metadata aliases without replacing canonical account ID',async()=>{const canonical='38731579339820579',alias='17841451159294130',chain={};chain.select=()=>chain;chain.eq=()=>chain;chain.maybeSingle=async()=>({data:{account_id:canonical,username:'tarotcelestialof',access_token_ciphertext:'encrypted',metadata:{instagram_verified_account_ids:[alias,alias,123,null,'not-an-id','https://foreign']}}});const mod=load('src/lib/server/instagram-graph.ts',{'@/lib/supabase-admin':{supabaseAdmin:()=>({from:()=>chain})},'@/lib/server/social-connections':{decryptSecret:()=> 'PRIVATE'}});const account=await mod.instagramConnection();assert.equal(account.accountId,canonical);assert.deepEqual(Array.from(account.verifiedAccountIds),[alias]);});
 
-test('signed webhook schedules only newly recorded inbound DMs on its verified account',async()=>{
+test('signed webhook schedules fresh DMs and comments independently on its verified account',async()=>{
  const canonical='38731579339820579',alias='17841451159294130',foreign='17841499999999999';
  const queued=[], ledger=new Set(), dispatched=[];
  let dbReads=0, failStorage=false, release;
@@ -39,10 +39,10 @@ test('signed webhook schedules only newly recorded inbound DMs on its verified a
    '@/lib/server/instagram-sync':{processInstagramWebhook:async(body,account)=>{
      assert.deepEqual(Array.from(account.verifiedAccountIds),[alias]);
      const inbound=webhook.instagramInboundEvents(body,account.accountId,account.username,account.verifiedAccountIds);
-     return {messageIds:inbound.filter(e=>e.kind==='message').map(e=>e.remoteId)};
+     return {replySources:inbound.map(e=>({kind:e.kind,id:e.remoteId}))};
    }},
-   '@/lib/server/office-social-worker':{dispatchInstagramWebhookMessages:async(db,account,ids)=>{
-     dispatched.push({account,ids:Array.from(ids)}); await blockedWorker; throw Error('background offline');
+   '@/lib/server/office-social-worker':{dispatchInstagramWebhookReplies:async(db,account,sources)=>{
+     dispatched.push({account,sources:Array.from(sources,s=>s.kind+':'+s.id)}); await blockedWorker; throw Error('background offline');
    }},
  },{Response,process:{env:{INSTAGRAM_APP_SECRET:'fixture-secret',INSTAGRAM_WEBHOOK_VERIFY_TOKEN:'fixture-verify'}},console:{warn:()=>{}}});
  const timestamp=Date.now()-1000;
@@ -59,13 +59,14 @@ test('signed webhook schedules only newly recorded inbound DMs on its verified a
  const noise=[entry(foreign,'foreign'),entry(alias,'echo','222',true),entry(alias,'self',canonical)];
  assert.equal((await post(noise)).status,200);
  assert.equal(queued.length,0);
- const batch=[...noise,entry(alias,'one'),entry(canonical,'one')];
+ const comment={id:alias,time:timestamp/1000,changes:[{field:'comments',value:{id:'one',from:{id:'222',username:'reader'},text:'mi primera consulta'}}]};
+ const batch=[...noise,entry(alias,'one'),entry(canonical,'one'),comment];
  failStorage=true;
  assert.equal((await post(batch)).status,503);
  assert.equal(queued.length,0);
  failStorage=false;
  assert.equal((await post(batch)).status,200);
- assert.deepEqual(dispatched,[{account:canonical,ids:['one']}]);
+ assert.deepEqual(dispatched,[{account:canonical,sources:['message:one','comment:one']}]);
  assert.equal((await post(batch)).status,200);
  assert.equal(queued.length,1);
  release();

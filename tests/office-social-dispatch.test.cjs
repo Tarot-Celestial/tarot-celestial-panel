@@ -84,7 +84,7 @@ function harness(options = {}) {
     async rpc(name,args) {
       calls.push({name,args});
       if (name === "office_capture_claim") return {data:job};
-      if (name === "office_capture_claim_instagram_dm") return {data:args.p_source_id === job.source_id ? job : null};
+      if (["office_capture_claim_instagram_dm","office_capture_claim_instagram_comment"].includes(name)) return {data:args.p_source_id === job.source_id ? job : null};
       if (name === "office_capture_begin" && options.revoked) return {data:null};
       if (name === "office_autonomy_dispatch") return {data:!options.pausedLate};
       return {data:true};
@@ -116,8 +116,19 @@ function harness(options = {}) {
     "./office-meta-attribution":{confirmMetaPanelCode:async(_db,_opp,_source,t)=>/^TC-/.test(t)?"confirmed":"not_code",
       getMetaPanelLink:async(_db,_id,_site,to)=>{links.push(to);return "https://example.test/cliente/meta/test";}},
   });
-  return {run:()=>worker.runOfficeSocialDispatch(db),webhook:(account,...ids)=>worker.dispatchInstagramWebhookMessages(db,account,ids),calls,links};
+  const replies=(account,sources)=>worker.dispatchInstagramWebhookReplies(db,account,sources);
+  return {run:()=>worker.runOfficeSocialDispatch(db),webhook:(account,...ids)=>replies(account,ids.map(id=>({id,kind:"message"}))),replies,calls,links};
 }
+test("un comentario firmado solicita una sola respuesta por el canal autorizado",async()=>{
+  const sources=[{kind:"comment",id:"in"},{kind:"comment",id:"in"}];
+  const f=harness({job:{kind:"comment"},proof:{text:"Hola quiero mi primera consulta",publicAllowed:true}});
+  await f.replies("biz",sources);
+  assert.deepEqual(f.calls.filter(c=>c.name.startsWith("office_capture_claim")).map(c=>c.name),["office_capture_claim_instagram_comment"]);
+  assert.deepEqual(f.calls.filter(c=>c.name==="send").map(c=>c.mode),["private"]);
+  const mismatch=harness();
+  await assert.rejects(mismatch.replies("biz",sources),/SOURCE_MISMATCH/);
+  assert.equal(mismatch.calls.some(c=>c.name==="send"),false);
+});
 test("el webhook reclama el DM exacto una vez, respeta la revocación y no toca otra cuenta",async()=>{
   const f=harness();
   await f.webhook("biz","old","in","in");
