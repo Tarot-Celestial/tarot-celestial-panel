@@ -19,6 +19,27 @@ function load(file, imports = {}) {
   return exports;
 }
 const policy = load("src/lib/server/office-social-policy.ts",{"@/lib/countries":load("src/lib/countries.ts")});
+test("una ronda informa la etapa rechazada y conserva el canal sano sin revelar el error original", async () => {
+  let failure = "connection";
+  const sensitive = "mensaje privado de prueba";
+  const failAt = stage => { if (failure === stage) throw { code: sensitive, message: sensitive }; };
+  const graph = load("src/lib/server/office-social-graph.ts", {
+    "./instagram-graph": { instagramConnection: async () => { failAt("connection"); return { accountId: "ig" }; } },
+    "./instagram-sync": { ensureInstagramFresh: async () => { failAt("inbox"); return {}; } },
+    "./facebook-graph": { facebookConnection: () => ({ accountId: "fb" }) },
+    "./facebook-inbox": { ensureFacebookFresh: async () => ({}) },
+    "./instagram-inbox": {}, "./office-instagram-graph": {}, "./facebook-diagnostics": {}, "./office-social-policy": policy,
+  });
+  const allow = async channel => { if (channel === "instagram") failAt("autonomy"); return true; };
+  for (failure of ["connection", "autonomy", "inbox"]) {
+    const [ig, fb] = await graph.syncOfficeSocialInboxes(allow);
+    assert.deepEqual({ ...ig }, { channel: "instagram", state: "blocked", stage: failure, code: "UNAVAILABLE" });
+    assert.equal(fb.state, "checked");
+  }
+  failure = "";
+  assert.equal((await graph.syncOfficeSocialInboxes(allow))[0].state, "checked");
+  assert.equal((await graph.syncOfficeSocialInboxes(async () => false))[0].state, "paused");
+});
 function harness(options = {}) {
   const now = new Date(Date.now()-3000).toISOString();
   const job = {id:"op",request_id:"req",lease_token:"lease",channel:"instagram",kind:"message",account_id:"biz",source_id:"in",inbound_text:null,

@@ -93,16 +93,43 @@ export async function sendSocialReply(job: CaptureJob, proof: SocialProof, body:
   return String(result.messageId);
 }
 
+// Only record predefined diagnoses. Provider errors, SQL details, stack traces
+// and request URLs can contain message text, identifiers or credentials.
+function syncFailureCode(error: unknown) {
+  if (typeof error !== "object" || error === null) return "UNAVAILABLE";
+  const { code, message, name } = error as { code?: unknown; message?: unknown; name?: unknown };
+  const known = ["NOT_CONNECTED", "WRONG_ACCOUNT", "TOKEN_EXPIRED", "TOKEN_MISSING",
+    "META_UNAVAILABLE", "META_PERMISSION", "META_RATE_LIMIT", "META_REJECTED", "META_INVALID_RESPONSE",
+    "OFFICE_AUTONOMY_UNAVAILABLE", "SOCIAL_INBOX_UNAVAILABLE", "INVALID_SOCIAL_SECRET"];
+  for (const diagnosis of known) if (code === diagnosis || message === diagnosis) return diagnosis;
+  if (typeof code === "string" && /^(PGRST\d{3}|[0-9]{5})$/.test(code)) return code;
+  if (message === "Unsupported state or unable to authenticate data") return "TOKEN_DECRYPTION_FAILED";
+  if (name === "TypeError") return "TYPE_ERROR";
+  if (name === "ReferenceError") return "REFERENCE_ERROR";
+  return "UNAVAILABLE";
+}
+
 export async function syncOfficeSocialInboxes(allow:(channel:string,account:string)=>Promise<boolean>) {
-  const checks = await Promise.allSettled([
-    (async()=>{ const account=await instagramConnection();
-      return await allow("instagram",account.accountId) ? ensureInstagramFresh(account) : "paused" as const; })(),
-    (async()=>{ const account=facebookConnection();
-      return await allow("facebook",account.accountId) ? ensureFacebookFresh(account) : "paused" as const; })(),
+  type Cursor = { messageError?: string | null; commentError?: string | null };
+  async function check<T extends { accountId: string }>(
+    channel: "instagram" | "facebook", connect: () => T | Promise<T>, refresh: (account: T) => Promise<Cursor | null>,
+  ) {
+    let stage = "connection";
+    try {
+      const account = await connect();
+      stage = "autonomy";
+      if (!await allow(channel, account.accountId)) return { channel, state: "paused" };
+      stage = "inbox";
+      const cursor = await refresh(account);
+      return { channel, state: cursor == null ? "cooldown" : cursor.messageError || cursor.commentError ? "partial" : "checked" };
+    } catch (error) {
+      const code = syncFailureCode(error);
+      console.warn("office-capture: inbox check failed", { channel, stage, code });
+      return { channel, state: "blocked", stage, code };
+    }
+  }
+  return Promise.all([
+    check("instagram", instagramConnection, ensureInstagramFresh),
+    check("facebook", facebookConnection, ensureFacebookFresh),
   ]);
-  return checks.map((check,index) => {
-    if (check.status === "rejected") return { channel:index ? "facebook" : "instagram",state:"blocked" };
-    const cursor = check.value;
-    return { channel:index ? "facebook" : "instagram",state:cursor === "paused" ? "paused" : cursor == null ? "cooldown" : cursor.messageError || cursor.commentError ? "partial" : "checked" };
-  });
 }
