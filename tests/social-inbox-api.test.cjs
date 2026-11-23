@@ -22,6 +22,30 @@ test('HTTP success without required subscription verification cannot claim ready
  const mod=load('src/lib/server/instagram-subscriptions.ts',{'./instagram-graph':{InstagramError,instagramConnection:async()=>({accountId:'a'}),instagramGraph:async(a,p,q,body)=>body?{success:true}:{data:[]}}});
  await assert.rejects(mod.subscribeInstagram(),error=>error.code==='SUBSCRIPTION_UNCONFIRMED');
 });
+test('Instagram Login reads app_id and preserves only the connected app subscriptions', async () => {
+ const account = {accountId: 'business'};
+ let fields = ['mentions'];
+ const writes = [];
+ const graph = async (_account, path, _params, body) => {
+   assert.equal(path, 'business/subscribed_apps');
+   if (body) {
+     writes.push(body.subscribed_fields);
+     fields = body.subscribed_fields.split(',');
+     return {success: true};
+   }
+   return {data: [
+     {app_id: 'unrelated', id: 'own-app', subscribed_fields: ['live_comments']},
+     {app_id: 'own-app', subscribed_fields: fields},
+   ]};
+ };
+ const mod = load('src/lib/server/instagram-subscriptions.ts', {
+   './instagram-graph': {InstagramError, instagramGraph: graph, instagramConnection: async () => account},
+ }, {process: {env: {INSTAGRAM_APP_ID: 'own-app'}}});
+ assert.deepEqual(Array.from((await mod.instagramSubscriptionStatus()).fields), ['mentions']);
+ assert.equal((await mod.subscribeInstagram()).ready, true);
+ assert.equal((await mod.subscribeInstagram()).ready, true);
+ assert.deepEqual(writes, ['mentions,comments,messages']);
+});
 test('central cannot subscribe; read accepts only threadId/through and uses verified actor',async()=>{
  let subscribed=0,read;const mod=load('src/app/api/central/instagram/route.ts',{'next/server':{NextResponse:{json:(body,options)=>({body,...options})}},'@vercel/functions':{waitUntil:()=>{}},'@/lib/server/admin-access':{requestHasAdminAccess:async()=>false},'@/lib/server/instagram-graph':{InstagramError,instagramIdentity:async()=>({userId:'verified-user',worker:{role:'central'}})},'@/lib/server/instagram-inbox':{instagramRead:async(user,body)=>{read={user,body};return {ok:true,unread:2};}},'@/lib/server/instagram-diagnostics':{},'@/lib/server/instagram-sync':{},'@/lib/server/instagram-subscriptions':{subscribeInstagram:async()=>{subscribed++;}}});
  assert.equal((await mod.POST(new Request('https://local.test/?action=subscribe',{method:'POST'}))).status,403);assert.equal(subscribed,0);
