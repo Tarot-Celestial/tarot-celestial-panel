@@ -21,6 +21,7 @@ function load(file, mocks = {}, globals = {}) {
 }
 const definitions = load('src/lib/client-referrals.ts');
 const reward = { id: id(10), title: 'Premio de prueba', referrals_required: 3, reward_type: 'coins', amount: 100, roulette_level: null, rank_key: null, rank_days: null, enabled: true, version: 2, claimable: true };
+const rewardItem = (reward_type, amount, extras = {}) => ({ reward_type, amount, roulette_level: null, rank_key: null, rank_days: null, ...extras });
 const initial = () => ({ ok: true, summary: { total: 4, available: 3, pending: 1, claimed: 0 }, rewards: [{ ...reward }], referrals: [{ id: id(20), name: 'Ana', status: 'available', created_at: '2026-11-22T10:00:00Z', claimed_at: null, reward_title: null }], claims: [], qualification: 'purchases_over_10', claim_mode: 'consume' });
 const response = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
 
@@ -142,5 +143,38 @@ test('Diamante roulette requirement appears both in the reward card and the revi
   await f.mount(); assert.match(f.text(), /requieren ese rango/);
   await f.click('Reclamar premio');
   assert.match(text(f.getView().root.findByType('dialog')), /Necesitas rango Diamante/);
+  await f.unmount();
+});
+
+test('a bundle reviews every component, consumes referrals once and reports the actual receipt', async () => {
+  const f = fixture();
+  f.state.rewards[0] = { ...reward, referrals_required: 1, reward_items: [rewardItem('free_minutes', 15), rewardItem('coins', 30), rewardItem('roulette', 2, { roulette_level: 4 }), rewardItem('oracle', 3)] };
+  await f.mount();
+  assert.match(f.text(), /15 minutos FREE \+ 30 Coins \+ 2 giros · Especial \+ 3 tiradas de Oráculo/);
+  await f.click('Reclamar premio');
+  const dialog = f.getView().root.findByType('dialog');
+  assert.match(text(dialog), /15 minutos FREE \+ 30 Coins \+ 2 giros · Especial \+ 3 tiradas de Oráculo/);
+  assert.match(text(dialog), /Referidos que se usarán1/);
+  assert.match(text(dialog), /una sola vez/);
+  f.post = async () => response({ ok: true, receipt: { claim_id: id(90), title: 'Título conservado en el recibo', reward_description: '15 minutos FREE + 30 Coins + 2 giros · Especial + 3 tiradas de Oráculo' } });
+  await f.click('Confirmar premio');
+  assert.equal(f.posts.length, 1);
+  assert.equal(f.posts[0].reward_id, reward.id);
+  assert.equal('reward_items' in f.posts[0], false);
+  assert.equal('referrals_required' in f.posts[0], false);
+  assert.match(f.text(), /Premio reclamado: Título conservado en el recibo/);
+  assert.equal(f.storage.size, 0);
+  await f.unmount();
+});
+
+test('bundle Diamante conditions and delivered item snapshots work when roulette is not the first item', async () => {
+  const f = fixture();
+  f.state.rewards[0] = { ...reward, reward_items: [rewardItem('coins', 30), rewardItem('roulette', 1, { roulette_level: 5 })] };
+  await f.mount(); assert.match(f.text(), /requieren ese rango/);
+  await f.click('Reclamar premio');
+  assert.match(text(f.getView().root.findByType('dialog')), /Necesitas rango Diamante/);
+  f.post = async () => response({ ok: true, receipt: { title: 'Recibo con componentes', reward_items: [rewardItem('free_minutes', 15), rewardItem('oracle', 2)] } });
+  await f.click('Confirmar premio');
+  assert.match(f.text(), /Premio reclamado: Recibo con componentes. 15 minutos FREE \+ 2 tiradas de Oráculo/);
   await f.unmount();
 });

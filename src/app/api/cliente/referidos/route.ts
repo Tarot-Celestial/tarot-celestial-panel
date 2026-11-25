@@ -1,5 +1,5 @@
 import { clientFromRequest } from "@/lib/server/auth-cliente";
-import { requireReferralUuid, ReferralInputError } from "@/lib/client-referrals";
+import { requireReferralUuid, referralRewardDescription, ReferralInputError } from "@/lib/client-referrals";
 import { loadReferralState, referralFailure, referralReply } from "@/lib/server/client-referrals";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +21,6 @@ export async function POST(req: Request) {
     if (body?.action !== "claim" || !Number.isSafeInteger(body.expected_version) || body.expected_version < 1) throw new ReferralInputError("Actualiza y selecciona un premio válido.");
     const result = await gate.admin.rpc("tc_claim_referral_reward", { p_cliente_id: gate.cliente.id, p_auth_user_id: gate.uid, p_reward_id: requireReferralUuid(body.reward_id), p_expected_version: body.expected_version, p_operation_id: requireReferralUuid(body.operation_id) });
     if (result.error) throw result.error;
-    return referralReply({ ok: true, receipt: result.data });
+    return referralReply({ ok: true, receipt: { ...result.data, reward_description: referralRewardDescription(result.data) } });
   } catch (error) { return referralFailure(error, true); }
 }

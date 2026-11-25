@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminClient, workerFromRequest } from "@/lib/server/auth-worker";
-import { ReferralInputError, referralRewardDescription, type ReferralReward, type ReferralState } from "@/lib/client-referrals";
+import { ReferralInputError, referralRewardDescription, referralRewardItems, type ReferralAdminClaim, type ReferralHistoryQuery, type ReferralReward, type ReferralState } from "@/lib/client-referrals";
 
 export const referralReply = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "private, no-store, max-age=0", Vary: "Authorization" } });
 export async function referralStaff(req: Request) {
@@ -9,7 +9,7 @@ export async function referralStaff(req: Request) {
   if (!["admin", "central"].includes(me.role) && !me.can_admin) return null;
   return { me, admin: getAdminClient(), authUserId: me.resolved_uid as string };
 }
-const rewardFields = "id,title,referrals_required,reward_type,amount,roulette_level,rank_key,rank_days,enabled,version";
+const rewardFields = "id,title,referrals_required,reward_type,amount,roulette_level,rank_key,rank_days,reward_items,enabled,version";
 export async function referralCatalog(admin: any, onlyEnabled = false): Promise<ReferralReward[]> {
   const rows: ReferralReward[] = [];
   for (let offset = 0; ; offset += 500) {
@@ -21,6 +21,43 @@ export async function referralCatalog(admin: any, onlyEnabled = false): Promise<
     if ((data || []).length < 500) break;
   }
   return rows;
+}
+
+function deliveredReferralReward(claim: any) {
+  const snapshot = claim?.reward_snapshot || {};
+  const delivered = claim?.receipt?.reward_items;
+  return {
+    ...snapshot,
+    ...(Array.isArray(delivered) && delivered.length ? { reward_items: delivered } : {}),
+  };
+}
+
+export async function loadReferralClaimHistory(admin: any, query: ReferralHistoryQuery) {
+  const { data, error } = await admin.rpc("tc_admin_referral_claim_history", query);
+  if (error) throw error;
+  const claims: ReferralAdminClaim[] = (data?.claims || []).map((claim: any) => {
+    const reward = deliveredReferralReward(claim);
+    return {
+      id: claim.id,
+      created_at: claim.created_at,
+      cliente_id: claim.cliente_id,
+      client_name: claim.client_name || "Cliente",
+      client_phone: claim.client_phone || null,
+      reward_id: claim.reward_id,
+      reward_title: claim.reward_snapshot?.title || claim.receipt?.title || "Premio de referidos",
+      reward_description: referralRewardDescription(reward),
+      // The staff history exposes the delivered benefits, not balance snapshots,
+      // auth identities or internal payment/rank operation identifiers.
+      reward_items: referralRewardItems(reward).map(item => ({
+        reward_type: item.reward_type, amount: item.amount,
+        roulette_level: item.roulette_level ?? null,
+        rank_key: item.rank_key ?? null, rank_days: item.rank_days ?? null,
+      })),
+      referrals_used: Number(claim.referrals_used || 0),
+      status: "delivered",
+    };
+  });
+  return { claims, total: Number(data?.total || 0), offset: query.p_offset, limit: query.p_limit };
 }
 export function referralFirstName(value: unknown): string {
   const name = String(value || "").trim().split(/\s+/u)[0] || "";
@@ -36,7 +73,7 @@ export async function loadReferralState(admin: any, clientId: string, staff = fa
   }
   const [rewards, history, oracle] = await Promise.all([
     referralCatalog(admin, true),
-    admin.from("client_referral_claims").select("id,reward_snapshot,created_at").eq("cliente_id", clientId).order("created_at", { ascending: false }).order("id").limit(100),
+    admin.from("client_referral_claims").select("id,reward_snapshot,receipt,created_at").eq("cliente_id", clientId).order("created_at", { ascending: false }).order("id").limit(100),
     staff ? admin.rpc("get_cliente_oracle_balance", { p_cliente_id: clientId }) : Promise.resolve({ data: null, error: null }),
   ]);
   if (history.error) throw history.error;
@@ -52,13 +89,13 @@ export async function loadReferralState(admin: any, clientId: string, staff = fa
   // Fetch older linked receipts too: a consumed referral always keeps its original prize.
   const missing = [...new Set<string>(rows.map(r => r.claimed_by).filter(id => id && !claimMap.has(id)))];
   for (let i = 0; i < missing.length; i += 100) {
-    const old = await admin.from("client_referral_claims").select("id,reward_snapshot,created_at").eq("cliente_id", clientId).in("id", missing.slice(i, i + 100));
+    const old = await admin.from("client_referral_claims").select("id,reward_snapshot,receipt,created_at").eq("cliente_id", clientId).in("id", missing.slice(i, i + 100));
     if (old.error) throw old.error;
     for (const c of old.data || []) claimMap.set(c.id, c);
   }
   const summary = { total: rows.length, available: rows.filter(r => r.status === "available").length, pending: rows.filter(r => r.status === "pending").length, claimed: rows.filter(r => r.status === "claimed").length, ...(staff ? { oracle_credits: Number(oracle.data || 0) } : {}) };
   let effectiveRank = "", rankOverride = false;
-  if (rewards.some(r => r.reward_type === "rank")) {
+  if (rewards.some(r => referralRewardItems(r).some(item => item.reward_type === "rank"))) {
     const [rank, overrides] = await Promise.all([
       admin.rpc("tc_client_rank_state", { p_cliente_id: clientId }),
       admin.from("client_rank_overrides").select("id").eq("client_id", clientId).eq("active", true).or(`ends_at.is.null,ends_at.gt.${new Date().toISOString()}`).limit(1),
@@ -76,10 +113,10 @@ export async function loadReferralState(admin: any, clientId: string, staff = fa
       return { id: r.id, ...(staff ? { referred_id: r.referred_id, paid_total: Number(r.paid_total || 0) } : {}), name: names.get(r.referred_id) || "Cliente", status: r.status, created_at: r.created_at, claimed_at: claim?.created_at || null, reward_title: claim?.reward_snapshot?.title || null };
     }),
     rewards: rewards.map(r => {
-      const rankBlocked = r.reward_type === "rank" && (rankOverride || (weight[effectiveRank] || 0) >= (weight[r.rank_key || ""] || 0));
+      const rankBlocked = referralRewardItems(r).some(item => item.reward_type === "rank" && (rankOverride || (weight[effectiveRank] || 0) >= (weight[item.rank_key || ""] || 0)));
       return { ...r, claimable: summary.available >= r.referrals_required && !rankBlocked, unavailable_reason: rankBlocked ? "Ya tienes un rango igual o superior, o una asignación temporal que debemos conservar." : summary.available < r.referrals_required ? `Necesitas ${r.referrals_required - summary.available} referido(s) disponible(s) más.` : null };
     }),
-    claims: (history.data || []).map((c: any) => ({ id: c.id, reward_title: c.reward_snapshot?.title || "Premio de referidos", reward_description: referralRewardDescription(c.reward_snapshot), created_at: c.created_at })),
+    claims: (history.data || []).map((c: any) => ({ id: c.id, reward_title: c.reward_snapshot?.title || "Premio de referidos", reward_description: referralRewardDescription(deliveredReferralReward(c)), created_at: c.created_at })),
   };
 }
 export function referralFailure(error: unknown, mutation = false) {
