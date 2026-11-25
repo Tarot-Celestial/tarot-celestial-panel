@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ArrowRight, Check, CheckCircle2, ChevronRight, Clock3, Flame, Gift, RefreshCw, Users, X } from "lucide-react";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
-import { REFERRALS_CHANGED, referralRewardDescription, type ReferralReward, type ReferralSummary, type ReferralSnapshot } from "@/lib/client-referrals";
+import { REFERRALS_CHANGED, referralRewardDescription, referralRewardItems, type ReferralReward, type ReferralSummary, type ReferralSnapshot } from "@/lib/client-referrals";
 import { usePortalMotion } from "./CelestialPortal";
 import styles from "./ClientReferralRewards.module.css";
 
@@ -13,6 +13,7 @@ type Auth = { userId: string; token: string };
 type Intent = { operationId: string; reward: ReferralReward };
 type Snapshot = { owner: string; data: ReferralSnapshot };
 const intentKey = (userId: string) => `tc-referral-claim-v1:${userId}`;
+const includesDiamanteRoulette = (reward: ReferralReward) => referralRewardItems(reward).some(item => item.reward_type === "roulette" && item.roulette_level === 5);
 
 function persistIntent(userId: string, value: Intent | null) {
   try {
@@ -194,7 +195,11 @@ export default function ClientReferralRewards({ compact = false }: { compact?: b
         throw new Error(result.error || "No se pudo confirmar la reclamación. Vuelve a comprobarla.");
       }
       pending.current = null; persistIntent(currentAuth.userId, null); setReview(null); setUncertain(false);
-      setNotice(`Premio reclamado: ${intent.reward.title}. ${referralRewardDescription(intent.reward)}.`);
+      const receipt = result.receipt;
+      const deliveredTitle = typeof receipt?.title === "string" && receipt.title ? receipt.title : intent.reward.title;
+      const deliveredDescription = typeof receipt?.reward_description === "string" && receipt.reward_description ? receipt.reward_description
+        : Array.isArray(receipt?.reward_items) && receipt.reward_items.length ? referralRewardDescription({ ...intent.reward, reward_items: receipt.reward_items }) : referralRewardDescription(intent.reward);
+      setNotice(`Premio reclamado: ${deliveredTitle}. ${deliveredDescription}.`);
       notifyRewardsChanged(); await load();
     } catch (cause) {
       if (!mounted.current || authRef.current?.userId !== currentAuth.userId) return;
@@ -218,11 +223,11 @@ export default function ClientReferralRewards({ compact = false }: { compact?: b
       {compact ? <><Link href="/cliente/referidos" className={styles.primaryLink}>Ver mis premios <ArrowRight size={17} aria-hidden="true"/></Link><div className={styles.miniSummary}><span>{state.summary.pending} pendientes</span><span>{state.summary.claimed} usados</span></div></> : <>
         <div className={styles.summary} aria-label="Resumen de referidos"><div><span>Total</span><strong>{state.summary.total}</strong></div><div><span>Disponibles</span><strong>{state.summary.available}</strong></div><div><span>Pendientes</span><strong>{state.summary.pending}</strong></div><div><span>Reclamados</span><strong>{state.summary.claimed}</strong></div></div>
         <div className={styles.sectionHeading}><div><span className={styles.eyebrow}>TU PRÓXIMA RECOMPENSA</span><h3>Elige cómo celebrarlo</h3></div><Gift size={25} aria-hidden="true"/></div>
-        <p className={styles.explainer}>Al reclamar, se usan los referidos indicados en el premio. Para conseguir otro, necesitarás nuevos referidos disponibles.</p>
+        <p className={styles.explainer}>Al reclamar, recibirás todas las recompensas del premio y se usarán una sola vez los referidos indicados. Para conseguir otro, necesitarás nuevos referidos disponibles.</p>
         {rewards.length ? <div className={styles.rewardGrid}>{rewards.map(reward => <article key={reward.id} className={styles.rewardCard} data-ready={reward.claimable}>
           <div className={styles.rewardTop}><span className={styles.multiplier}>X{reward.referrals_required}</span><span className={styles.rewardState}>{reward.claimable ? "Disponible" : "Por desbloquear"}</span></div>
           <h4>{reward.title}</h4><p className={styles.rewardDescription}>{referralRewardDescription(reward)}</p>
-          {reward.reward_type === "roulette" && reward.roulette_level === 5 ? <p className={styles.lockReason}>Los giros Diamante se guardan en tu cuenta y requieren ese rango para usarlos.</p> : null}
+          {includesDiamanteRoulette(reward) ? <p className={styles.lockReason}>Los giros Diamante se guardan en tu cuenta y requieren ese rango para usarlos.</p> : null}
           <span className={styles.cost}>{reward.referrals_required} {reward.referrals_required === 1 ? "referido disponible" : "referidos disponibles"}</span>
           <button type="button" className={styles.primaryButton} onClick={() => openReview(reward)} disabled={!reward.claimable || busy || Boolean(error) || loading}>Reclamar premio <ChevronRight size={16} aria-hidden="true"/></button>
           {!reward.claimable ? <small className={styles.lockReason}>{reward.unavailable_reason || `Necesitas ${Math.max(0, reward.referrals_required - state.summary.available)} referidos disponibles más.`}</small> : null}
@@ -245,9 +250,9 @@ function ClaimReview({ reward, busy, uncertain, error, onConfirm, onClose }: { r
     <button type="button" className={styles.closeButton} onClick={onClose} disabled={busy} aria-label="Cerrar revisión"><X size={20} aria-hidden="true"/></button>
     <span className={styles.dialogArt}><Gift size={32} aria-hidden="true"/></span><p className={styles.eyebrow}>{uncertain ? "COMPROBAR RECLAMACIÓN" : "TU PREMIO ESTÁ CERCA"}</p>
     <h2 id={title}>{reward.title}</h2><p>{referralRewardDescription(reward)}</p>
-    {reward.reward_type === "roulette" && reward.roulette_level === 5 ? <p className={styles.explainer}>Los giros Diamante se guardarán en tu cuenta. Necesitas rango Diamante para utilizarlos.</p> : null}
+    {includesDiamanteRoulette(reward) ? <p className={styles.explainer}>Los giros Diamante se guardarán en tu cuenta. Necesitas rango Diamante para utilizarlos.</p> : null}
     <div className={styles.claimCost}><span>Referidos que se usarán</span><strong>{reward.referrals_required}</strong></div>
-    <p className={styles.explainer}>{uncertain ? "Comprobaremos la misma solicitud para evitar concederte el premio dos veces." : "Estos referidos quedarán marcados como Reclamados. El premio se añadirá a tu cuenta al confirmar."}</p>
+    <p className={styles.explainer}>{uncertain ? "Comprobaremos la misma solicitud para evitar concederte el premio dos veces." : "Estos referidos quedarán marcados como Reclamados una sola vez. Todas las recompensas se añadirán juntas a tu cuenta al confirmar."}</p>
     {error ? <p className={styles.error} role="alert">{error}</p> : null}
     <div className={styles.dialogActions}><button className={styles.secondaryButton} type="button" onClick={onClose} disabled={busy}>Volver</button><button className={styles.primaryButton} type="button" onClick={onConfirm} disabled={busy}>{busy ? "Comprobando…" : uncertain ? "Comprobar reclamación" : "Confirmar premio"}</button></div>
   </dialog>;

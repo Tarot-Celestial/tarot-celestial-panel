@@ -50,6 +50,8 @@ before(async()=>{
   // Exact dependency definitions inspected read-only in production. No real data.
   await db.exec(fs.readFileSync(path.join(__dirname,'fixtures/referral-production-dependencies.sql'),'utf8'));
   await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261122054306_client_referral_rewards.sql'),'utf8'));
+  await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261124144159_referral_reward_bundles.sql'),'utf8'));
+  await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261125145838_referral_claim_history.sql'),'utf8'));
 });
 after(async()=>{await db?.close();});
 
@@ -173,4 +175,193 @@ test('service role can execute the complete catalog, link, status and claim cont
     assert.equal((await claim(140,r)).after_balance,13);
     assert.equal((await status(140))[0].status,'claimed');
   } finally {await db.exec('reset role');}
+});
+
+const benefit = (reward_type, amount, extra={}) => ({reward_type,amount,...extra});
+const bundle = (items,extra={},rid=fresh(),expected=null,operation=fresh()) => reward('free_minutes',15,{title:'Premio combinado',reward_items:items,...extra},rid,expected,operation);
+
+test('bundle normalizer rejects empty, duplicate and out-of-range items while allowing distinct roulette levels',async()=>{
+  const normalize=items=>scalar('select tc_referral_reward_items($1) v',[items]);
+  const invalid=[null,{},[],Array.from({length:11},()=>benefit('coins',1)),[benefit('coins',0)],
+    [benefit('coins',1.5)],[benefit('coins',1000001)],[benefit('free_minutes',10001)],
+    [benefit('normal_minutes',10001)],[benefit('oracle',101)],[benefit('roulette',1,{roulette_level:6})],
+    [benefit('rank',1,{rank_key:'oro',rank_days:366})],[benefit('rank',2,{rank_key:'oro',rank_days:1})],
+    [benefit('coins',10),benefit('coins',20)],
+    [benefit('roulette',1,{roulette_level:2}),benefit('roulette',2,{roulette_level:2})],
+    [benefit('rank',1,{rank_key:'oro',rank_days:1}),benefit('rank',1,{rank_key:'diamante',rank_days:2})]];
+  for(const items of invalid)await assert.rejects(normalize(items),/REFERRAL_INVALID_REWARD/);
+  const items=await normalize([benefit('roulette',1,{roulette_level:1}),benefit('roulette',2,{roulette_level:5})]);
+  assert.equal(items.length,2);assert.equal(items[0].roulette_level,1);assert.equal(items[1].roulette_level,5);
+  await assert.rejects(bundle([]),/REFERRAL_INVALID_REWARD/);
+});
+
+test('a bundle delivers every canonical balance and roulette level but consumes its referral cost only once',async()=>{
+  await eligible(200,201);
+  const items=[benefit('free_minutes',15),benefit('normal_minutes',6),benefit('coins',30),benefit('oracle',2),
+    ...[1,2,3,4,5].map(level=>benefit('roulette',level===2?2:1,{roulette_level:level})),
+    benefit('rank',1,{rank_key:'diamante',rank_days:7})];
+  const r=await bundle(items),op=fresh();
+  const receipt=await claim(200,r,op);
+  assert.equal(receipt.referrals_used,1);assert.equal(receipt.reward_items.length,10);
+  assert.equal(receipt.reward_type,'free_minutes');assert.equal(receipt.after_balance,22);
+  const balances=await row('select puntos,minutos_free_pendientes,minutos_normales_pendientes from crm_clientes where id=$1',[id(200)]);
+  assert.deepEqual(balances,{puntos:35,minutos_free_pendientes:22,minutos_normales_pendientes:15});
+  assert.equal(await scalar('select get_cliente_oracle_balance($1) v',[id(200)]),2);
+  assert.equal(await scalar("select tc_client_rank_state($1)->>'effective' v",[id(200)]),'diamante');
+  const spins=(await db.query('select nivel,count(*)::int n from cliente_ruleta_giros where cliente_id=$1 group by nivel order by nivel',[id(200)])).rows;
+  assert.deepEqual(spins,[{nivel:1,n:1},{nivel:2,n:2},{nivel:3,n:1},{nivel:4,n:1},{nivel:5,n:1}]);
+  assert.equal(await scalar('select count(*)::int v from cliente_puntos_historial where cliente_id=$1',[id(200)]),1);
+  assert.equal(await scalar('select count(*)::int v from cliente_oracle_credit_movements where cliente_id=$1',[id(200)]),1);
+  assert.equal(await scalar('select count(*)::int v from client_referral_claims where cliente_id=$1',[id(200)]),1);
+  assert.equal(await scalar('select count(*)::int v from client_referrals where claimed_by=$1',[op]),1);
+  assert.equal(await scalar('select count(*)::int v from cliente_notificaciones where cliente_id=$1',[id(200)]),1);
+  const stored=await row('select reward_snapshot,receipt from client_referral_claims where id=$1',[op]);
+  assert.deepEqual(stored.reward_snapshot.reward_items,r.reward_items);
+  assert.deepEqual(stored.receipt.reward_items,receipt.reward_items);
+});
+
+test('bundle replay and concurrent retries do not duplicate any component or consume another referral',async()=>{
+  await eligible(210,211);await client(212);await pay(212,12);await link(210,212);
+  const r=await bundle([benefit('coins',30),benefit('oracle',2),benefit('roulette',2,{roulette_level:3})]),op=fresh();
+  const first=await claim(210,r,op);
+  const replays=await Promise.all([claim(210,r,op),claim(210,r,op)]);
+  for(const receipt of replays){assert.equal(receipt.replayed,true);assert.deepEqual(receipt.reward_items,first.reward_items);}
+  assert.equal(await scalar('select puntos v from crm_clientes where id=$1',[id(210)]),35);
+  assert.equal(await scalar('select get_cliente_oracle_balance($1) v',[id(210)]),2);
+  assert.equal(await scalar('select count(*)::int v from cliente_ruleta_giros where cliente_id=$1',[id(210)]),2);
+  assert.equal((await status(210)).filter(r=>r.status==='available').length,1);
+  assert.equal((await status(210)).filter(r=>r.status==='claimed').length,1);
+});
+
+test('a late component failure rolls back earlier balances, ledgers, receipt and consumption; same operation can retry',async()=>{
+  await eligible(220,221);
+  const r=await bundle([benefit('free_minutes',15),benefit('coins',30),benefit('roulette',2,{roulette_level:1}),benefit('oracle',2)]),op=fresh();
+  await db.exec("create function fail_bundle_oracle() returns trigger language plpgsql as $$begin raise exception 'TEST_BUNDLE_DELIVERY_FAIL';end$$; create trigger fail_bundle_oracle before insert on cliente_oracle_credit_movements for each row execute function fail_bundle_oracle();");
+  try{await assert.rejects(claim(220,r,op),/TEST_BUNDLE_DELIVERY_FAIL/);}finally{await db.exec('drop trigger fail_bundle_oracle on cliente_oracle_credit_movements;');}
+  assert.equal(await scalar('select puntos v from crm_clientes where id=$1',[id(220)]),5);
+  assert.equal(await scalar('select minutos_free_pendientes v from crm_clientes where id=$1',[id(220)]),7);
+  for(const table of ['cliente_puntos_historial','cliente_oracle_credit_movements','cliente_ruleta_giros','client_referral_claims','cliente_notificaciones'])
+    assert.equal(await scalar(`select count(*)::int v from ${table} where cliente_id=$1`,[id(220)]),0);
+  assert.equal((await status(220))[0].status,'available');
+  const receipt=await claim(220,r,op);assert.equal(receipt.reward_items.length,4);assert.equal(receipt.referrals_used,1);
+  assert.equal((await status(220))[0].status,'claimed');
+});
+
+test('catalog changes never change the bundle or quantities stored in an earlier claim',async()=>{
+  await eligible(230,231);
+  const original=await bundle([benefit('free_minutes',15),benefit('coins',30)]),op=fresh();
+  const receipt=await claim(230,original,op);
+  const edited=await bundle([benefit('free_minutes',20),benefit('coins',50)],{title:'Premio actualizado'},original.id,original.version);
+  assert.equal(edited.version,2);
+  const stored=await row('select reward_snapshot,receipt from client_referral_claims where id=$1',[op]);
+  assert.equal(stored.reward_snapshot.title,'Premio combinado');assert.equal(stored.reward_snapshot.version,1);
+  assert.deepEqual(stored.reward_snapshot.reward_items,original.reward_items);
+  assert.deepEqual(stored.receipt.reward_items,receipt.reward_items);
+  assert.equal((await claim(230,original,op)).replayed,true);
+  await assert.rejects(claim(230,edited,op),/REFERRAL_OPERATION_REUSED/);
+});
+
+test('legacy singleton catalog rows remain claimable while old admin payloads cannot overwrite a bundle',async()=>{
+  await eligible(240,241);
+  const single=await reward('coins',25);
+  await db.query('update client_referral_rewards set reward_items=null where id=$1',[single.id]);
+  const legacyReceipt=await claim(240,single);
+  assert.equal(legacyReceipt.after_balance,30);assert.equal(legacyReceipt.reward_items.length,1);
+  assert.equal(legacyReceipt.reward_items[0].reward_type,'coins');
+  const r=await bundle([benefit('free_minutes',15),benefit('coins',30)]);
+  await assert.rejects(reward('free_minutes',20,{},r.id,r.version),/REFERRAL_REWARD_CHANGED/);
+  const saved=await row('select version,reward_items from client_referral_rewards where id=$1',[r.id]);
+  assert.equal(saved.version,r.version);assert.deepEqual(saved.reward_items,r.reward_items);
+});
+
+test('bundle normalizer is service-only, invoker based, and a service-role bundle can be delivered',async()=>{
+  const grants=await row("select has_function_privilege('anon','tc_referral_reward_items(jsonb)','EXECUTE') anon,has_function_privilege('authenticated','tc_referral_reward_items(jsonb)','EXECUTE') client,has_function_privilege('service_role','tc_referral_reward_items(jsonb)','EXECUTE') service");
+  assert.deepEqual(grants,{anon:false,client:false,service:true});
+  const functions=(await db.query("select proname,prosecdef from pg_proc where proname in ('tc_referral_reward_items','tc_save_referral_reward','tc_claim_referral_reward')")).rows;
+  for(const fn of functions)assert.equal(fn.prosecdef,false);
+  await eligible(250,251);
+  await db.exec('set role service_role');
+  try{
+    const r=await bundle([benefit('free_minutes',15),benefit('coins',30)]);
+    const receipt=await claim(250,r);assert.equal(receipt.reward_items.length,2);assert.equal(receipt.referrals_used,1);
+  }finally{await db.exec('reset role');}
+});
+
+const history = ({query=null,rewardId=null,from=null,to=null,offset=0,limit=25}={}) =>
+  scalar('select tc_admin_referral_claim_history($1,$2,$3,$4,$5,$6) v',[query,rewardId,from,to,offset,limit]);
+
+test('admin history searches literal full names and normalized phones with stable pagination and exclusive end dates',async()=>{
+  const r=await bundle([benefit('free_minutes',15),benefit('coins',30)]);
+  const alternative=await reward('oracle',2);
+  const claims=[];
+  const people=[
+    {n:300,nombre:'María José',apellido:'Pérez Historial',phone:'+1 (787) 555-0123',normal:'17875550123',at:'2026-11-25T09:00:00Z',reward:r},
+    {n:310,nombre:'Ana',apellido:'Vega Historial',phone:'+34 600 123 456',normal:'34600123456',at:'2026-11-25T09:00:00Z',reward:r},
+    {n:320,nombre:'Literal % _',apellido:'Historial',phone:'+1 787 555 0199',normal:null,at:'2026-11-24T23:00:00Z',reward:alternative},
+  ];
+  for(const p of people){
+    await eligible(p.n,p.n+1);
+    await db.query('update crm_clientes set nombre=$1,apellido=$2,telefono=$3,telefono_normalizado=$4 where id=$5',[p.nombre,p.apellido,p.phone,p.normal,id(p.n)]);
+    const receipt=await claim(p.n,p.reward);claims.push(receipt);
+    await db.query('update client_referral_claims set created_at=$1 where id=$2',[p.at,receipt.claim_id]);
+  }
+  const all=await history({query:'historial'});
+  assert.equal(all.total,3);assert.equal(all.offset,0);assert.equal(all.limit,25);
+  assert.deepEqual(all.claims.map(c=>c.id),[claims[1].claim_id,claims[0].claim_id,claims[2].claim_id]);
+  const page=await history({query:'historial',offset:1,limit:1});
+  assert.equal(page.total,3);assert.equal(page.claims.length,1);assert.equal(page.claims[0].id,claims[0].claim_id);
+  assert.equal(page.claims[0].cliente_id,id(300));assert.equal(page.claims[0].client_name,'María José Pérez Historial');
+  assert.equal(page.claims[0].client_phone,'+1 (787) 555-0123');assert.equal(page.claims[0].referrals_used,1);
+  assert.deepEqual(page.claims[0].reward_snapshot.reward_items,r.reward_items);
+  assert.equal((await history({query:'historial',offset:100,limit:1})).total,3);
+  assert.deepEqual((await history({query:'historial',offset:100,limit:1})).claims,[]);
+  assert.equal((await history({query:'MARÍA   JOSÉ   PÉREZ'})).claims[0].id,claims[0].claim_id);
+  assert.equal((await history({query:'+1 (787) 555-0123'})).claims[0].id,claims[0].claim_id);
+  assert.equal((await history({query:'7875550199'})).claims[0].id,claims[2].claim_id);
+  const literal=await history({query:'% _'});assert.equal(literal.total,1);assert.equal(literal.claims[0].id,claims[2].claim_id);
+  assert.equal((await history({query:'historial',rewardId:r.id})).total,2);
+  assert.equal((await history({query:'historial',from:'2026-11-25T00:00:00Z',to:'2026-11-26T00:00:00Z'})).total,2);
+  assert.equal((await history({query:'historial',from:'2026-11-24T23:00:00Z',to:'2026-11-25T09:00:00Z'})).total,1);
+  assert.equal((await history({query:'historial',from:'2026-11-25T09:00:00Z'})).total,2);
+  assert.deepEqual((await history({query:'no such customer 99999999'})).claims,[]);
+});
+
+test('admin history keeps original bundle snapshots after catalog edits and supports legacy singleton receipts',async()=>{
+  await eligible(330,331);
+  const original=await bundle([benefit('free_minutes',15),benefit('coins',30)]),op=fresh();
+  await claim(330,original,op);
+  await bundle([benefit('free_minutes',20),benefit('coins',50)],{title:'Cambió el catálogo',referrals_required:2},original.id,original.version);
+  const delivered=(await history({rewardId:original.id})).claims[0];
+  assert.equal(delivered.reward_snapshot.title,'Premio combinado');assert.equal(delivered.referrals_used,1);
+  assert.deepEqual(delivered.reward_snapshot.reward_items,original.reward_items);
+  assert.deepEqual(delivered.receipt.reward_items.map(item=>item.amount),[15,30]);
+
+  await eligible(340,341);
+  const single=await reward('coins',25),legacy=await claim(340,single);
+  // Historical records predating bundles retain their scalar snapshot/receipt.
+  await db.query("update client_referral_claims set reward_snapshot=reward_snapshot-'reward_items'-'referrals_required',receipt=receipt-'reward_items' where id=$1",[legacy.claim_id]);
+  const before=await row('select reward_snapshot,receipt from client_referral_claims where id=$1',[legacy.claim_id]);
+  const legacyRow=(await history({rewardId:single.id})).claims[0];
+  assert.equal(legacyRow.referrals_used,1);assert.equal(legacyRow.reward_snapshot.reward_type,'coins');
+  assert.equal(legacyRow.reward_snapshot.amount,25);assert.equal('reward_items' in legacyRow.reward_snapshot,false);
+  assert.deepEqual(legacyRow.reward_snapshot,before.reward_snapshot);assert.deepEqual(legacyRow.receipt,before.receipt);
+});
+
+test('admin history is read-only service-only and validates bounds before reading customer data',async()=>{
+  for(const bad of [{offset:-1},{offset:null},{limit:0},{limit:101},{limit:null},{query:'x'.repeat(201)},
+    {from:'2026-11-25T00:00:00Z',to:'2026-11-24T00:00:00Z'},
+    {from:'2026-11-25T00:00:00Z',to:'2026-11-25T00:00:00Z'}])
+    await assert.rejects(history(bad),/REFERRAL_INVALID_HISTORY_FILTER/);
+  const signature='tc_admin_referral_claim_history(text,uuid,timestamptz,timestamptz,integer,integer)';
+  const privileges=await row("select has_function_privilege('anon',$1,'EXECUTE') anon,has_function_privilege('authenticated',$1,'EXECUTE') client,has_function_privilege('service_role',$1,'EXECUTE') service",[signature]);
+  assert.deepEqual(privileges,{anon:false,client:false,service:true});
+  const fn=await row("select prosecdef,provolatile from pg_proc where proname='tc_admin_referral_claim_history'");
+  assert.equal(fn.prosecdef,false);assert.equal(fn.provolatile,'s');
+  for(const role of ['anon','authenticated']){
+    await db.exec(`set role ${role}`);
+    try{await assert.rejects(history(),/permission denied/);}finally{await db.exec('reset role');}
+  }
+  await db.exec('set role service_role');
+  try{const result=await history({limit:1});assert.equal(result.claims.length,1);assert.ok(result.total>0);}
+  finally{await db.exec('reset role');}
 });
